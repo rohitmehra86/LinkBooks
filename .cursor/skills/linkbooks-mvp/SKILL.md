@@ -29,6 +29,9 @@ description: >-
 - Roadmap: `roadmap.md`
 - Architecture: `docs/ARCHITECTURE_MVP.md`
 - Security: `docs/SECURITY_CHECKLIST.md`
+- Supabase how-to: `docs/EASY_SUPABASE.md`
+- Cursor MCP: `.cursor/mcp.json` (project `ipxflpzfcqwtenodbxwc`, user rohitmehra86)
+- Dashboard: https://supabase.com/dashboard/project/ipxflpzfcqwtenodbxwc
 
 ## Rules from AGENTS.md
 
