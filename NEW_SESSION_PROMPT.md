@@ -3,6 +3,9 @@
 ```text
 Open workspace folder: /Users/rohitm/paxaris-repos/LinkBooks
 
+Git: push to **origin** = https://github.com/rohitmehra86/LinkBooks
+(Friend’s repo is **upstream** = linkbusinessadvisory/LinkBooks — PR when ready)
+
 Read and follow:
 - NEW_SESSION_PROMPT.md (this file)
 - docs/ARCHITECTURE_MVP.md

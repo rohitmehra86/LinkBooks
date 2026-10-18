@@ -15,6 +15,12 @@ description: >-
 - **No Paxo** auth/deploy for v1
 - Finish **Phase 2** company/tenant UI before Phase 3 features
 
+## Git remotes (this machine)
+
+- **Work / push here:** `origin` → https://github.com/rohitmehra86/LinkBooks
+- **Friend’s upstream (read/PR):** `upstream` → https://github.com/linkbusinessadvisory/LinkBooks
+- Do not push to `upstream` until write access is granted; open PRs from the fork instead.
+
 ## Key paths
 
 - Auth routes: `src/routes/_authenticated/`, `src/routes/auth.tsx`
