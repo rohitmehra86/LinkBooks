@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Menu, Search, Bell, Plus, ChevronDown, LogOut, UserRound } from "lucide-react";
+import { Menu, Search, Bell, Plus, LogOut, UserRound } from "lucide-react";
 import { navItems } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { initialsFrom } from "@/lib/auth-helpers";
 import { supabase } from "@/integrations/supabase/client";
+import { useActiveCompany } from "@/hooks/use-active-company";
+import { CompanySwitcher } from "@/components/layout/CompanySwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -101,16 +103,17 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function SidebarFooter() {
+function SidebarFooter({ isDemo }: { isDemo: boolean }) {
   return (
     <div className="border-t border-sidebar-border px-5 py-4 text-[11px] text-sidebar-foreground/70">
-      Phase 0 foundation · demo data only
+      {isDemo ? "Demo company · same posting engine as live books" : "Double-entry ledger enabled"}
     </div>
   );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const { company, isPending } = useActiveCompany();
   const title = useRouterState({
     select: (s) => {
       const path = s.location.pathname;
@@ -119,12 +122,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     },
   });
 
+  const isDemo = Boolean(company?.is_demo);
+
   return (
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-sidebar lg:flex">
         <Brand />
         <NavList />
-        <SidebarFooter />
+        <SidebarFooter isDemo={isDemo} />
       </aside>
 
       <div className="lg:pl-64">
@@ -140,7 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex h-full flex-col">
                 <Brand />
                 <NavList onNavigate={() => setOpen(false)} />
-                <SidebarFooter />
+                <SidebarFooter isDemo={isDemo} />
               </div>
             </SheetContent>
           </Sheet>
@@ -148,48 +153,49 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold md:hidden">{title}</div>
             <div className="relative hidden max-w-sm md:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search invoices, contacts, accounts…" className="pl-9" />
+              <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
+              <Input
+                placeholder="Search invoices, contacts, accounts…"
+                className="pl-9"
+                disabled
+                aria-disabled
+                title="Search arrives in a later phase"
+              />
             </div>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="hidden sm:inline-flex">
-                Demo Company Ltd
-                <ChevronDown className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Organisations</DropdownMenuLabel>
-              <DropdownMenuItem>Demo Company Ltd</DropdownMenuItem>
-              <DropdownMenuItem>Northgate Consulting</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>Add organisation (Phase 2)</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <CompanySwitcher />
 
-          <Button size="sm" className="hidden md:inline-flex">
+          <Button size="sm" className="hidden md:inline-flex" disabled title="Quick create arrives with documents">
             <Plus className="size-4" />
             New
           </Button>
 
-          <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
+          <Button variant="ghost" size="icon" aria-label="Notifications" disabled title="Notifications arrive later">
             <Bell className="size-5" />
-            <span className="absolute right-2 top-2 size-2 rounded-full bg-accent" />
           </Button>
 
           <UserMenu />
         </header>
 
-        <div className="border-b border-border bg-muted/40 px-4 py-2 md:px-6">
-          <Badge
-            variant="outline"
-            className="border-warning/40 bg-warning/10 text-[11px] font-medium text-foreground"
+        {!isPending && isDemo ? (
+          <div
+            role="status"
+            className="border-b border-warning/30 bg-warning/15 px-4 py-2.5 md:px-6"
           >
-            Demo data — no real financial records
-          </Badge>
-        </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Badge className="bg-warning text-warning-foreground hover:bg-warning">
+                Demo Company
+              </Badge>
+              <span className="font-medium text-foreground">
+                Sample data only — not real financial records.
+              </span>
+              <span className="text-muted-foreground">
+                Same ledger engine and permissions as live organisations. Reset from Settings → Demo.
+              </span>
+            </div>
+          </div>
+        ) : null}
 
         <main className={cn("mx-auto w-full max-w-[1400px] px-4 py-6 md:px-6 md:py-8")}>
           {children}

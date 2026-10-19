@@ -23,19 +23,19 @@ export const Route = createFileRoute("/_authenticated/help")({
 const faqs = [
   {
     q: "What is currently available?",
-    a: "This is the product foundation: navigation, layout, the design system and every main section. Accounting calculations, banking and AI are added in later phases.",
+    a: "Sales, Purchases, Banking, Contacts, Accounting, Reports, Tax, Settings, Firm and AI (when configured) use the real ledger. Products & Services and Help remain shells and are labelled as such.",
   },
   {
-    q: "Is the data on screen real?",
-    a: "No. Everything shown is clearly marked demo data and is never used for real financial records.",
+    q: "What is Demo Company?",
+    a: "A sample organisation that uses the same posting engine and permissions as live companies. Its data is fictional. Reset/reseed only affects that demo organisation.",
   },
   {
     q: "How does LinkBooks record transactions?",
-    a: "Every financial document will post balanced debit and credit entries to the general ledger, which remains the single source of truth.",
+    a: "Authorised documents and journals post balanced debit and credit entries through a single PostingEngine. Posted history is immutable; reverse instead of editing.",
   },
   {
-    q: "Which countries are supported?",
-    a: "The product is being built for the United States, United Kingdom, Australia, New Zealand, Canada and India, with room for more.",
+    q: "Are dashboard figures real?",
+    a: "Yes when they appear — they are derived from posted journal lines for the active organisation. Empty placeholders mean no ledger activity yet, not invented metrics.",
   },
 ];
 

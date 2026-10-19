@@ -1,6 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { CompanyRole } from "@/lib/company-constants";
+import {
+  assertCompanyMember,
+  assertCompanyPermission,
+} from "@/lib/assert-company-access";
+import {
+  assertUuid,
+  validateCompanyInput,
+  validateTaxRegime,
+  type CreateCompanyInput,
+} from "@/lib/company-validation";
+import { permissionsForRole, type Permission } from "@/lib/permissions";
+
+export type { CreateCompanyInput } from "@/lib/company-validation";
 
 export type CompanySummary = {
   id: string;
@@ -20,13 +33,6 @@ export type CompanyContext = {
   companies: CompanySummary[];
   activeCompanyId: string | null;
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function assertUuid(value: unknown, label = "company"): string {
-  if (typeof value !== "string" || !UUID_RE.test(value)) throw new Error(`Invalid ${label} id`);
-  return value;
-}
 
 /**
  * Companies the signed-in user is an active member of, plus the resolved
@@ -72,7 +78,8 @@ export const setActiveCompany = createServerFn({ method: "POST" })
   .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input?.companyId) }))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    // Database trigger rejects companies the caller is not a member of.
+    // Membership check (server) + DB trigger as defence in depth.
+    await assertCompanyMember(supabase, data.companyId);
     const { error } = await supabase
       .from("profiles")
       .update({ last_company_id: data.companyId })
@@ -80,34 +87,6 @@ export const setActiveCompany = createServerFn({ method: "POST" })
     if (error) throw new Error("You do not have access to that company.");
     return { ok: true };
   });
-
-export type CreateCompanyInput = {
-  name: string;
-  legal_name?: string;
-  country_code: string;
-  base_currency: string;
-  fiscal_year_end_month: number;
-  fiscal_year_end_day: number;
-  timezone: string;
-};
-
-function validateCompanyInput(input: CreateCompanyInput): CreateCompanyInput {
-  const name = (input?.name ?? "").trim();
-  if (name.length < 2 || name.length > 160) throw new Error("Enter a company name (2–160 characters).");
-  const country_code = (input.country_code ?? "").toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country_code)) throw new Error("Choose a country.");
-  const base_currency = (input.base_currency ?? "").toUpperCase();
-  if (!/^[A-Z]{3}$/.test(base_currency)) throw new Error("Choose a base currency.");
-  const m = Number(input.fiscal_year_end_month);
-  const d = Number(input.fiscal_year_end_day);
-  if (!Number.isInteger(m) || m < 1 || m > 12) throw new Error("Choose a financial year end month.");
-  const maxDay = new Date(2023, m, 0).getDate();
-  if (!Number.isInteger(d) || d < 1 || d > maxDay) throw new Error("Choose a valid financial year end day.");
-  const timezone = (input.timezone ?? "").trim();
-  if (!timezone || timezone.length > 64) throw new Error("Choose a time zone.");
-  const legal_name = (input.legal_name ?? "").trim().slice(0, 200);
-  return { name, legal_name, country_code, base_currency, fiscal_year_end_month: m, fiscal_year_end_day: d, timezone };
-}
 
 export const createCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -131,7 +110,24 @@ export const openDemoCompany = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const { data: id, error } = await context.supabase.rpc("create_demo_company");
     if (error) throw new Error(error.message);
-    return { id: id as string };
+    const companyId = id as string;
+    // Seed sample ledger through PostingEngine when empty (idempotent).
+    try {
+      const { seedDemoCompanyData } = await import("@/lib/demo/seed-demo");
+      const { count } = await context.supabase
+        .from("journals" as never)
+        .select("id" as never, { count: "exact", head: true })
+        .eq("company_id" as never, companyId as never);
+      if ((count ?? 0) === 0) {
+        await seedDemoCompanyData(context.supabase, {
+          companyId,
+          userId: context.userId,
+        });
+      }
+    } catch {
+      // Masters still usable; user can reseed from Settings → Demo
+    }
+    return { id: companyId };
   });
 
 export type CompanyDetails = CompanySummary & {
@@ -148,6 +144,7 @@ export const getCompanyDetails = createServerFn({ method: "GET" })
   .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input?.companyId) }))
   .handler(async ({ data, context }): Promise<CompanyDetails> => {
     const { supabase, userId } = context;
+    await assertCompanyMember(supabase, data.companyId);
     const { data: row, error } = await supabase
       .from("companies")
       .select(
@@ -175,13 +172,17 @@ export const getCompanyDetails = createServerFn({ method: "GET" })
 export const updateCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: CreateCompanyInput & { companyId: string; tax_regime: string; registration_number: string; prices_include_tax: boolean }) => {
+    (input: CreateCompanyInput & {
+      companyId: string;
+      tax_regime: string;
+      registration_number: string;
+      prices_include_tax: boolean;
+    }) => {
       const base = validateCompanyInput(input);
-      const tax_regime = ["none", "vat", "gst", "sales_tax", "other"].includes(input.tax_regime) ? input.tax_regime : "none";
       return {
         ...base,
         companyId: assertUuid(input.companyId),
-        tax_regime,
+        tax_regime: validateTaxRegime(input.tax_regime),
         registration_number: (input.registration_number ?? "").trim().slice(0, 60),
         prices_include_tax: Boolean(input.prices_include_tax),
       };
@@ -189,6 +190,7 @@ export const updateCompany = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "company.settings.edit");
     const { data: updated, error } = await supabase
       .from("companies")
       .update({
@@ -233,6 +235,7 @@ export const listCompanyMembers = createServerFn({ method: "GET" })
   .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input?.companyId) }))
   .handler(async ({ data, context }): Promise<CompanyMember[]> => {
     const { supabase, userId } = context;
+    await assertCompanyPermission(supabase, data.companyId, "members.view");
     const { data: rows, error } = await supabase
       .from("company_members")
       .select("user_id, role, status")
@@ -253,3 +256,47 @@ export const listCompanyMembers = createServerFn({ method: "GET" })
       is_you: r.user_id === userId,
     }));
   });
+
+/** Active-company role permissions for UI gating (RLS remains authoritative). */
+export const getActiveCompanyPermissions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(
+    async ({
+      context,
+    }): Promise<{ companyId: string | null; role: CompanyRole | null; permissions: Permission[] }> => {
+      const { supabase, userId } = context;
+      const { data: memberships, error } = await supabase
+        .from("company_members")
+        .select("role, companies!inner(id, archived_at, is_demo)")
+        .eq("user_id", userId)
+        .eq("status", "active");
+      if (error) throw new Error(error.message);
+
+      const companies = (memberships ?? [])
+        .map((m) => {
+          const c = m.companies as { id: string; archived_at: string | null; is_demo: boolean };
+          return { id: c.id, archived_at: c.archived_at, is_demo: c.is_demo, role: m.role as CompanyRole };
+        })
+        .filter((c) => !c.archived_at);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("last_company_id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const remembered = profile?.last_company_id ?? null;
+      const active =
+        companies.find((c) => c.id === remembered) ??
+        companies.find((c) => !c.is_demo) ??
+        companies[0] ??
+        null;
+
+      if (!active) return { companyId: null, role: null, permissions: [] };
+      return {
+        companyId: active.id,
+        role: active.role,
+        permissions: [...permissionsForRole(active.role)],
+      };
+    },
+  );

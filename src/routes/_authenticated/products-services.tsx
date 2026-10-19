@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Package } from "lucide-react";
 import { PageHeader } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
-import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/products-services")({
   head: () => ({
@@ -27,14 +26,12 @@ function Items() {
     <>
       <PageHeader
         title="Products & Services"
-        description="Items you sell or buy, each with a default ledger account and tax treatment."
-        actions={<Button size="sm">New item</Button>}
+        description="Catalogue items with default accounts and tax — not fully wired yet."
       />
       <CompanyEmptyState
         icon={Package}
-        title="No products or services"
-        description="Items with their default account, tax treatment and price will be listed here once added."
-        actionLabel="New item"
+        title="Not available yet"
+        description="This module is a shell. Demo Company does not invent a separate products ledger — use invoice and bill line descriptions for now."
       />
     </>
   );

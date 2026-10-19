@@ -147,7 +147,15 @@ function RootComponent() {
   // Single app-wide auth listener: re-run route guards on identity changes.
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      // TOKEN_REFRESHED keeps serverFn bearer tokens aligned after session refresh.
+      if (
+        event !== "SIGNED_IN" &&
+        event !== "SIGNED_OUT" &&
+        event !== "USER_UPDATED" &&
+        event !== "TOKEN_REFRESHED"
+      ) {
+        return;
+      }
       if (event === "SIGNED_OUT") queryClient.clear();
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
