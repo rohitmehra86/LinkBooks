@@ -2,18 +2,18 @@
 
 ## Must have before real client data
 
-- [ ] RLS enabled on **every** business table (company-scoped)
-- [ ] Test: User A cannot read User B’s company data
-- [ ] Roles enforced in DB (`role_permissions`), not only UI
+- [x] RLS enabled on **every current** business table (company-scoped) — Phase 2 tables
+- [ ] Test: User A cannot read User B’s company data (**live 2-user staging test still required**)
+- [x] Roles catalogue in DB (`role_permissions`) + server `has_company_permission` checks on settings/members
 - [ ] Invite flow: email invite → join company with role
-- [ ] Last-owner protection (cannot remove last Owner)
-- [ ] Auth required on all server functions that touch data
-- [ ] `.env` / secrets **not** committed (use `.env.example` only)
+- [x] Last-owner protection (cannot remove last Owner) — DB trigger
+- [x] Auth required on all server functions that touch company data
+- [x] `.env` / secrets **not** committed (use `.env.example` only)
 - [ ] Staging project ≠ production project
 - [ ] Automated DB backups + one restore drill
 - [ ] Audit log for money + user/role changes
 - [ ] MFA for Owner/Admin before go-live with clients
-- [ ] No hard-coded demo figures shown as real company data
+- [x] No hard-coded demo figures shown as real company data (switcher/settings wired)
 
 ## Sensitive data practices
 

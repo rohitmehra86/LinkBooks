@@ -10,6 +10,8 @@ import {
   Sparkles,
   Settings,
   LifeBuoy,
+  Briefcase,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,10 +52,28 @@ export const navItems: NavItem[] = [
   },
   { label: "Reports", to: "/reports", icon: BarChart3, description: "Financial statements" },
   {
+    label: "Accountant",
+    to: "/accountant",
+    icon: Briefcase,
+    description: "Period-end checklist and review",
+  },
+  {
+    label: "Firm",
+    to: "/firm",
+    icon: Building2,
+    description: "Practice and client access",
+  },
+  {
     label: "AI Assistant",
     to: "/ai-assistant",
     icon: Sparkles,
     description: "Accounting guidance and review",
+  },
+  {
+    label: "Tax",
+    to: "/tax",
+    icon: ReceiptText,
+    description: "Rates, codes and tax accounts",
   },
   {
     label: "Settings",

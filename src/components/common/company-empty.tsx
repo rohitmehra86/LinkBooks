@@ -27,8 +27,8 @@ export function CompanyEmptyState({
     <EmptyState
       title={title}
       description={`${scope}${description}`}
-      actionLabel={actionLabel}
-      icon={icon}
+      {...(actionLabel !== undefined ? { actionLabel } : {})}
+      {...(icon !== undefined ? { icon } : {})}
     />
   );
 }

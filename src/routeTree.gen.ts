@@ -14,17 +14,58 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedAccountantRouteImport } from './routes/_authenticated/accountant'
 import { Route as AuthenticatedAccountingRouteImport } from './routes/_authenticated/accounting'
 import { Route as AuthenticatedAiAssistantRouteImport } from './routes/_authenticated/ai-assistant'
-import { Route as AuthenticatedBankingRouteImport } from './routes/_authenticated/banking'
-import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
+import { Route as AuthenticatedBankingRouteRouteImport } from './routes/_authenticated/banking/route'
+import { Route as AuthenticatedFirmRouteImport } from './routes/_authenticated/firm'
 import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedProductsServicesRouteImport } from './routes/_authenticated/products-services'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
-import { Route as AuthenticatedPurchasesRouteImport } from './routes/_authenticated/purchases'
+import { Route as AuthenticatedPurchasesRouteRouteImport } from './routes/_authenticated/purchases/route'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
-import { Route as AuthenticatedSalesRouteImport } from './routes/_authenticated/sales'
+import { Route as AuthenticatedSalesRouteRouteImport } from './routes/_authenticated/sales/route'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedTaxRouteImport } from './routes/_authenticated/tax'
+import { Route as AuthenticatedBankingIndexRouteImport } from './routes/_authenticated/banking/index'
+import { Route as AuthenticatedBankingImportRouteImport } from './routes/_authenticated/banking/import'
+import { Route as AuthenticatedBankingReconcileRouteImport } from './routes/_authenticated/banking/reconcile'
+import { Route as AuthenticatedBankingRulesRouteImport } from './routes/_authenticated/banking/rules'
+import { Route as AuthenticatedBankingTransactionsRouteImport } from './routes/_authenticated/banking/transactions'
+import { Route as AuthenticatedBankingTransfersRouteImport } from './routes/_authenticated/banking/transfers'
+import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
+import { Route as AuthenticatedContactsContactIdRouteImport } from './routes/_authenticated/contacts/$contactId'
+import { Route as AuthenticatedPurchasesIndexRouteImport } from './routes/_authenticated/purchases/index'
+import { Route as AuthenticatedPurchasesEmployeeExpensesRouteImport } from './routes/_authenticated/purchases/employee-expenses'
+import { Route as AuthenticatedPurchasesRecurringRouteImport } from './routes/_authenticated/purchases/recurring'
+import { Route as AuthenticatedPurchasesStatementsRouteImport } from './routes/_authenticated/purchases/statements'
+import { Route as AuthenticatedPurchasesSuppliersRouteImport } from './routes/_authenticated/purchases/suppliers'
+import { Route as AuthenticatedSalesIndexRouteImport } from './routes/_authenticated/sales/index'
+import { Route as AuthenticatedSalesCustomersRouteImport } from './routes/_authenticated/sales/customers'
+import { Route as AuthenticatedSalesRecurringRouteImport } from './routes/_authenticated/sales/recurring'
+import { Route as AuthenticatedSalesStatementsRouteImport } from './routes/_authenticated/sales/statements'
+import { Route as AuthenticatedPurchasesBillsIndexRouteImport } from './routes/_authenticated/purchases/bills.index'
+import { Route as AuthenticatedPurchasesBillsBillIdRouteImport } from './routes/_authenticated/purchases/bills.$billId'
+import { Route as AuthenticatedPurchasesBillsNewRouteImport } from './routes/_authenticated/purchases/bills.new'
+import { Route as AuthenticatedPurchasesCreditNotesIndexRouteImport } from './routes/_authenticated/purchases/credit-notes.index'
+import { Route as AuthenticatedPurchasesCreditNotesNewRouteImport } from './routes/_authenticated/purchases/credit-notes.new'
+import { Route as AuthenticatedPurchasesExpensesIndexRouteImport } from './routes/_authenticated/purchases/expenses.index'
+import { Route as AuthenticatedPurchasesExpensesExpenseIdRouteImport } from './routes/_authenticated/purchases/expenses.$expenseId'
+import { Route as AuthenticatedPurchasesExpensesNewRouteImport } from './routes/_authenticated/purchases/expenses.new'
+import { Route as AuthenticatedPurchasesOrdersIndexRouteImport } from './routes/_authenticated/purchases/orders.index'
+import { Route as AuthenticatedPurchasesOrdersNewRouteImport } from './routes/_authenticated/purchases/orders.new'
+import { Route as AuthenticatedPurchasesPaymentsIndexRouteImport } from './routes/_authenticated/purchases/payments.index'
+import { Route as AuthenticatedPurchasesPaymentsNewRouteImport } from './routes/_authenticated/purchases/payments.new'
+import { Route as AuthenticatedSalesCreditNotesIndexRouteImport } from './routes/_authenticated/sales/credit-notes.index'
+import { Route as AuthenticatedSalesCreditNotesNewRouteImport } from './routes/_authenticated/sales/credit-notes.new'
+import { Route as AuthenticatedSalesInvoicesIndexRouteImport } from './routes/_authenticated/sales/invoices.index'
+import { Route as AuthenticatedSalesInvoicesInvoiceIdRouteImport } from './routes/_authenticated/sales/invoices.$invoiceId'
+import { Route as AuthenticatedSalesInvoicesNewRouteImport } from './routes/_authenticated/sales/invoices.new'
+import { Route as AuthenticatedSalesQuotesIndexRouteImport } from './routes/_authenticated/sales/quotes.index'
+import { Route as AuthenticatedSalesQuotesNewRouteImport } from './routes/_authenticated/sales/quotes.new'
+import { Route as AuthenticatedSalesReceiptsIndexRouteImport } from './routes/_authenticated/sales/receipts.index'
+import { Route as AuthenticatedSalesReceiptsNewRouteImport } from './routes/_authenticated/sales/receipts.new'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -50,6 +91,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAccountantRoute = AuthenticatedAccountantRouteImport.update({
+  id: '/accountant',
+  path: '/accountant',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAccountingRoute = AuthenticatedAccountingRouteImport.update({
   id: '/accounting',
   path: '/accounting',
@@ -61,19 +107,25 @@ const AuthenticatedAiAssistantRoute =
     path: '/ai-assistant',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedBankingRoute = AuthenticatedBankingRouteImport.update({
-  id: '/banking',
-  path: '/banking',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedContactsRoute = AuthenticatedContactsRouteImport.update({
-  id: '/contacts',
-  path: '/contacts',
+const AuthenticatedBankingRouteRoute =
+  AuthenticatedBankingRouteRouteImport.update({
+    id: '/banking',
+    path: '/banking',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedFirmRoute = AuthenticatedFirmRouteImport.update({
+  id: '/firm',
+  path: '/firm',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedHelpRoute = AuthenticatedHelpRouteImport.update({
   id: '/help',
   path: '/help',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProductsServicesRoute =
@@ -87,17 +139,18 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedPurchasesRoute = AuthenticatedPurchasesRouteImport.update({
-  id: '/purchases',
-  path: '/purchases',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
+const AuthenticatedPurchasesRouteRoute =
+  AuthenticatedPurchasesRouteRouteImport.update({
+    id: '/purchases',
+    path: '/purchases',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedSalesRoute = AuthenticatedSalesRouteImport.update({
+const AuthenticatedSalesRouteRoute = AuthenticatedSalesRouteRouteImport.update({
   id: '/sales',
   path: '/sales',
   getParentRoute: () => AuthenticatedRouteRoute,
@@ -107,40 +160,351 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedTaxRoute = AuthenticatedTaxRouteImport.update({
+  id: '/tax',
+  path: '/tax',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedBankingIndexRoute =
+  AuthenticatedBankingIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingImportRoute =
+  AuthenticatedBankingImportRouteImport.update({
+    id: '/import',
+    path: '/import',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingReconcileRoute =
+  AuthenticatedBankingReconcileRouteImport.update({
+    id: '/reconcile',
+    path: '/reconcile',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingRulesRoute =
+  AuthenticatedBankingRulesRouteImport.update({
+    id: '/rules',
+    path: '/rules',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingTransactionsRoute =
+  AuthenticatedBankingTransactionsRouteImport.update({
+    id: '/transactions',
+    path: '/transactions',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingTransfersRoute =
+  AuthenticatedBankingTransfersRouteImport.update({
+    id: '/transfers',
+    path: '/transfers',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedContactsIndexRoute =
+  AuthenticatedContactsIndexRouteImport.update({
+    id: '/contacts/',
+    path: '/contacts/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedContactsContactIdRoute =
+  AuthenticatedContactsContactIdRouteImport.update({
+    id: '/contacts/$contactId',
+    path: '/contacts/$contactId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPurchasesIndexRoute =
+  AuthenticatedPurchasesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesEmployeeExpensesRoute =
+  AuthenticatedPurchasesEmployeeExpensesRouteImport.update({
+    id: '/employee-expenses',
+    path: '/employee-expenses',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesRecurringRoute =
+  AuthenticatedPurchasesRecurringRouteImport.update({
+    id: '/recurring',
+    path: '/recurring',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesStatementsRoute =
+  AuthenticatedPurchasesStatementsRouteImport.update({
+    id: '/statements',
+    path: '/statements',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesSuppliersRoute =
+  AuthenticatedPurchasesSuppliersRouteImport.update({
+    id: '/suppliers',
+    path: '/suppliers',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedSalesIndexRoute = AuthenticatedSalesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedSalesRouteRoute,
+} as any)
+const AuthenticatedSalesCustomersRoute =
+  AuthenticatedSalesCustomersRouteImport.update({
+    id: '/customers',
+    path: '/customers',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesRecurringRoute =
+  AuthenticatedSalesRecurringRouteImport.update({
+    id: '/recurring',
+    path: '/recurring',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesStatementsRoute =
+  AuthenticatedSalesStatementsRouteImport.update({
+    id: '/statements',
+    path: '/statements',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesBillsIndexRoute =
+  AuthenticatedPurchasesBillsIndexRouteImport.update({
+    id: '/bills/',
+    path: '/bills/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesBillsBillIdRoute =
+  AuthenticatedPurchasesBillsBillIdRouteImport.update({
+    id: '/bills/$billId',
+    path: '/bills/$billId',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesBillsNewRoute =
+  AuthenticatedPurchasesBillsNewRouteImport.update({
+    id: '/bills/new',
+    path: '/bills/new',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesCreditNotesIndexRoute =
+  AuthenticatedPurchasesCreditNotesIndexRouteImport.update({
+    id: '/credit-notes/',
+    path: '/credit-notes/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesCreditNotesNewRoute =
+  AuthenticatedPurchasesCreditNotesNewRouteImport.update({
+    id: '/credit-notes/new',
+    path: '/credit-notes/new',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesExpensesIndexRoute =
+  AuthenticatedPurchasesExpensesIndexRouteImport.update({
+    id: '/expenses/',
+    path: '/expenses/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesExpensesExpenseIdRoute =
+  AuthenticatedPurchasesExpensesExpenseIdRouteImport.update({
+    id: '/expenses/$expenseId',
+    path: '/expenses/$expenseId',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesExpensesNewRoute =
+  AuthenticatedPurchasesExpensesNewRouteImport.update({
+    id: '/expenses/new',
+    path: '/expenses/new',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesOrdersIndexRoute =
+  AuthenticatedPurchasesOrdersIndexRouteImport.update({
+    id: '/orders/',
+    path: '/orders/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesOrdersNewRoute =
+  AuthenticatedPurchasesOrdersNewRouteImport.update({
+    id: '/orders/new',
+    path: '/orders/new',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesPaymentsIndexRoute =
+  AuthenticatedPurchasesPaymentsIndexRouteImport.update({
+    id: '/payments/',
+    path: '/payments/',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedPurchasesPaymentsNewRoute =
+  AuthenticatedPurchasesPaymentsNewRouteImport.update({
+    id: '/payments/new',
+    path: '/payments/new',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
+const AuthenticatedSalesCreditNotesIndexRoute =
+  AuthenticatedSalesCreditNotesIndexRouteImport.update({
+    id: '/credit-notes/',
+    path: '/credit-notes/',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesCreditNotesNewRoute =
+  AuthenticatedSalesCreditNotesNewRouteImport.update({
+    id: '/credit-notes/new',
+    path: '/credit-notes/new',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesInvoicesIndexRoute =
+  AuthenticatedSalesInvoicesIndexRouteImport.update({
+    id: '/invoices/',
+    path: '/invoices/',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesInvoicesInvoiceIdRoute =
+  AuthenticatedSalesInvoicesInvoiceIdRouteImport.update({
+    id: '/invoices/$invoiceId',
+    path: '/invoices/$invoiceId',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesInvoicesNewRoute =
+  AuthenticatedSalesInvoicesNewRouteImport.update({
+    id: '/invoices/new',
+    path: '/invoices/new',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesQuotesIndexRoute =
+  AuthenticatedSalesQuotesIndexRouteImport.update({
+    id: '/quotes/',
+    path: '/quotes/',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesQuotesNewRoute =
+  AuthenticatedSalesQuotesNewRouteImport.update({
+    id: '/quotes/new',
+    path: '/quotes/new',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesReceiptsIndexRoute =
+  AuthenticatedSalesReceiptsIndexRouteImport.update({
+    id: '/receipts/',
+    path: '/receipts/',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesReceiptsNewRoute =
+  AuthenticatedSalesReceiptsNewRouteImport.update({
+    id: '/receipts/new',
+    path: '/receipts/new',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/banking': typeof AuthenticatedBankingRouteRouteWithChildren
+  '/purchases': typeof AuthenticatedPurchasesRouteRouteWithChildren
+  '/sales': typeof AuthenticatedSalesRouteRouteWithChildren
+  '/accountant': typeof AuthenticatedAccountantRoute
   '/accounting': typeof AuthenticatedAccountingRoute
   '/ai-assistant': typeof AuthenticatedAiAssistantRoute
-  '/banking': typeof AuthenticatedBankingRoute
-  '/contacts': typeof AuthenticatedContactsRoute
+  '/firm': typeof AuthenticatedFirmRoute
   '/help': typeof AuthenticatedHelpRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
-  '/purchases': typeof AuthenticatedPurchasesRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/tax': typeof AuthenticatedTaxRoute
+  '/banking/import': typeof AuthenticatedBankingImportRoute
+  '/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
+  '/banking/rules': typeof AuthenticatedBankingRulesRoute
+  '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
+  '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
+  '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
+  '/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
+  '/sales/customers': typeof AuthenticatedSalesCustomersRoute
+  '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/banking/': typeof AuthenticatedBankingIndexRoute
+  '/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/purchases/': typeof AuthenticatedPurchasesIndexRoute
+  '/sales/': typeof AuthenticatedSalesIndexRoute
+  '/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRoute
+  '/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
+  '/purchases/credit-notes/new': typeof AuthenticatedPurchasesCreditNotesNewRoute
+  '/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
+  '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
+  '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
+  '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
+  '/sales/invoices/$invoiceId': typeof AuthenticatedSalesInvoicesInvoiceIdRoute
+  '/sales/invoices/new': typeof AuthenticatedSalesInvoicesNewRoute
+  '/sales/quotes/new': typeof AuthenticatedSalesQuotesNewRoute
+  '/sales/receipts/new': typeof AuthenticatedSalesReceiptsNewRoute
+  '/purchases/bills/': typeof AuthenticatedPurchasesBillsIndexRoute
+  '/purchases/credit-notes/': typeof AuthenticatedPurchasesCreditNotesIndexRoute
+  '/purchases/expenses/': typeof AuthenticatedPurchasesExpensesIndexRoute
+  '/purchases/orders/': typeof AuthenticatedPurchasesOrdersIndexRoute
+  '/purchases/payments/': typeof AuthenticatedPurchasesPaymentsIndexRoute
+  '/sales/credit-notes/': typeof AuthenticatedSalesCreditNotesIndexRoute
+  '/sales/invoices/': typeof AuthenticatedSalesInvoicesIndexRoute
+  '/sales/quotes/': typeof AuthenticatedSalesQuotesIndexRoute
+  '/sales/receipts/': typeof AuthenticatedSalesReceiptsIndexRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/accountant': typeof AuthenticatedAccountantRoute
   '/accounting': typeof AuthenticatedAccountingRoute
   '/ai-assistant': typeof AuthenticatedAiAssistantRoute
-  '/banking': typeof AuthenticatedBankingRoute
-  '/contacts': typeof AuthenticatedContactsRoute
+  '/firm': typeof AuthenticatedFirmRoute
   '/help': typeof AuthenticatedHelpRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
-  '/purchases': typeof AuthenticatedPurchasesRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/tax': typeof AuthenticatedTaxRoute
   '/': typeof AuthenticatedIndexRoute
+  '/banking/import': typeof AuthenticatedBankingImportRoute
+  '/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
+  '/banking/rules': typeof AuthenticatedBankingRulesRoute
+  '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
+  '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
+  '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
+  '/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
+  '/sales/customers': typeof AuthenticatedSalesCustomersRoute
+  '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/banking': typeof AuthenticatedBankingIndexRoute
+  '/contacts': typeof AuthenticatedContactsIndexRoute
+  '/purchases': typeof AuthenticatedPurchasesIndexRoute
+  '/sales': typeof AuthenticatedSalesIndexRoute
+  '/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRoute
+  '/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
+  '/purchases/credit-notes/new': typeof AuthenticatedPurchasesCreditNotesNewRoute
+  '/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
+  '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
+  '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
+  '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
+  '/sales/invoices/$invoiceId': typeof AuthenticatedSalesInvoicesInvoiceIdRoute
+  '/sales/invoices/new': typeof AuthenticatedSalesInvoicesNewRoute
+  '/sales/quotes/new': typeof AuthenticatedSalesQuotesNewRoute
+  '/sales/receipts/new': typeof AuthenticatedSalesReceiptsNewRoute
+  '/purchases/bills': typeof AuthenticatedPurchasesBillsIndexRoute
+  '/purchases/credit-notes': typeof AuthenticatedPurchasesCreditNotesIndexRoute
+  '/purchases/expenses': typeof AuthenticatedPurchasesExpensesIndexRoute
+  '/purchases/orders': typeof AuthenticatedPurchasesOrdersIndexRoute
+  '/purchases/payments': typeof AuthenticatedPurchasesPaymentsIndexRoute
+  '/sales/credit-notes': typeof AuthenticatedSalesCreditNotesIndexRoute
+  '/sales/invoices': typeof AuthenticatedSalesInvoicesIndexRoute
+  '/sales/quotes': typeof AuthenticatedSalesQuotesIndexRoute
+  '/sales/receipts': typeof AuthenticatedSalesReceiptsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -148,18 +512,59 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/banking': typeof AuthenticatedBankingRouteRouteWithChildren
+  '/_authenticated/purchases': typeof AuthenticatedPurchasesRouteRouteWithChildren
+  '/_authenticated/sales': typeof AuthenticatedSalesRouteRouteWithChildren
+  '/_authenticated/accountant': typeof AuthenticatedAccountantRoute
   '/_authenticated/accounting': typeof AuthenticatedAccountingRoute
   '/_authenticated/ai-assistant': typeof AuthenticatedAiAssistantRoute
-  '/_authenticated/banking': typeof AuthenticatedBankingRoute
-  '/_authenticated/contacts': typeof AuthenticatedContactsRoute
+  '/_authenticated/firm': typeof AuthenticatedFirmRoute
   '/_authenticated/help': typeof AuthenticatedHelpRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/products-services': typeof AuthenticatedProductsServicesRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
-  '/_authenticated/purchases': typeof AuthenticatedPurchasesRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
-  '/_authenticated/sales': typeof AuthenticatedSalesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/tax': typeof AuthenticatedTaxRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/banking/import': typeof AuthenticatedBankingImportRoute
+  '/_authenticated/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
+  '/_authenticated/banking/rules': typeof AuthenticatedBankingRulesRoute
+  '/_authenticated/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
+  '/_authenticated/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/_authenticated/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/_authenticated/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
+  '/_authenticated/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/_authenticated/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
+  '/_authenticated/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
+  '/_authenticated/sales/customers': typeof AuthenticatedSalesCustomersRoute
+  '/_authenticated/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/_authenticated/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/_authenticated/banking/': typeof AuthenticatedBankingIndexRoute
+  '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
+  '/_authenticated/purchases/': typeof AuthenticatedPurchasesIndexRoute
+  '/_authenticated/sales/': typeof AuthenticatedSalesIndexRoute
+  '/_authenticated/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRoute
+  '/_authenticated/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
+  '/_authenticated/purchases/credit-notes/new': typeof AuthenticatedPurchasesCreditNotesNewRoute
+  '/_authenticated/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
+  '/_authenticated/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
+  '/_authenticated/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/_authenticated/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
+  '/_authenticated/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
+  '/_authenticated/sales/invoices/$invoiceId': typeof AuthenticatedSalesInvoicesInvoiceIdRoute
+  '/_authenticated/sales/invoices/new': typeof AuthenticatedSalesInvoicesNewRoute
+  '/_authenticated/sales/quotes/new': typeof AuthenticatedSalesQuotesNewRoute
+  '/_authenticated/sales/receipts/new': typeof AuthenticatedSalesReceiptsNewRoute
+  '/_authenticated/purchases/bills/': typeof AuthenticatedPurchasesBillsIndexRoute
+  '/_authenticated/purchases/credit-notes/': typeof AuthenticatedPurchasesCreditNotesIndexRoute
+  '/_authenticated/purchases/expenses/': typeof AuthenticatedPurchasesExpensesIndexRoute
+  '/_authenticated/purchases/orders/': typeof AuthenticatedPurchasesOrdersIndexRoute
+  '/_authenticated/purchases/payments/': typeof AuthenticatedPurchasesPaymentsIndexRoute
+  '/_authenticated/sales/credit-notes/': typeof AuthenticatedSalesCreditNotesIndexRoute
+  '/_authenticated/sales/invoices/': typeof AuthenticatedSalesInvoicesIndexRoute
+  '/_authenticated/sales/quotes/': typeof AuthenticatedSalesQuotesIndexRoute
+  '/_authenticated/sales/receipts/': typeof AuthenticatedSalesReceiptsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -168,52 +573,172 @@ export interface FileRouteTypes {
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/banking'
+    | '/purchases'
+    | '/sales'
+    | '/accountant'
     | '/accounting'
     | '/ai-assistant'
-    | '/banking'
-    | '/contacts'
+    | '/firm'
     | '/help'
+    | '/onboarding'
     | '/products-services'
     | '/profile'
-    | '/purchases'
     | '/reports'
-    | '/sales'
     | '/settings'
+    | '/tax'
+    | '/banking/import'
+    | '/banking/reconcile'
+    | '/banking/rules'
+    | '/banking/transactions'
+    | '/banking/transfers'
+    | '/contacts/$contactId'
+    | '/purchases/employee-expenses'
+    | '/purchases/recurring'
+    | '/purchases/statements'
+    | '/purchases/suppliers'
+    | '/sales/customers'
+    | '/sales/recurring'
+    | '/sales/statements'
+    | '/banking/'
+    | '/contacts/'
+    | '/purchases/'
+    | '/sales/'
+    | '/purchases/bills/$billId'
+    | '/purchases/bills/new'
+    | '/purchases/credit-notes/new'
+    | '/purchases/expenses/$expenseId'
+    | '/purchases/expenses/new'
+    | '/purchases/orders/new'
+    | '/purchases/payments/new'
+    | '/sales/credit-notes/new'
+    | '/sales/invoices/$invoiceId'
+    | '/sales/invoices/new'
+    | '/sales/quotes/new'
+    | '/sales/receipts/new'
+    | '/purchases/bills/'
+    | '/purchases/credit-notes/'
+    | '/purchases/expenses/'
+    | '/purchases/orders/'
+    | '/purchases/payments/'
+    | '/sales/credit-notes/'
+    | '/sales/invoices/'
+    | '/sales/quotes/'
+    | '/sales/receipts/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/accountant'
     | '/accounting'
     | '/ai-assistant'
-    | '/banking'
-    | '/contacts'
+    | '/firm'
     | '/help'
+    | '/onboarding'
     | '/products-services'
     | '/profile'
-    | '/purchases'
     | '/reports'
-    | '/sales'
     | '/settings'
+    | '/tax'
     | '/'
+    | '/banking/import'
+    | '/banking/reconcile'
+    | '/banking/rules'
+    | '/banking/transactions'
+    | '/banking/transfers'
+    | '/contacts/$contactId'
+    | '/purchases/employee-expenses'
+    | '/purchases/recurring'
+    | '/purchases/statements'
+    | '/purchases/suppliers'
+    | '/sales/customers'
+    | '/sales/recurring'
+    | '/sales/statements'
+    | '/banking'
+    | '/contacts'
+    | '/purchases'
+    | '/sales'
+    | '/purchases/bills/$billId'
+    | '/purchases/bills/new'
+    | '/purchases/credit-notes/new'
+    | '/purchases/expenses/$expenseId'
+    | '/purchases/expenses/new'
+    | '/purchases/orders/new'
+    | '/purchases/payments/new'
+    | '/sales/credit-notes/new'
+    | '/sales/invoices/$invoiceId'
+    | '/sales/invoices/new'
+    | '/sales/quotes/new'
+    | '/sales/receipts/new'
+    | '/purchases/bills'
+    | '/purchases/credit-notes'
+    | '/purchases/expenses'
+    | '/purchases/orders'
+    | '/purchases/payments'
+    | '/sales/credit-notes'
+    | '/sales/invoices'
+    | '/sales/quotes'
+    | '/sales/receipts'
   id:
     | '__root__'
     | '/_authenticated'
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/_authenticated/banking'
+    | '/_authenticated/purchases'
+    | '/_authenticated/sales'
+    | '/_authenticated/accountant'
     | '/_authenticated/accounting'
     | '/_authenticated/ai-assistant'
-    | '/_authenticated/banking'
-    | '/_authenticated/contacts'
+    | '/_authenticated/firm'
     | '/_authenticated/help'
+    | '/_authenticated/onboarding'
     | '/_authenticated/products-services'
     | '/_authenticated/profile'
-    | '/_authenticated/purchases'
     | '/_authenticated/reports'
-    | '/_authenticated/sales'
     | '/_authenticated/settings'
+    | '/_authenticated/tax'
     | '/_authenticated/'
+    | '/_authenticated/banking/import'
+    | '/_authenticated/banking/reconcile'
+    | '/_authenticated/banking/rules'
+    | '/_authenticated/banking/transactions'
+    | '/_authenticated/banking/transfers'
+    | '/_authenticated/contacts/$contactId'
+    | '/_authenticated/purchases/employee-expenses'
+    | '/_authenticated/purchases/recurring'
+    | '/_authenticated/purchases/statements'
+    | '/_authenticated/purchases/suppliers'
+    | '/_authenticated/sales/customers'
+    | '/_authenticated/sales/recurring'
+    | '/_authenticated/sales/statements'
+    | '/_authenticated/banking/'
+    | '/_authenticated/contacts/'
+    | '/_authenticated/purchases/'
+    | '/_authenticated/sales/'
+    | '/_authenticated/purchases/bills/$billId'
+    | '/_authenticated/purchases/bills/new'
+    | '/_authenticated/purchases/credit-notes/new'
+    | '/_authenticated/purchases/expenses/$expenseId'
+    | '/_authenticated/purchases/expenses/new'
+    | '/_authenticated/purchases/orders/new'
+    | '/_authenticated/purchases/payments/new'
+    | '/_authenticated/sales/credit-notes/new'
+    | '/_authenticated/sales/invoices/$invoiceId'
+    | '/_authenticated/sales/invoices/new'
+    | '/_authenticated/sales/quotes/new'
+    | '/_authenticated/sales/receipts/new'
+    | '/_authenticated/purchases/bills/'
+    | '/_authenticated/purchases/credit-notes/'
+    | '/_authenticated/purchases/expenses/'
+    | '/_authenticated/purchases/orders/'
+    | '/_authenticated/purchases/payments/'
+    | '/_authenticated/sales/credit-notes/'
+    | '/_authenticated/sales/invoices/'
+    | '/_authenticated/sales/quotes/'
+    | '/_authenticated/sales/receipts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -260,6 +785,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/accountant': {
+      id: '/_authenticated/accountant'
+      path: '/accountant'
+      fullPath: '/accountant'
+      preLoaderRoute: typeof AuthenticatedAccountantRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/accounting': {
       id: '/_authenticated/accounting'
       path: '/accounting'
@@ -278,14 +810,14 @@ declare module '@tanstack/react-router' {
       id: '/_authenticated/banking'
       path: '/banking'
       fullPath: '/banking'
-      preLoaderRoute: typeof AuthenticatedBankingRouteImport
+      preLoaderRoute: typeof AuthenticatedBankingRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/contacts': {
-      id: '/_authenticated/contacts'
-      path: '/contacts'
-      fullPath: '/contacts'
-      preLoaderRoute: typeof AuthenticatedContactsRouteImport
+    '/_authenticated/firm': {
+      id: '/_authenticated/firm'
+      path: '/firm'
+      fullPath: '/firm'
+      preLoaderRoute: typeof AuthenticatedFirmRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/help': {
@@ -293,6 +825,13 @@ declare module '@tanstack/react-router' {
       path: '/help'
       fullPath: '/help'
       preLoaderRoute: typeof AuthenticatedHelpRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/products-services': {
@@ -313,7 +852,7 @@ declare module '@tanstack/react-router' {
       id: '/_authenticated/purchases'
       path: '/purchases'
       fullPath: '/purchases'
-      preLoaderRoute: typeof AuthenticatedPurchasesRouteImport
+      preLoaderRoute: typeof AuthenticatedPurchasesRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/reports': {
@@ -327,7 +866,7 @@ declare module '@tanstack/react-router' {
       id: '/_authenticated/sales'
       path: '/sales'
       fullPath: '/sales'
-      preLoaderRoute: typeof AuthenticatedSalesRouteImport
+      preLoaderRoute: typeof AuthenticatedSalesRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -337,37 +876,445 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tax': {
+      id: '/_authenticated/tax'
+      path: '/tax'
+      fullPath: '/tax'
+      preLoaderRoute: typeof AuthenticatedTaxRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/banking/': {
+      id: '/_authenticated/banking/'
+      path: '/'
+      fullPath: '/banking/'
+      preLoaderRoute: typeof AuthenticatedBankingIndexRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/import': {
+      id: '/_authenticated/banking/import'
+      path: '/import'
+      fullPath: '/banking/import'
+      preLoaderRoute: typeof AuthenticatedBankingImportRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/reconcile': {
+      id: '/_authenticated/banking/reconcile'
+      path: '/reconcile'
+      fullPath: '/banking/reconcile'
+      preLoaderRoute: typeof AuthenticatedBankingReconcileRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/rules': {
+      id: '/_authenticated/banking/rules'
+      path: '/rules'
+      fullPath: '/banking/rules'
+      preLoaderRoute: typeof AuthenticatedBankingRulesRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/transactions': {
+      id: '/_authenticated/banking/transactions'
+      path: '/transactions'
+      fullPath: '/banking/transactions'
+      preLoaderRoute: typeof AuthenticatedBankingTransactionsRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/transfers': {
+      id: '/_authenticated/banking/transfers'
+      path: '/transfers'
+      fullPath: '/banking/transfers'
+      preLoaderRoute: typeof AuthenticatedBankingTransfersRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/contacts/': {
+      id: '/_authenticated/contacts/'
+      path: '/contacts'
+      fullPath: '/contacts/'
+      preLoaderRoute: typeof AuthenticatedContactsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contacts/$contactId': {
+      id: '/_authenticated/contacts/$contactId'
+      path: '/contacts/$contactId'
+      fullPath: '/contacts/$contactId'
+      preLoaderRoute: typeof AuthenticatedContactsContactIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/purchases/': {
+      id: '/_authenticated/purchases/'
+      path: '/'
+      fullPath: '/purchases/'
+      preLoaderRoute: typeof AuthenticatedPurchasesIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/employee-expenses': {
+      id: '/_authenticated/purchases/employee-expenses'
+      path: '/employee-expenses'
+      fullPath: '/purchases/employee-expenses'
+      preLoaderRoute: typeof AuthenticatedPurchasesEmployeeExpensesRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/recurring': {
+      id: '/_authenticated/purchases/recurring'
+      path: '/recurring'
+      fullPath: '/purchases/recurring'
+      preLoaderRoute: typeof AuthenticatedPurchasesRecurringRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/statements': {
+      id: '/_authenticated/purchases/statements'
+      path: '/statements'
+      fullPath: '/purchases/statements'
+      preLoaderRoute: typeof AuthenticatedPurchasesStatementsRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/suppliers': {
+      id: '/_authenticated/purchases/suppliers'
+      path: '/suppliers'
+      fullPath: '/purchases/suppliers'
+      preLoaderRoute: typeof AuthenticatedPurchasesSuppliersRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/sales/': {
+      id: '/_authenticated/sales/'
+      path: '/'
+      fullPath: '/sales/'
+      preLoaderRoute: typeof AuthenticatedSalesIndexRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/customers': {
+      id: '/_authenticated/sales/customers'
+      path: '/customers'
+      fullPath: '/sales/customers'
+      preLoaderRoute: typeof AuthenticatedSalesCustomersRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/recurring': {
+      id: '/_authenticated/sales/recurring'
+      path: '/recurring'
+      fullPath: '/sales/recurring'
+      preLoaderRoute: typeof AuthenticatedSalesRecurringRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/statements': {
+      id: '/_authenticated/sales/statements'
+      path: '/statements'
+      fullPath: '/sales/statements'
+      preLoaderRoute: typeof AuthenticatedSalesStatementsRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/purchases/bills/': {
+      id: '/_authenticated/purchases/bills/'
+      path: '/bills'
+      fullPath: '/purchases/bills/'
+      preLoaderRoute: typeof AuthenticatedPurchasesBillsIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/bills/$billId': {
+      id: '/_authenticated/purchases/bills/$billId'
+      path: '/bills/$billId'
+      fullPath: '/purchases/bills/$billId'
+      preLoaderRoute: typeof AuthenticatedPurchasesBillsBillIdRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/bills/new': {
+      id: '/_authenticated/purchases/bills/new'
+      path: '/bills/new'
+      fullPath: '/purchases/bills/new'
+      preLoaderRoute: typeof AuthenticatedPurchasesBillsNewRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/credit-notes/': {
+      id: '/_authenticated/purchases/credit-notes/'
+      path: '/credit-notes'
+      fullPath: '/purchases/credit-notes/'
+      preLoaderRoute: typeof AuthenticatedPurchasesCreditNotesIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/credit-notes/new': {
+      id: '/_authenticated/purchases/credit-notes/new'
+      path: '/credit-notes/new'
+      fullPath: '/purchases/credit-notes/new'
+      preLoaderRoute: typeof AuthenticatedPurchasesCreditNotesNewRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/expenses/': {
+      id: '/_authenticated/purchases/expenses/'
+      path: '/expenses'
+      fullPath: '/purchases/expenses/'
+      preLoaderRoute: typeof AuthenticatedPurchasesExpensesIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/expenses/$expenseId': {
+      id: '/_authenticated/purchases/expenses/$expenseId'
+      path: '/expenses/$expenseId'
+      fullPath: '/purchases/expenses/$expenseId'
+      preLoaderRoute: typeof AuthenticatedPurchasesExpensesExpenseIdRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/expenses/new': {
+      id: '/_authenticated/purchases/expenses/new'
+      path: '/expenses/new'
+      fullPath: '/purchases/expenses/new'
+      preLoaderRoute: typeof AuthenticatedPurchasesExpensesNewRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/orders/': {
+      id: '/_authenticated/purchases/orders/'
+      path: '/orders'
+      fullPath: '/purchases/orders/'
+      preLoaderRoute: typeof AuthenticatedPurchasesOrdersIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/orders/new': {
+      id: '/_authenticated/purchases/orders/new'
+      path: '/orders/new'
+      fullPath: '/purchases/orders/new'
+      preLoaderRoute: typeof AuthenticatedPurchasesOrdersNewRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/payments/': {
+      id: '/_authenticated/purchases/payments/'
+      path: '/payments'
+      fullPath: '/purchases/payments/'
+      preLoaderRoute: typeof AuthenticatedPurchasesPaymentsIndexRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/purchases/payments/new': {
+      id: '/_authenticated/purchases/payments/new'
+      path: '/payments/new'
+      fullPath: '/purchases/payments/new'
+      preLoaderRoute: typeof AuthenticatedPurchasesPaymentsNewRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
+    '/_authenticated/sales/credit-notes/': {
+      id: '/_authenticated/sales/credit-notes/'
+      path: '/credit-notes'
+      fullPath: '/sales/credit-notes/'
+      preLoaderRoute: typeof AuthenticatedSalesCreditNotesIndexRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/credit-notes/new': {
+      id: '/_authenticated/sales/credit-notes/new'
+      path: '/credit-notes/new'
+      fullPath: '/sales/credit-notes/new'
+      preLoaderRoute: typeof AuthenticatedSalesCreditNotesNewRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/invoices/': {
+      id: '/_authenticated/sales/invoices/'
+      path: '/invoices'
+      fullPath: '/sales/invoices/'
+      preLoaderRoute: typeof AuthenticatedSalesInvoicesIndexRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/invoices/$invoiceId': {
+      id: '/_authenticated/sales/invoices/$invoiceId'
+      path: '/invoices/$invoiceId'
+      fullPath: '/sales/invoices/$invoiceId'
+      preLoaderRoute: typeof AuthenticatedSalesInvoicesInvoiceIdRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/invoices/new': {
+      id: '/_authenticated/sales/invoices/new'
+      path: '/invoices/new'
+      fullPath: '/sales/invoices/new'
+      preLoaderRoute: typeof AuthenticatedSalesInvoicesNewRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/quotes/': {
+      id: '/_authenticated/sales/quotes/'
+      path: '/quotes'
+      fullPath: '/sales/quotes/'
+      preLoaderRoute: typeof AuthenticatedSalesQuotesIndexRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/quotes/new': {
+      id: '/_authenticated/sales/quotes/new'
+      path: '/quotes/new'
+      fullPath: '/sales/quotes/new'
+      preLoaderRoute: typeof AuthenticatedSalesQuotesNewRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/receipts/': {
+      id: '/_authenticated/sales/receipts/'
+      path: '/receipts'
+      fullPath: '/sales/receipts/'
+      preLoaderRoute: typeof AuthenticatedSalesReceiptsIndexRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/receipts/new': {
+      id: '/_authenticated/sales/receipts/new'
+      path: '/receipts/new'
+      fullPath: '/sales/receipts/new'
+      preLoaderRoute: typeof AuthenticatedSalesReceiptsNewRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
   }
 }
 
+interface AuthenticatedBankingRouteRouteChildren {
+  AuthenticatedBankingImportRoute: typeof AuthenticatedBankingImportRoute
+  AuthenticatedBankingReconcileRoute: typeof AuthenticatedBankingReconcileRoute
+  AuthenticatedBankingRulesRoute: typeof AuthenticatedBankingRulesRoute
+  AuthenticatedBankingTransactionsRoute: typeof AuthenticatedBankingTransactionsRoute
+  AuthenticatedBankingTransfersRoute: typeof AuthenticatedBankingTransfersRoute
+  AuthenticatedBankingIndexRoute: typeof AuthenticatedBankingIndexRoute
+}
+
+const AuthenticatedBankingRouteRouteChildren: AuthenticatedBankingRouteRouteChildren =
+  {
+    AuthenticatedBankingImportRoute: AuthenticatedBankingImportRoute,
+    AuthenticatedBankingReconcileRoute: AuthenticatedBankingReconcileRoute,
+    AuthenticatedBankingRulesRoute: AuthenticatedBankingRulesRoute,
+    AuthenticatedBankingTransactionsRoute:
+      AuthenticatedBankingTransactionsRoute,
+    AuthenticatedBankingTransfersRoute: AuthenticatedBankingTransfersRoute,
+    AuthenticatedBankingIndexRoute: AuthenticatedBankingIndexRoute,
+  }
+
+const AuthenticatedBankingRouteRouteWithChildren =
+  AuthenticatedBankingRouteRoute._addFileChildren(
+    AuthenticatedBankingRouteRouteChildren,
+  )
+
+interface AuthenticatedPurchasesRouteRouteChildren {
+  AuthenticatedPurchasesEmployeeExpensesRoute: typeof AuthenticatedPurchasesEmployeeExpensesRoute
+  AuthenticatedPurchasesRecurringRoute: typeof AuthenticatedPurchasesRecurringRoute
+  AuthenticatedPurchasesStatementsRoute: typeof AuthenticatedPurchasesStatementsRoute
+  AuthenticatedPurchasesSuppliersRoute: typeof AuthenticatedPurchasesSuppliersRoute
+  AuthenticatedPurchasesIndexRoute: typeof AuthenticatedPurchasesIndexRoute
+  AuthenticatedPurchasesBillsBillIdRoute: typeof AuthenticatedPurchasesBillsBillIdRoute
+  AuthenticatedPurchasesBillsNewRoute: typeof AuthenticatedPurchasesBillsNewRoute
+  AuthenticatedPurchasesCreditNotesNewRoute: typeof AuthenticatedPurchasesCreditNotesNewRoute
+  AuthenticatedPurchasesExpensesExpenseIdRoute: typeof AuthenticatedPurchasesExpensesExpenseIdRoute
+  AuthenticatedPurchasesExpensesNewRoute: typeof AuthenticatedPurchasesExpensesNewRoute
+  AuthenticatedPurchasesOrdersNewRoute: typeof AuthenticatedPurchasesOrdersNewRoute
+  AuthenticatedPurchasesPaymentsNewRoute: typeof AuthenticatedPurchasesPaymentsNewRoute
+  AuthenticatedPurchasesBillsIndexRoute: typeof AuthenticatedPurchasesBillsIndexRoute
+  AuthenticatedPurchasesCreditNotesIndexRoute: typeof AuthenticatedPurchasesCreditNotesIndexRoute
+  AuthenticatedPurchasesExpensesIndexRoute: typeof AuthenticatedPurchasesExpensesIndexRoute
+  AuthenticatedPurchasesOrdersIndexRoute: typeof AuthenticatedPurchasesOrdersIndexRoute
+  AuthenticatedPurchasesPaymentsIndexRoute: typeof AuthenticatedPurchasesPaymentsIndexRoute
+}
+
+const AuthenticatedPurchasesRouteRouteChildren: AuthenticatedPurchasesRouteRouteChildren =
+  {
+    AuthenticatedPurchasesEmployeeExpensesRoute:
+      AuthenticatedPurchasesEmployeeExpensesRoute,
+    AuthenticatedPurchasesRecurringRoute: AuthenticatedPurchasesRecurringRoute,
+    AuthenticatedPurchasesStatementsRoute:
+      AuthenticatedPurchasesStatementsRoute,
+    AuthenticatedPurchasesSuppliersRoute: AuthenticatedPurchasesSuppliersRoute,
+    AuthenticatedPurchasesIndexRoute: AuthenticatedPurchasesIndexRoute,
+    AuthenticatedPurchasesBillsBillIdRoute:
+      AuthenticatedPurchasesBillsBillIdRoute,
+    AuthenticatedPurchasesBillsNewRoute: AuthenticatedPurchasesBillsNewRoute,
+    AuthenticatedPurchasesCreditNotesNewRoute:
+      AuthenticatedPurchasesCreditNotesNewRoute,
+    AuthenticatedPurchasesExpensesExpenseIdRoute:
+      AuthenticatedPurchasesExpensesExpenseIdRoute,
+    AuthenticatedPurchasesExpensesNewRoute:
+      AuthenticatedPurchasesExpensesNewRoute,
+    AuthenticatedPurchasesOrdersNewRoute: AuthenticatedPurchasesOrdersNewRoute,
+    AuthenticatedPurchasesPaymentsNewRoute:
+      AuthenticatedPurchasesPaymentsNewRoute,
+    AuthenticatedPurchasesBillsIndexRoute:
+      AuthenticatedPurchasesBillsIndexRoute,
+    AuthenticatedPurchasesCreditNotesIndexRoute:
+      AuthenticatedPurchasesCreditNotesIndexRoute,
+    AuthenticatedPurchasesExpensesIndexRoute:
+      AuthenticatedPurchasesExpensesIndexRoute,
+    AuthenticatedPurchasesOrdersIndexRoute:
+      AuthenticatedPurchasesOrdersIndexRoute,
+    AuthenticatedPurchasesPaymentsIndexRoute:
+      AuthenticatedPurchasesPaymentsIndexRoute,
+  }
+
+const AuthenticatedPurchasesRouteRouteWithChildren =
+  AuthenticatedPurchasesRouteRoute._addFileChildren(
+    AuthenticatedPurchasesRouteRouteChildren,
+  )
+
+interface AuthenticatedSalesRouteRouteChildren {
+  AuthenticatedSalesCustomersRoute: typeof AuthenticatedSalesCustomersRoute
+  AuthenticatedSalesRecurringRoute: typeof AuthenticatedSalesRecurringRoute
+  AuthenticatedSalesStatementsRoute: typeof AuthenticatedSalesStatementsRoute
+  AuthenticatedSalesIndexRoute: typeof AuthenticatedSalesIndexRoute
+  AuthenticatedSalesCreditNotesNewRoute: typeof AuthenticatedSalesCreditNotesNewRoute
+  AuthenticatedSalesInvoicesInvoiceIdRoute: typeof AuthenticatedSalesInvoicesInvoiceIdRoute
+  AuthenticatedSalesInvoicesNewRoute: typeof AuthenticatedSalesInvoicesNewRoute
+  AuthenticatedSalesQuotesNewRoute: typeof AuthenticatedSalesQuotesNewRoute
+  AuthenticatedSalesReceiptsNewRoute: typeof AuthenticatedSalesReceiptsNewRoute
+  AuthenticatedSalesCreditNotesIndexRoute: typeof AuthenticatedSalesCreditNotesIndexRoute
+  AuthenticatedSalesInvoicesIndexRoute: typeof AuthenticatedSalesInvoicesIndexRoute
+  AuthenticatedSalesQuotesIndexRoute: typeof AuthenticatedSalesQuotesIndexRoute
+  AuthenticatedSalesReceiptsIndexRoute: typeof AuthenticatedSalesReceiptsIndexRoute
+}
+
+const AuthenticatedSalesRouteRouteChildren: AuthenticatedSalesRouteRouteChildren =
+  {
+    AuthenticatedSalesCustomersRoute: AuthenticatedSalesCustomersRoute,
+    AuthenticatedSalesRecurringRoute: AuthenticatedSalesRecurringRoute,
+    AuthenticatedSalesStatementsRoute: AuthenticatedSalesStatementsRoute,
+    AuthenticatedSalesIndexRoute: AuthenticatedSalesIndexRoute,
+    AuthenticatedSalesCreditNotesNewRoute:
+      AuthenticatedSalesCreditNotesNewRoute,
+    AuthenticatedSalesInvoicesInvoiceIdRoute:
+      AuthenticatedSalesInvoicesInvoiceIdRoute,
+    AuthenticatedSalesInvoicesNewRoute: AuthenticatedSalesInvoicesNewRoute,
+    AuthenticatedSalesQuotesNewRoute: AuthenticatedSalesQuotesNewRoute,
+    AuthenticatedSalesReceiptsNewRoute: AuthenticatedSalesReceiptsNewRoute,
+    AuthenticatedSalesCreditNotesIndexRoute:
+      AuthenticatedSalesCreditNotesIndexRoute,
+    AuthenticatedSalesInvoicesIndexRoute: AuthenticatedSalesInvoicesIndexRoute,
+    AuthenticatedSalesQuotesIndexRoute: AuthenticatedSalesQuotesIndexRoute,
+    AuthenticatedSalesReceiptsIndexRoute: AuthenticatedSalesReceiptsIndexRoute,
+  }
+
+const AuthenticatedSalesRouteRouteWithChildren =
+  AuthenticatedSalesRouteRoute._addFileChildren(
+    AuthenticatedSalesRouteRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedBankingRouteRoute: typeof AuthenticatedBankingRouteRouteWithChildren
+  AuthenticatedPurchasesRouteRoute: typeof AuthenticatedPurchasesRouteRouteWithChildren
+  AuthenticatedSalesRouteRoute: typeof AuthenticatedSalesRouteRouteWithChildren
+  AuthenticatedAccountantRoute: typeof AuthenticatedAccountantRoute
   AuthenticatedAccountingRoute: typeof AuthenticatedAccountingRoute
   AuthenticatedAiAssistantRoute: typeof AuthenticatedAiAssistantRoute
-  AuthenticatedBankingRoute: typeof AuthenticatedBankingRoute
-  AuthenticatedContactsRoute: typeof AuthenticatedContactsRoute
+  AuthenticatedFirmRoute: typeof AuthenticatedFirmRoute
   AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProductsServicesRoute: typeof AuthenticatedProductsServicesRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
-  AuthenticatedPurchasesRoute: typeof AuthenticatedPurchasesRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
-  AuthenticatedSalesRoute: typeof AuthenticatedSalesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedTaxRoute: typeof AuthenticatedTaxRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedContactsContactIdRoute: typeof AuthenticatedContactsContactIdRoute
+  AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedBankingRouteRoute: AuthenticatedBankingRouteRouteWithChildren,
+  AuthenticatedPurchasesRouteRoute:
+    AuthenticatedPurchasesRouteRouteWithChildren,
+  AuthenticatedSalesRouteRoute: AuthenticatedSalesRouteRouteWithChildren,
+  AuthenticatedAccountantRoute: AuthenticatedAccountantRoute,
   AuthenticatedAccountingRoute: AuthenticatedAccountingRoute,
   AuthenticatedAiAssistantRoute: AuthenticatedAiAssistantRoute,
-  AuthenticatedBankingRoute: AuthenticatedBankingRoute,
-  AuthenticatedContactsRoute: AuthenticatedContactsRoute,
+  AuthenticatedFirmRoute: AuthenticatedFirmRoute,
   AuthenticatedHelpRoute: AuthenticatedHelpRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProductsServicesRoute: AuthenticatedProductsServicesRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
-  AuthenticatedPurchasesRoute: AuthenticatedPurchasesRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
-  AuthenticatedSalesRoute: AuthenticatedSalesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedTaxRoute: AuthenticatedTaxRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedContactsContactIdRoute: AuthenticatedContactsContactIdRoute,
+  AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
