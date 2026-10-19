@@ -205,6 +205,7 @@ function AccountingWorkspace({ companyId, currency }: { companyId: string; curre
                       <TableHead>Code</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Section</TableHead>
                       <TableHead>Normal</TableHead>
                       <TableHead>Flags</TableHead>
                     </TableRow>
@@ -215,6 +216,9 @@ function AccountingWorkspace({ companyId, currency }: { companyId: string; curre
                         <TableCell className="font-mono text-xs">{a.code}</TableCell>
                         <TableCell>{a.name}</TableCell>
                         <TableCell className="capitalize">{a.account_type}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatAccountSection(a.subtype, a.account_type)}
+                        </TableCell>
                         <TableCell className="capitalize">{a.normal_balance}</TableCell>
                         <TableCell className="space-x-1">
                           {a.is_control ? <Badge variant="outline">Control</Badge> : null}
@@ -435,4 +439,19 @@ function AccountingWorkspace({ companyId, currency }: { companyId: string; curre
       </Tabs>
     </>
   );
+}
+
+function formatAccountSection(subtype: string | null | undefined, accountType: string): string {
+  const s = (subtype ?? "").toLowerCase();
+  if (s.includes("non_current") && accountType === "asset") return "Non-current assets";
+  if (s.includes("current") && accountType === "asset") return "Current assets";
+  if (s.includes("non_current") && accountType === "liability") return "Non-current liabilities";
+  if ((s.includes("current") || s.includes("payable") || s.includes("tax")) && accountType === "liability") {
+    return "Current liabilities";
+  }
+  if (accountType === "equity") return "Equity";
+  if (accountType === "income") return "Income";
+  if (s === "cogs") return "Cost of sales";
+  if (accountType === "expense") return "Expenses";
+  return accountType;
 }

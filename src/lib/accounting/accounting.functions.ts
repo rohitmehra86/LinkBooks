@@ -29,6 +29,7 @@ export type AccountRow = {
   code: string;
   name: string;
   account_type: string;
+  subtype: string | null;
   normal_balance: string;
   is_system: boolean;
   is_postable: boolean;
@@ -44,7 +45,7 @@ export const listAccounts = createServerFn({ method: "GET" })
     const { data: rows, error } = await context.supabase
       .from("accounts" as never)
       .select(
-        "id, code, name, account_type, normal_balance, is_system, is_postable, is_control, is_active" as never,
+        "id, code, name, account_type, subtype, normal_balance, is_system, is_postable, is_control, is_active" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .order("code" as never);
@@ -192,7 +193,7 @@ async function loadPostedLines(
   const { data: rows, error } = await supabase
     .from("journal_lines" as never)
     .select(
-      "account_id, debit_minor, credit_minor, description, journals!inner(id, journal_number, journal_date, status, company_id, memo, source_type, currency_code, fx_rate_to_base), accounts!inner(code, name, account_type)" as never,
+      "account_id, debit_minor, credit_minor, description, journals!inner(id, journal_number, journal_date, status, company_id, memo, source_type, currency_code, fx_rate_to_base), accounts!inner(code, name, account_type, subtype)" as never,
     )
     .eq("company_id" as never, companyId as never);
   if (error) throw new Error(error.message);
@@ -202,7 +203,12 @@ async function loadPostedLines(
     debit_minor: number;
     credit_minor: number;
     description: string | null;
-    accounts: { code: string; name: string; account_type: PostedLine["account_type"] };
+    accounts: {
+      code: string;
+      name: string;
+      account_type: PostedLine["account_type"];
+      subtype: string | null;
+    };
     journals: {
       id: string;
       journal_number: number;
@@ -223,6 +229,7 @@ async function loadPostedLines(
       account_code: r.accounts.code,
       account_name: r.accounts.name,
       account_type: r.accounts.account_type,
+      account_subtype: r.accounts.subtype,
       journal_date: r.journals.journal_date,
       debit_minor: BigInt(r.debit_minor),
       credit_minor: BigInt(r.credit_minor),
@@ -305,6 +312,16 @@ export const getBalanceSheet = createServerFn({ method: "GET" })
         ...r,
         debit_minor: Number(r.debit_minor),
         credit_minor: Number(r.credit_minor),
+      })),
+      sections: result.sections.map((s) => ({
+        id: s.id,
+        label: s.label,
+        total_minor: Number(s.total_minor),
+        rows: s.rows.map((r) => ({
+          ...r,
+          debit_minor: Number(r.debit_minor),
+          credit_minor: Number(r.credit_minor),
+        })),
       })),
     };
   });

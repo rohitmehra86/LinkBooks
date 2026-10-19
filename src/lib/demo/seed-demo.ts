@@ -13,9 +13,11 @@ import type { Database } from "@/integrations/supabase/types";
 import { postJournal } from "@/lib/accounting/posting-engine";
 import { requireAccountByCode } from "@/lib/purchases/accounts";
 import {
+  DEMO_AS_OF,
   DEMO_BANK,
   DEMO_CONTACTS,
   DEMO_CURRENCY,
+  DEMO_FY_FROM,
   DEMO_JOURNAL_SPECS,
 } from "@/lib/demo/demo-dataset";
 
@@ -58,7 +60,43 @@ export async function seedDemoCompanyData(
   const { companyId, userId } = args;
   let documents = 0;
 
-  const codes = ["1000", "1100", "1200", "2000", "2100", "3100", "4000", "5000", "6000", "6100"] as const;
+  // Extended CoA + open period covering every demo journal date (critical for posting)
+  const { error: coaErr } = await supabase.rpc("seed_default_chart_of_accounts" as never, {
+    _company_id: companyId,
+  } as never);
+  if (coaErr) {
+    console.warn("[demo seed] chart seed:", coaErr.message);
+  }
+  const { error: periodErr } = await supabase.rpc("ensure_accounting_period_coverage" as never, {
+    _company_id: companyId,
+    _from: DEMO_FY_FROM,
+    _to: DEMO_AS_OF,
+    _name: "Demo FY 2026/27",
+  } as never);
+  if (periodErr) {
+    throw new Error(`Demo seed failed: cannot open accounting period (${periodErr.message})`);
+  }
+
+  const codes = [
+    "1000",
+    "1100",
+    "1150",
+    "1200",
+    "1300",
+    "1500",
+    "1510",
+    "2000",
+    "2100",
+    "2200",
+    "2500",
+    "3100",
+    "4000",
+    "4100",
+    "5000",
+    "6000",
+    "6100",
+    "6200",
+  ] as const;
   const byCode = new Map<string, string>();
   for (const code of codes) {
     const acct = await requireAccountByCode(supabase, companyId, code);

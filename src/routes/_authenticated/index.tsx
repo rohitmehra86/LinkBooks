@@ -1,10 +1,17 @@
+import { useEffect, useRef } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Wallet, TrendingUp, FileWarning, Landmark } from "lucide-react";
+import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { getDemoLedgerSnapshot, getDemoModuleStatus } from "@/lib/demo/demo.functions";
+import {
+  ensureDemoSeeded,
+  getDemoLedgerSnapshot,
+  getDemoModuleStatus,
+} from "@/lib/demo/demo.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
+import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, EmptyState, LoadingState } from "@/components/common/states";
 import { StatCard } from "@/components/common/stat-card";
 import { CompanyEmptyState, NO_FIGURE } from "@/components/common/company-empty";
@@ -44,8 +51,11 @@ function Dashboard() {
   const { company, isPending } = useActiveCompany();
   const companyId = company?.id ?? null;
   const isDemo = Boolean(company?.is_demo);
+  const queryClient = useQueryClient();
   const fetchSnap = useServerFn(getDemoLedgerSnapshot);
   const fetchModules = useServerFn(getDemoModuleStatus);
+  const doEnsureSeed = useServerFn(ensureDemoSeeded);
+  const seedAttempted = useRef<string | null>(null);
 
   const snapQ = useQuery({
     queryKey: ["ledger-snapshot", companyId],
@@ -58,6 +68,25 @@ function Dashboard() {
     enabled: isDemo,
     queryFn: () => fetchModules(),
   });
+
+  // Auto-seed Demo when ledger is empty (previous seeds failed on period dates)
+  useEffect(() => {
+    if (!isDemo || !companyId || snapQ.isPending || snapQ.isError) return;
+    if ((snapQ.data?.journalLineCount ?? 0) > 0) return;
+    if (seedAttempted.current === companyId) return;
+    seedAttempted.current = companyId;
+    void (async () => {
+      try {
+        const result = await doEnsureSeed({ data: { companyId } });
+        if (result.seeded) {
+          toast.success("Demo sample ledger seeded");
+          await queryClient.invalidateQueries({ queryKey: ["ledger-snapshot", companyId] });
+        }
+      } catch (e) {
+        toast.error(friendlyAuthError(e));
+      }
+    })();
+  }, [isDemo, companyId, snapQ.isPending, snapQ.isError, snapQ.data?.journalLineCount, doEnsureSeed, queryClient]);
 
   if (isPending) return <LoadingState />;
   if (!companyId) {

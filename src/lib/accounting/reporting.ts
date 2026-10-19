@@ -13,6 +13,8 @@ export type PostedLine = {
   account_code: string;
   account_name: string;
   account_type: AccountType;
+  /** CoA section hint: current_asset, non_current_asset, current_liability, … */
+  account_subtype?: string | null;
   journal_date: string; // YYYY-MM-DD
   debit_minor: bigint | number;
   credit_minor: bigint | number;
@@ -31,9 +33,93 @@ export type TrialBalanceRow = {
   code: string;
   name: string;
   account_type: AccountType;
+  subtype?: string | null;
   debit_minor: bigint;
   credit_minor: bigint;
 };
+
+/** Balance-sheet presentation sections (Xero-like). */
+export type BalanceSheetSectionId =
+  | "current_assets"
+  | "non_current_assets"
+  | "current_liabilities"
+  | "non_current_liabilities"
+  | "equity";
+
+export const BALANCE_SHEET_SECTION_LABELS: Record<BalanceSheetSectionId, string> = {
+  current_assets: "Current assets",
+  non_current_assets: "Non-current assets",
+  current_liabilities: "Current liabilities",
+  non_current_liabilities: "Non-current liabilities",
+  equity: "Equity",
+};
+
+export function balanceSheetSectionFor(row: {
+  account_type: AccountType;
+  subtype?: string | null;
+}): BalanceSheetSectionId | null {
+  const sub = (row.subtype ?? "").toLowerCase();
+  if (row.account_type === "asset") {
+    if (
+      sub.includes("non_current") ||
+      sub.includes("fixed") ||
+      sub.includes("depreciation") ||
+      sub === "non_current_asset"
+    ) {
+      return "non_current_assets";
+    }
+    return "current_assets";
+  }
+  if (row.account_type === "liability") {
+    if (sub.includes("non_current") || sub.includes("loan") || sub === "non_current_liability") {
+      return "non_current_liabilities";
+    }
+    return "current_liabilities";
+  }
+  if (row.account_type === "equity") return "equity";
+  return null;
+}
+
+export function groupBalanceSheetRows(rows: TrialBalanceRow[]): Array<{
+  id: BalanceSheetSectionId;
+  label: string;
+  rows: TrialBalanceRow[];
+  total_minor: bigint;
+}> {
+  const order: BalanceSheetSectionId[] = [
+    "current_assets",
+    "non_current_assets",
+    "current_liabilities",
+    "non_current_liabilities",
+    "equity",
+  ];
+  const buckets = new Map<BalanceSheetSectionId, TrialBalanceRow[]>();
+  for (const id of order) buckets.set(id, []);
+  for (const row of rows) {
+    const id = balanceSheetSectionFor(row);
+    if (!id) continue;
+    buckets.get(id)!.push(row);
+  }
+  return order
+    .map((id) => {
+      const sectionRows = buckets.get(id) ?? [];
+      let total = 0n;
+      for (const r of sectionRows) {
+        const signed =
+          id === "current_assets" || id === "non_current_assets"
+            ? r.debit_minor - r.credit_minor
+            : r.credit_minor - r.debit_minor;
+        total += signed;
+      }
+      return {
+        id,
+        label: BALANCE_SHEET_SECTION_LABELS[id],
+        rows: sectionRows,
+        total_minor: total,
+      };
+    })
+    .filter((s) => s.rows.length > 0);
+}
 
 function asBig(v: bigint | number): bigint {
   return typeof v === "number" ? BigInt(v) : v;
@@ -65,9 +151,11 @@ export function buildTrialBalance(
       code: line.account_code,
       name: line.account_name,
       account_type: line.account_type,
+      subtype: line.account_subtype ?? null,
       debit_minor: 0n,
       credit_minor: 0n,
     };
+    if (!existing.subtype && line.account_subtype) existing.subtype = line.account_subtype;
     existing.debit_minor += lineToBaseMinor(line.debit_minor, line.fx_rate_to_base);
     existing.credit_minor += lineToBaseMinor(line.credit_minor, line.fx_rate_to_base);
     map.set(line.account_id, existing);
@@ -119,6 +207,7 @@ export function buildBalanceSheet(
   liabilities: bigint;
   equity: bigint;
   rows: TrialBalanceRow[];
+  sections: ReturnType<typeof groupBalanceSheetRows>;
   equationHolds: boolean;
   retainedEarningsMinor: bigint;
 } {
@@ -139,11 +228,25 @@ export function buildBalanceSheet(
     if (row.account_type === "equity") equity += row.credit_minor - row.debit_minor;
   }
   equity += pl.net;
+  // Present retained earnings as a synthetic equity row for sectioned BS
+  const rowsWithRe: TrialBalanceRow[] = [...rows];
+  if (pl.net !== 0n) {
+    rowsWithRe.push({
+      account_id: "__retained_earnings__",
+      code: "CYRE",
+      name: "Current year earnings",
+      account_type: "equity",
+      subtype: "equity",
+      debit_minor: pl.net < 0n ? -pl.net : 0n,
+      credit_minor: pl.net > 0n ? pl.net : 0n,
+    });
+  }
   return {
     assets,
     liabilities,
     equity,
-    rows,
+    rows: rowsWithRe,
+    sections: groupBalanceSheetRows(rowsWithRe),
     retainedEarningsMinor: pl.net,
     equationHolds: assets === liabilities + equity,
   };

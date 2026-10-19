@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -52,12 +52,32 @@ function exportCsv(filename: string, headers: string[], rows: Array<Array<string
   URL.revokeObjectURL(url);
 }
 
+/** First day of the current fiscal year (day after FY end month). March YE → 1 April. */
+function fiscalYearStart(fyEndMonth: number, asOf = new Date()): string {
+  const y = asOf.getUTCFullYear();
+  const m = asOf.getUTCMonth() + 1; // 1-12
+  const startMonth = (fyEndMonth % 12) + 1;
+  const year = m > fyEndMonth ? y : y - 1;
+  return `${year}-${String(startMonth).padStart(2, "0")}-01`;
+}
+
 function Reports() {
   const { company, isPending } = useActiveCompany();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [from, setFrom] = useState(`${new Date().getFullYear()}-01-01`);
+  const defaultFrom = useMemo(() => {
+    const fyEnd = company?.fiscal_year_end_month ?? 3;
+    return fiscalYearStart(fyEnd);
+  }, [company?.fiscal_year_end_month]);
+  const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(today);
   const [accountId, setAccountId] = useState("");
+
+  // When company loads, snap report range to its fiscal year (fixes empty Demo TB)
+  useEffect(() => {
+    if (company?.fiscal_year_end_month) {
+      setFrom(fiscalYearStart(company.fiscal_year_end_month));
+    }
+  }, [company?.id, company?.fiscal_year_end_month]);
 
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
@@ -79,10 +99,11 @@ function Reports() {
     enabled: Boolean(companyId),
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
   });
+  // Trial balance is as-of `to` (cumulative) — not filtered by `from`
   const tbQuery = useQuery({
-    queryKey: ["report-tb", companyId, from, to],
+    queryKey: ["report-tb", companyId, to],
     enabled: Boolean(companyId),
-    queryFn: () => fetchTb({ data: { companyId: companyId!, from, to } }),
+    queryFn: () => fetchTb({ data: { companyId: companyId!, to } }),
   });
   const plQuery = useQuery({
     queryKey: ["report-pl", companyId, from, to],
@@ -259,7 +280,20 @@ function Reports() {
                   <Stat label="Equity" value={fromMinorUnits(bsQuery.data.equity, currency)} />
                   <Stat label="Retained (closed P&amp;L)" value={fromMinorUnits(bsQuery.data.retainedEarningsMinor, currency)} />
                 </div>
-                <AccountTable currency={currency} rows={bsQuery.data.rows} onDrill={(id) => setAccountId(id)} />
+                {"sections" in bsQuery.data && Array.isArray(bsQuery.data.sections) && bsQuery.data.sections.length > 0 ? (
+                  <BalanceSheetSections
+                    currency={currency}
+                    sections={bsQuery.data.sections as Array<{
+                      id: string;
+                      label: string;
+                      total_minor: number;
+                      rows: Array<{ account_id: string; code: string; name: string; debit_minor: number; credit_minor: number }>;
+                    }>}
+                    onDrill={(id) => setAccountId(id)}
+                  />
+                ) : (
+                  <AccountTable currency={currency} rows={bsQuery.data.rows} onDrill={(id) => setAccountId(id)} />
+                )}
               </>
             ) : null}
           </ReportPane>
@@ -544,7 +578,7 @@ function AccountTable({
         {rows.map((r) => (
           <TableRow key={r.account_id}>
             <TableCell>
-              {onDrill ? (
+              {onDrill && !r.account_id.startsWith("__") ? (
                 <button type="button" className="underline-offset-2 hover:underline" onClick={() => onDrill(r.account_id)}>
                   {r.code}
                 </button>
@@ -559,6 +593,39 @@ function AccountTable({
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+function BalanceSheetSections({
+  currency,
+  sections,
+  onDrill,
+}: {
+  currency: string;
+  sections: Array<{
+    id: string;
+    label: string;
+    total_minor: number;
+    rows: Array<{ account_id: string; code: string; name: string; debit_minor: number; credit_minor: number }>;
+  }>;
+  onDrill?: (accountId: string) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {sections.map((section) => (
+        <div key={section.id}>
+          <div className="mb-2 flex items-baseline justify-between border-b pb-1">
+            <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">{section.label}</h3>
+            <span className="font-medium tabular-nums">{fromMinorUnits(section.total_minor, currency)}</span>
+          </div>
+          <AccountTable
+            currency={currency}
+            rows={section.rows}
+            {...(onDrill ? { onDrill } : {})}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 

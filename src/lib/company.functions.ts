@@ -112,20 +112,17 @@ export const openDemoCompany = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const companyId = id as string;
     // Seed sample ledger through PostingEngine when empty (idempotent).
-    try {
-      const { seedDemoCompanyData } = await import("@/lib/demo/seed-demo");
-      const { count } = await context.supabase
-        .from("journals" as never)
-        .select("id" as never, { count: "exact", head: true })
-        .eq("company_id" as never, companyId as never);
-      if ((count ?? 0) === 0) {
-        await seedDemoCompanyData(context.supabase, {
-          companyId,
-          userId: context.userId,
-        });
-      }
-    } catch {
-      // Masters still usable; user can reseed from Settings → Demo
+    const { seedDemoCompanyData } = await import("@/lib/demo/seed-demo");
+    const { count } = await context.supabase
+      .from("journals" as never)
+      .select("id" as never, { count: "exact", head: true })
+      .eq("company_id" as never, companyId as never);
+    if ((count ?? 0) === 0) {
+      // Must succeed — empty Demo ledgers look like a broken accounting engine
+      await seedDemoCompanyData(context.supabase, {
+        companyId,
+        userId: context.userId,
+      });
     }
     return { id: companyId };
   });

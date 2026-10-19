@@ -13,22 +13,31 @@ import {
 
 export const DEMO_COMPANY_NAME = "Demo Company Ltd";
 export const DEMO_CURRENCY = "GBP";
-export const DEMO_AS_OF = "2026-03-31";
-export const DEMO_FY_FROM = "2025-04-01";
+export const DEMO_AS_OF = "2026-10-19";
+export const DEMO_FY_FROM = "2026-04-01";
 
 /** Stable synthetic account ids for in-memory tests (code-prefixed). */
-export const DEMO_ACCOUNT_IDS: Record<string, { id: string; name: string; type: AccountType }> = {
-  "1000": { id: "acct-1000", name: "Bank", type: "asset" },
-  "1100": { id: "acct-1100", name: "Accounts Receivable", type: "asset" },
-  "1200": { id: "acct-1200", name: "Other Current Assets", type: "asset" },
-  "2000": { id: "acct-2000", name: "Accounts Payable", type: "liability" },
-  "2100": { id: "acct-2100", name: "Tax Payable", type: "liability" },
-  "3000": { id: "acct-3000", name: "Owner Equity", type: "equity" },
-  "3100": { id: "acct-3100", name: "Opening Balance Equity", type: "equity" },
-  "4000": { id: "acct-4000", name: "Sales Revenue", type: "income" },
-  "5000": { id: "acct-5000", name: "Cost of Sales", type: "expense" },
-  "6000": { id: "acct-6000", name: "Operating Expenses", type: "expense" },
-  "6100": { id: "acct-6100", name: "Bank Fees", type: "expense" },
+export const DEMO_ACCOUNT_IDS: Record<string, { id: string; name: string; type: AccountType; subtype: string }> = {
+  "1000": { id: "acct-1000", name: "Bank", type: "asset", subtype: "current_asset" },
+  "1100": { id: "acct-1100", name: "Accounts Receivable", type: "asset", subtype: "current_asset" },
+  "1150": { id: "acct-1150", name: "Inventory", type: "asset", subtype: "current_asset" },
+  "1200": { id: "acct-1200", name: "VAT Recoverable / Other Current Assets", type: "asset", subtype: "current_asset" },
+  "1300": { id: "acct-1300", name: "Prepayments", type: "asset", subtype: "current_asset" },
+  "1500": { id: "acct-1500", name: "Property, Plant & Equipment", type: "asset", subtype: "non_current_asset" },
+  "1510": { id: "acct-1510", name: "Accumulated Depreciation", type: "asset", subtype: "non_current_asset" },
+  "2000": { id: "acct-2000", name: "Accounts Payable", type: "liability", subtype: "current_liability" },
+  "2100": { id: "acct-2100", name: "Tax Payable", type: "liability", subtype: "current_liability" },
+  "2200": { id: "acct-2200", name: "Accruals", type: "liability", subtype: "current_liability" },
+  "2500": { id: "acct-2500", name: "Long-term Loans", type: "liability", subtype: "non_current_liability" },
+  "3000": { id: "acct-3000", name: "Owner Equity", type: "equity", subtype: "equity" },
+  "3100": { id: "acct-3100", name: "Opening Balance Equity", type: "equity", subtype: "equity" },
+  "3200": { id: "acct-3200", name: "Retained Earnings", type: "equity", subtype: "equity" },
+  "4000": { id: "acct-4000", name: "Sales Revenue", type: "income", subtype: "income" },
+  "4100": { id: "acct-4100", name: "Other Income", type: "income", subtype: "income" },
+  "5000": { id: "acct-5000", name: "Cost of Sales", type: "expense", subtype: "cogs" },
+  "6000": { id: "acct-6000", name: "Operating Expenses", type: "expense", subtype: "expense" },
+  "6100": { id: "acct-6100", name: "Bank Fees", type: "expense", subtype: "expense" },
+  "6200": { id: "acct-6200", name: "Depreciation Expense", type: "expense", subtype: "expense" },
 };
 
 export type DemoJournalSpec = {
@@ -46,7 +55,7 @@ export type DemoJournalSpec = {
 export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   {
     key: "demo:opening",
-    date: "2025-04-01",
+    date: "2026-04-01",
     memo: "Opening bank balance",
     source_type: "opening_balance",
     lines: [
@@ -56,7 +65,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:inv-1001",
-    date: "2025-06-15",
+    date: "2026-05-15",
     memo: "INV-1001 Acme Consulting — website project",
     source_type: "sales_invoice",
     lines: [
@@ -67,7 +76,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:rcp-1001",
-    date: "2025-07-01",
+    date: "2026-06-01",
     memo: "Receipt INV-1001",
     source_type: "customer_payment",
     lines: [
@@ -77,7 +86,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:bill-2001",
-    date: "2025-06-20",
+    date: "2026-05-20",
     memo: "BILL-2001 Office Supplies Co",
     source_type: "purchase_bill",
     lines: [
@@ -88,7 +97,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:pay-2001",
-    date: "2025-07-05",
+    date: "2026-06-05",
     memo: "Payment BILL-2001",
     source_type: "supplier_payment",
     lines: [
@@ -98,7 +107,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:exp-1",
-    date: "2025-08-10",
+    date: "2026-07-10",
     memo: "Travel expense (paid)",
     source_type: "expense",
     lines: [
@@ -109,7 +118,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:inv-1002",
-    date: "2025-09-01",
+    date: "2026-08-01",
     memo: "INV-1002 Brightside Ltd — retainer (open)",
     source_type: "sales_invoice",
     lines: [
@@ -120,7 +129,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:scn-1",
-    date: "2025-09-15",
+    date: "2026-08-15",
     memo: "SCN-1 Credit against INV-1002",
     source_type: "sales_credit_note",
     lines: [
@@ -131,7 +140,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:bill-2002",
-    date: "2025-10-01",
+    date: "2026-09-01",
     memo: "BILL-2002 then credited",
     source_type: "purchase_bill",
     lines: [
@@ -142,7 +151,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:pcn-1",
-    date: "2025-10-08",
+    date: "2026-09-08",
     memo: "PCN-1 Supplier credit",
     source_type: "purchase_credit_note",
     lines: [
@@ -153,7 +162,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:cos-ap",
-    date: "2025-11-01",
+    date: "2026-09-20",
     memo: "Cost of sales on account",
     source_type: "manual",
     lines: [
@@ -163,7 +172,7 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   },
   {
     key: "demo:bank-fee",
-    date: "2025-12-15",
+    date: "2026-10-01",
     memo: "Bank service fee",
     source_type: "bank_transaction",
     lines: [
@@ -171,6 +180,48 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
       { code: "1000", debit: 0n, credit: 2_500n },
     ],
   },
+
+  {
+    key: "demo:ppe",
+    date: "2026-04-15",
+    memo: "Purchase of office equipment (PPE)",
+    source_type: "manual",
+    lines: [
+      { code: "1500", debit: 2_400_000n, credit: 0n, description: "Laptops & monitors" },
+      { code: "1000", debit: 0n, credit: 2_400_000n },
+    ],
+  },
+  {
+    key: "demo:depr",
+    date: "2026-09-30",
+    memo: "Depreciation Q2–Q3",
+    source_type: "manual",
+    lines: [
+      { code: "6200", debit: 120_000n, credit: 0n },
+      { code: "1510", debit: 0n, credit: 120_000n },
+    ],
+  },
+  {
+    key: "demo:loan",
+    date: "2026-04-10",
+    memo: "Long-term loan drawdown",
+    source_type: "manual",
+    lines: [
+      { code: "1000", debit: 3_000_000n, credit: 0n },
+      { code: "2500", debit: 0n, credit: 3_000_000n },
+    ],
+  },
+  {
+    key: "demo:other-inc",
+    date: "2026-07-20",
+    memo: "Interest / other income",
+    source_type: "manual",
+    lines: [
+      { code: "1000", debit: 25_000n, credit: 0n },
+      { code: "4100", debit: 0n, credit: 25_000n },
+    ],
+  },
+
 ];
 
 export function buildDemoPostedLines(): PostedLine[] {
@@ -208,19 +259,19 @@ export const DEMO_EXPECTED = {
   asOf: DEMO_AS_OF,
   fyFrom: DEMO_FY_FROM,
   currency: DEMO_CURRENCY,
-  // Trial balance presentation totals (must balance)
-  trialBalanceDebit: 6_755_000n,
-  trialBalanceCredit: 6_755_000n,
+  // Trial balance presentation totals (must balance) — includes PPE, loan, depr, other income
+  trialBalanceDebit: 9_900_000n,
+  trialBalanceCredit: 9_900_000n,
   // P&L for FY
-  income: 1_400_000n,
-  expense: 627_500n,
-  netProfit: 772_500n,
+  income: 1_425_000n,
+  expense: 747_500n,
+  netProfit: 677_500n,
   // Balance sheet
-  assets: 6_127_500n,
-  liabilities: 355_000n,
-  equity: 5_772_500n,
+  assets: 9_032_500n,
+  liabilities: 3_355_000n,
+  equity: 5_677_500n,
   // Control accounts
-  bank: 5_537_500n,
+  bank: 6_162_500n,
   ar: 480_000n,
   ap: 75_000n,
   taxPayable: 280_000n,
