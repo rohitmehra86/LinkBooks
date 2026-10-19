@@ -39,11 +39,13 @@ import { Route as AuthenticatedContactsContactIdRouteImport } from './routes/_au
 import { Route as AuthenticatedPurchasesIndexRouteImport } from './routes/_authenticated/purchases/index'
 import { Route as AuthenticatedPurchasesEmployeeExpensesRouteImport } from './routes/_authenticated/purchases/employee-expenses'
 import { Route as AuthenticatedPurchasesRecurringRouteImport } from './routes/_authenticated/purchases/recurring'
+import { Route as AuthenticatedPurchasesSettingsRouteImport } from './routes/_authenticated/purchases/settings'
 import { Route as AuthenticatedPurchasesStatementsRouteImport } from './routes/_authenticated/purchases/statements'
 import { Route as AuthenticatedPurchasesSuppliersRouteImport } from './routes/_authenticated/purchases/suppliers'
 import { Route as AuthenticatedSalesIndexRouteImport } from './routes/_authenticated/sales/index'
 import { Route as AuthenticatedSalesCustomersRouteImport } from './routes/_authenticated/sales/customers'
 import { Route as AuthenticatedSalesRecurringRouteImport } from './routes/_authenticated/sales/recurring'
+import { Route as AuthenticatedSalesSettingsRouteImport } from './routes/_authenticated/sales/settings'
 import { Route as AuthenticatedSalesStatementsRouteImport } from './routes/_authenticated/sales/statements'
 import { Route as AuthenticatedPurchasesBillsIndexRouteImport } from './routes/_authenticated/purchases/bills.index'
 import { Route as AuthenticatedPurchasesBillsBillIdRouteImport } from './routes/_authenticated/purchases/bills.$billId'
@@ -231,6 +233,12 @@ const AuthenticatedPurchasesRecurringRoute =
     path: '/recurring',
     getParentRoute: () => AuthenticatedPurchasesRouteRoute,
   } as any)
+const AuthenticatedPurchasesSettingsRoute =
+  AuthenticatedPurchasesSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
 const AuthenticatedPurchasesStatementsRoute =
   AuthenticatedPurchasesStatementsRouteImport.update({
     id: '/statements',
@@ -258,6 +266,12 @@ const AuthenticatedSalesRecurringRoute =
   AuthenticatedSalesRecurringRouteImport.update({
     id: '/recurring',
     path: '/recurring',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
+const AuthenticatedSalesSettingsRoute =
+  AuthenticatedSalesSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
     getParentRoute: () => AuthenticatedSalesRouteRoute,
   } as any)
 const AuthenticatedSalesStatementsRoute =
@@ -420,10 +434,12 @@ export interface FileRoutesByFullPath {
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
   '/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
   '/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
   '/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/sales/statements': typeof AuthenticatedSalesStatementsRoute
   '/banking/': typeof AuthenticatedBankingIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
@@ -475,10 +491,12 @@ export interface FileRoutesByTo {
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
   '/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
   '/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
   '/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/sales/statements': typeof AuthenticatedSalesStatementsRoute
   '/banking': typeof AuthenticatedBankingIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
@@ -535,10 +553,12 @@ export interface FileRoutesById {
   '/_authenticated/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/_authenticated/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/_authenticated/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
+  '/_authenticated/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
   '/_authenticated/purchases/statements': typeof AuthenticatedPurchasesStatementsRoute
   '/_authenticated/purchases/suppliers': typeof AuthenticatedPurchasesSuppliersRoute
   '/_authenticated/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/_authenticated/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/_authenticated/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/_authenticated/sales/statements': typeof AuthenticatedSalesStatementsRoute
   '/_authenticated/banking/': typeof AuthenticatedBankingIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
@@ -595,10 +615,12 @@ export interface FileRouteTypes {
     | '/contacts/$contactId'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
+    | '/purchases/settings'
     | '/purchases/statements'
     | '/purchases/suppliers'
     | '/sales/customers'
     | '/sales/recurring'
+    | '/sales/settings'
     | '/sales/statements'
     | '/banking/'
     | '/contacts/'
@@ -650,10 +672,12 @@ export interface FileRouteTypes {
     | '/contacts/$contactId'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
+    | '/purchases/settings'
     | '/purchases/statements'
     | '/purchases/suppliers'
     | '/sales/customers'
     | '/sales/recurring'
+    | '/sales/settings'
     | '/sales/statements'
     | '/banking'
     | '/contacts'
@@ -709,10 +733,12 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/$contactId'
     | '/_authenticated/purchases/employee-expenses'
     | '/_authenticated/purchases/recurring'
+    | '/_authenticated/purchases/settings'
     | '/_authenticated/purchases/statements'
     | '/_authenticated/purchases/suppliers'
     | '/_authenticated/sales/customers'
     | '/_authenticated/sales/recurring'
+    | '/_authenticated/sales/settings'
     | '/_authenticated/sales/statements'
     | '/_authenticated/banking/'
     | '/_authenticated/contacts/'
@@ -960,6 +986,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPurchasesRecurringRouteImport
       parentRoute: typeof AuthenticatedPurchasesRouteRoute
     }
+    '/_authenticated/purchases/settings': {
+      id: '/_authenticated/purchases/settings'
+      path: '/settings'
+      fullPath: '/purchases/settings'
+      preLoaderRoute: typeof AuthenticatedPurchasesSettingsRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
     '/_authenticated/purchases/statements': {
       id: '/_authenticated/purchases/statements'
       path: '/statements'
@@ -993,6 +1026,13 @@ declare module '@tanstack/react-router' {
       path: '/recurring'
       fullPath: '/sales/recurring'
       preLoaderRoute: typeof AuthenticatedSalesRecurringRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/sales/settings': {
+      id: '/_authenticated/sales/settings'
+      path: '/settings'
+      fullPath: '/sales/settings'
+      preLoaderRoute: typeof AuthenticatedSalesSettingsRouteImport
       parentRoute: typeof AuthenticatedSalesRouteRoute
     }
     '/_authenticated/sales/statements': {
@@ -1180,6 +1220,7 @@ const AuthenticatedBankingRouteRouteWithChildren =
 interface AuthenticatedPurchasesRouteRouteChildren {
   AuthenticatedPurchasesEmployeeExpensesRoute: typeof AuthenticatedPurchasesEmployeeExpensesRoute
   AuthenticatedPurchasesRecurringRoute: typeof AuthenticatedPurchasesRecurringRoute
+  AuthenticatedPurchasesSettingsRoute: typeof AuthenticatedPurchasesSettingsRoute
   AuthenticatedPurchasesStatementsRoute: typeof AuthenticatedPurchasesStatementsRoute
   AuthenticatedPurchasesSuppliersRoute: typeof AuthenticatedPurchasesSuppliersRoute
   AuthenticatedPurchasesIndexRoute: typeof AuthenticatedPurchasesIndexRoute
@@ -1202,6 +1243,7 @@ const AuthenticatedPurchasesRouteRouteChildren: AuthenticatedPurchasesRouteRoute
     AuthenticatedPurchasesEmployeeExpensesRoute:
       AuthenticatedPurchasesEmployeeExpensesRoute,
     AuthenticatedPurchasesRecurringRoute: AuthenticatedPurchasesRecurringRoute,
+    AuthenticatedPurchasesSettingsRoute: AuthenticatedPurchasesSettingsRoute,
     AuthenticatedPurchasesStatementsRoute:
       AuthenticatedPurchasesStatementsRoute,
     AuthenticatedPurchasesSuppliersRoute: AuthenticatedPurchasesSuppliersRoute,
@@ -1238,6 +1280,7 @@ const AuthenticatedPurchasesRouteRouteWithChildren =
 interface AuthenticatedSalesRouteRouteChildren {
   AuthenticatedSalesCustomersRoute: typeof AuthenticatedSalesCustomersRoute
   AuthenticatedSalesRecurringRoute: typeof AuthenticatedSalesRecurringRoute
+  AuthenticatedSalesSettingsRoute: typeof AuthenticatedSalesSettingsRoute
   AuthenticatedSalesStatementsRoute: typeof AuthenticatedSalesStatementsRoute
   AuthenticatedSalesIndexRoute: typeof AuthenticatedSalesIndexRoute
   AuthenticatedSalesCreditNotesNewRoute: typeof AuthenticatedSalesCreditNotesNewRoute
@@ -1255,6 +1298,7 @@ const AuthenticatedSalesRouteRouteChildren: AuthenticatedSalesRouteRouteChildren
   {
     AuthenticatedSalesCustomersRoute: AuthenticatedSalesCustomersRoute,
     AuthenticatedSalesRecurringRoute: AuthenticatedSalesRecurringRoute,
+    AuthenticatedSalesSettingsRoute: AuthenticatedSalesSettingsRoute,
     AuthenticatedSalesStatementsRoute: AuthenticatedSalesStatementsRoute,
     AuthenticatedSalesIndexRoute: AuthenticatedSalesIndexRoute,
     AuthenticatedSalesCreditNotesNewRoute:

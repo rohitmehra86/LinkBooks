@@ -12,6 +12,7 @@ const items = [
   { to: "/purchases/recurring", label: "Recurring" },
   { to: "/purchases/employee-expenses", label: "Employee expenses" },
   { to: "/purchases/statements", label: "Statements" },
+  { to: "/purchases/settings", label: "Settings" },
 ] as const;
 
 export function PurchasesSubnav() {

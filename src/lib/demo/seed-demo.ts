@@ -55,7 +55,12 @@ async function existsBy(
 export async function seedDemoCompanyData(
   supabase: Client,
   args: { companyId: string; userId: string },
-): Promise<{ journalsPosted: number; contacts: number; documents: number }> {
+): Promise<{
+  journalsPosted: number;
+  contacts: number;
+  documents: number;
+  volume: { contacts: number; invoices: number; bills: number; bankTxns: number; products: number };
+}> {
   await assertDemoCompany(supabase, args.companyId);
   const { companyId, userId } = args;
   let documents = 0;
@@ -740,6 +745,23 @@ export async function seedDemoCompanyData(
     if (!error) documents += 1;
   }
 
+  // High-volume list data (documents only — does not change TB/P&L/BS)
+  let volume = { contacts: 0, invoices: 0, bills: 0, bankTxns: 0, products: 0 };
+  try {
+    const { seedDemoVolumeData } = await import("@/lib/demo/seed-demo-volume");
+    volume = await seedDemoVolumeData(supabase, {
+      companyId,
+      userId,
+      revenueAccountId: revenueId,
+      expenseAccountId: expenseId,
+      bankGlId: bankGl,
+      bankAccountId,
+    });
+    documents += volume.invoices + volume.bills + volume.bankTxns + volume.products;
+  } catch (e) {
+    console.warn("[demo seed] volume layer:", e instanceof Error ? e.message : e);
+  }
+
   // Authoritative ledger via PostingEngine (unchanged totals)
   let journalsPosted = 0;
   for (const spec of DEMO_JOURNAL_SPECS) {
@@ -784,14 +806,20 @@ export async function seedDemoCompanyData(
     _entity_id: companyId,
     _details: {
       journalsPosted,
-      contacts: contactIds.size,
+      contacts: contactIds.size + volume.contacts,
       documents,
+      volume,
       sample: true,
       rich: true,
     },
   } as never);
 
-  return { journalsPosted, contacts: contactIds.size, documents };
+  return {
+    journalsPosted,
+    contacts: contactIds.size + volume.contacts,
+    documents,
+    volume,
+  };
 }
 
 async function upsertDemoQuote(

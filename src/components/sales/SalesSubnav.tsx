@@ -10,6 +10,7 @@ const items = [
   { to: "/sales/customers", label: "Customers" },
   { to: "/sales/recurring", label: "Recurring" },
   { to: "/sales/statements", label: "Statements" },
+  { to: "/sales/settings", label: "Settings" },
 ] as const;
 
 export function SalesSubnav() {

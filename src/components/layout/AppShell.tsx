@@ -1,15 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Menu, Search, Bell, Plus, LogOut, UserRound } from "lucide-react";
+import { Menu, Bell, Plus, LogOut, UserRound } from "lucide-react";
 import { navItems } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { initialsFrom } from "@/lib/auth-helpers";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { CompanySwitcher } from "@/components/layout/CompanySwitcher";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -152,24 +152,47 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold md:hidden">{title}</div>
-            <div className="relative hidden max-w-sm md:block">
-              <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search invoices, contacts, accounts…"
-                className="pl-9"
-                disabled
-                aria-disabled
-                title="Search arrives in a later phase"
-              />
-            </div>
+            <GlobalSearch />
           </div>
 
           <CompanySwitcher />
 
-          <Button size="sm" className="hidden md:inline-flex" disabled title="Quick create arrives with documents">
-            <Plus className="size-4" />
-            New
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="hidden md:inline-flex">
+                <Plus className="size-4" />
+                New
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Create</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/sales/invoices/new">Invoice</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/sales/quotes">Quote</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/purchases/bills/new">Bill</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/purchases/expenses">Expense</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/contacts">Contact</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/products-services">Product / service</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/accounting">Manual journal</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/banking/import">Bank CSV import</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button variant="ghost" size="icon" aria-label="Notifications" disabled title="Notifications arrive later">
             <Bell className="size-5" />

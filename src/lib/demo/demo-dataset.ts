@@ -390,8 +390,8 @@ export const DEMO_MODULE_STATUS: Array<{
   {
     path: "/products-services",
     label: "Products & Services",
-    status: "shell",
-    note: "Catalogue UI not wired — no fake inventory",
+    status: "ready",
+    note: "Non-inventory catalogue (no stock valuation claimed)",
   },
   { path: "/accounting", label: "Accounting", status: "ready", note: "CoA, journals, periods" },
   { path: "/reports", label: "Reports", status: "ready", note: "TB, P&L, BS, aging from ledger" },

@@ -124,7 +124,7 @@ describe("Demo module honesty", () => {
   it("labels unfinished modules as shell/partial", () => {
     const products = DEMO_MODULE_STATUS.find((m) => m.path === "/products-services");
     const help = DEMO_MODULE_STATUS.find((m) => m.path === "/help");
-    expect(products?.status).toBe("shell");
+    expect(products?.status).toBe("ready");
     expect(help?.status).toBe("shell");
     expect(DEMO_MODULE_STATUS.some((m) => m.status === "ready" && m.path === "/reports")).toBe(
       true,

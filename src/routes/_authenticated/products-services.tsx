@@ -1,7 +1,49 @@
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Package } from "lucide-react";
-import { PageHeader } from "@/components/common/states";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Package, Plus, Archive } from "lucide-react";
+import { toast } from "sonner";
+import { useActiveCompany } from "@/hooks/use-active-company";
+import { listAccounts } from "@/lib/accounting/accounting.functions";
+import { fromMinorUnits } from "@/lib/accounting/money";
+import {
+  archiveProduct,
+  listProducts,
+  upsertProduct,
+  type ProductRow,
+} from "@/lib/products/products.functions";
+import { friendlyAuthError } from "@/lib/auth-helpers";
+import { PageHeader, EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/products-services")({
   head: () => ({
@@ -9,30 +51,399 @@ export const Route = createFileRoute("/_authenticated/products-services")({
       { title: "Products & Services — LinkBooks" },
       {
         name: "description",
-        content: "Reusable items with default accounts and tax rates for invoices and bills.",
-      },
-      { property: "og:title", content: "Products & Services — LinkBooks" },
-      {
-        property: "og:description",
-        content: "Reusable items with default accounts and tax rates for invoices and bills.",
+        content: "Catalogue items with default accounts and tax for invoices and bills.",
       },
     ],
   }),
-  component: Items,
+  component: ProductsPage,
 });
 
-function Items() {
+function ProductsPage() {
+  const { company, isPending } = useActiveCompany();
+  if (isPending) return <LoadingState />;
+  if (!company) {
+    return (
+      <CompanyEmptyState
+        title="No organisation selected"
+        description="Open a company to manage products and services."
+      />
+    );
+  }
+  return <ProductsWorkspace companyId={company.id} currency={company.base_currency} />;
+}
+
+function ProductsWorkspace({ companyId, currency }: { companyId: string; currency: string }) {
+  const queryClient = useQueryClient();
+  const fetchProducts = useServerFn(listProducts);
+  const fetchAccounts = useServerFn(listAccounts);
+  const saveProduct = useServerFn(upsertProduct);
+  const doArchive = useServerFn(archiveProduct);
+
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState("all");
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<ProductRow | null>(null);
+
+  const [form, setForm] = useState({
+    kind: "service",
+    code: "",
+    name: "",
+    description: "",
+    salesPrice: "",
+    purchaseCost: "",
+    incomeAccountId: "",
+    expenseAccountId: "",
+    salesTaxBps: "2000",
+    purchaseTaxBps: "2000",
+    unit: "each",
+  });
+
+  const productsQ = useQuery({
+    queryKey: ["products", companyId, q, kind, includeInactive],
+    queryFn: () =>
+      fetchProducts({
+        data: { companyId, q, kind, includeInactive, limit: 300 },
+      }),
+  });
+  const accountsQ = useQuery({
+    queryKey: ["accounts", companyId],
+    queryFn: () => fetchAccounts({ data: { companyId } }),
+  });
+
+  const incomeAccounts = useMemo(
+    () => ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; account_type: string }>)
+      .filter((a) => a.account_type === "income"),
+    [accountsQ.data],
+  );
+  const expenseAccounts = useMemo(
+    () => ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; account_type: string }>)
+      .filter((a) => a.account_type === "expense"),
+    [accountsQ.data],
+  );
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const salesPriceMinor = Math.round(Number(form.salesPrice || 0) * 100);
+      const purchaseCostMinor = Math.round(Number(form.purchaseCost || 0) * 100);
+      if (!form.name.trim()) throw new Error("Name is required");
+      const data: Parameters<typeof saveProduct>[0]["data"] = {
+        companyId,
+        kind: form.kind,
+        name: form.name,
+        salesPriceMinor,
+        purchaseCostMinor,
+        salesTaxRateBps: Number(form.salesTaxBps) || 0,
+        purchaseTaxRateBps: Number(form.purchaseTaxBps) || 0,
+        unit: form.unit,
+        isActive: true,
+      };
+      if (editing?.id) data.id = editing.id;
+      if (form.code) data.code = form.code;
+      if (form.description) data.description = form.description;
+      if (form.incomeAccountId) data.incomeAccountId = form.incomeAccountId;
+      if (form.expenseAccountId) data.expenseAccountId = form.expenseAccountId;
+      return saveProduct({ data });
+    },
+    onSuccess: async () => {
+      toast.success(editing ? "Product updated" : "Product created");
+      setOpen(false);
+      setEditing(null);
+      await queryClient.invalidateQueries({ queryKey: ["products", companyId] });
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  function openCreate() {
+    setEditing(null);
+    setForm({
+      kind: "service",
+      code: "",
+      name: "",
+      description: "",
+      salesPrice: "",
+      purchaseCost: "",
+      incomeAccountId: incomeAccounts[0]?.id ?? "",
+      expenseAccountId: expenseAccounts[0]?.id ?? "",
+      salesTaxBps: "2000",
+      purchaseTaxBps: "2000",
+      unit: "each",
+    });
+    setOpen(true);
+  }
+
+  function openEdit(p: ProductRow) {
+    setEditing(p);
+    setForm({
+      kind: p.kind,
+      code: p.code ?? "",
+      name: p.name,
+      description: p.description ?? "",
+      salesPrice: (p.sales_price_minor / 100).toFixed(2),
+      purchaseCost: (p.purchase_cost_minor / 100).toFixed(2),
+      incomeAccountId: p.income_account_id ?? "",
+      expenseAccountId: p.expense_account_id ?? "",
+      salesTaxBps: String(p.sales_tax_rate_bps),
+      purchaseTaxBps: String(p.purchase_tax_rate_bps),
+      unit: p.unit,
+    });
+    setOpen(true);
+  }
+
+  const rows = (productsQ.data ?? []) as ProductRow[];
+
   return (
     <>
       <PageHeader
         title="Products & Services"
-        description="Catalogue items with default accounts and tax — not fully wired yet."
+        description="Catalogue defaults for sales and purchase lines. Stock valuation is not enabled — this is a non-inventory catalogue."
+        actions={
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="size-4" />
+            New item
+          </Button>
+        }
       />
-      <CompanyEmptyState
-        icon={Package}
-        title="Not available yet"
-        description="This module is a shell. Demo Company does not invent a separate products ledger — use invoice and bill line descriptions for now."
-      />
+
+      <Alert className="mb-4">
+        <AlertDescription>
+          Selecting an item on invoices/bills can use these defaults. No stock-on-hand or COGS inventory
+          engine is claimed.
+        </AlertDescription>
+      </Alert>
+
+      <div className="mb-4 flex flex-wrap gap-3">
+        <Input
+          className="max-w-xs"
+          placeholder="Search name or code…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <Select value={kind} onValueChange={setKind}>
+          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All kinds</SelectItem>
+            <SelectItem value="service">Services</SelectItem>
+            <SelectItem value="product">Products</SelectItem>
+            <SelectItem value="non_inventory">Non-inventory</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          variant={includeInactive ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => setIncludeInactive((v) => !v)}
+        >
+          {includeInactive ? "Showing archived" : "Active only"}
+        </Button>
+      </div>
+
+      {productsQ.isPending ? (
+        <LoadingState />
+      ) : productsQ.isError ? (
+        <ErrorState
+          title="Could not load products"
+          description={friendlyAuthError(productsQ.error)}
+          onRetry={() => productsQ.refetch()}
+        />
+      ) : rows.length === 0 ? (
+        <div className="space-y-3">
+          <EmptyState
+            icon={Package}
+            title="No products yet"
+            description="Create services and non-inventory items with default accounts and tax rates."
+          />
+          <div className="flex justify-center">
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-4" />
+              New item
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead className="text-right">Sales price</TableHead>
+                  <TableHead className="text-right">Purchase cost</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-mono text-xs">{p.code ?? "—"}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{p.name}</div>
+                      {p.description ? (
+                        <div className="text-xs text-muted-foreground line-clamp-1">{p.description}</div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="capitalize">{p.kind.replace("_", " ")}</TableCell>
+                    <TableCell className="text-right">
+                      {fromMinorUnits(p.sales_price_minor, currency)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fromMinorUnits(p.purchase_cost_minor, currency)}
+                    </TableCell>
+                    <TableCell>
+                      {p.is_active ? (
+                        <Badge variant="secondary">Active</Badge>
+                      ) : (
+                        <Badge variant="outline">Archived</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="space-x-1 text-right">
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          try {
+                            await doArchive({
+                              data: { companyId, productId: p.id, restore: !p.is_active },
+                            });
+                            toast.success(p.is_active ? "Archived" : "Restored");
+                            await productsQ.refetch();
+                          } catch (e) {
+                            toast.error(friendlyAuthError(e));
+                          }
+                        }}
+                      >
+                        <Archive className="size-4" />
+                        {p.is_active ? "Archive" : "Restore"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit item" : "New product / service"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label>Kind</Label>
+              <Select value={form.kind} onValueChange={(v) => setForm((f) => ({ ...f, kind: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="service">Service</SelectItem>
+                  <SelectItem value="product">Product (non-stock)</SelectItem>
+                  <SelectItem value="non_inventory">Non-inventory</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1">
+                <Label>Code / SKU</Label>
+                <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+              </div>
+              <div className="grid gap-1">
+                <Label>Unit</Label>
+                <Input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid gap-1">
+              <Label>Name</Label>
+              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="grid gap-1">
+              <Label>Description</Label>
+              <Input
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1">
+                <Label>Sales price ({currency})</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.salesPrice}
+                  onChange={(e) => setForm((f) => ({ ...f, salesPrice: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label>Purchase cost ({currency})</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.purchaseCost}
+                  onChange={(e) => setForm((f) => ({ ...f, purchaseCost: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid gap-1">
+              <Label>Income account</Label>
+              <Select
+                value={form.incomeAccountId || "none"}
+                onValueChange={(v) => setForm((f) => ({ ...f, incomeAccountId: v === "none" ? "" : v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {incomeAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1">
+              <Label>Expense account</Label>
+              <Select
+                value={form.expenseAccountId || "none"}
+                onValueChange={(v) => setForm((f) => ({ ...f, expenseAccountId: v === "none" ? "" : v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {expenseAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1">
+                <Label>Sales tax (bps)</Label>
+                <Input
+                  type="number"
+                  value={form.salesTaxBps}
+                  onChange={(e) => setForm((f) => ({ ...f, salesTaxBps: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label>Purchase tax (bps)</Label>
+                <Input
+                  type="number"
+                  value={form.purchaseTaxBps}
+                  onChange={(e) => setForm((f) => ({ ...f, purchaseTaxBps: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+              {saveMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
