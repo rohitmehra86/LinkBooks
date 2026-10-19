@@ -12,7 +12,7 @@
 | # | Requirement | Evidence | Status |
 |---|-------------|----------|--------|
 | 1 | Repeatable safe seed | `openDemoCompany` / Settings reset → `seedDemoCompanyData` | Pass |
-| 2 | Customers, suppliers, CoA, invoices, receipts, bills, payments, expenses, credits, bank, journals, opening | Dataset + seeder | Pass |
+| 2 | Customers, suppliers, CoA, invoices, receipts, bills, payments, expenses, credits, bank, journals, opening | Dataset + rich seeder (quotes, POs, recurring, claims, bank rules, 6 contacts, 10 bank txns) | Pass |
 | 3 | Real posting engine | `postJournal` only | Pass |
 | 4–5 | Reports from ledger; known totals | `DEMO_EXPECTED` + `demo.test.ts` | Pass (unit) |
 | 6 | Prominent Demo label | AppShell banner + switcher + dashboard alert | Pass |
