@@ -262,10 +262,60 @@ export function computeDemoReportTotals(lines: PostedLine[] = buildDemoPostedLin
 
 /** Contacts / bank narrative for seed & docs (not ledger). */
 export const DEMO_CONTACTS = [
-  { key: "customer-acme", kind: "customer" as const, name: "Acme Consulting Ltd", email: "ap@acme-demo.example" },
-  { key: "customer-bright", kind: "customer" as const, name: "Brightside Ltd", email: "accounts@brightside-demo.example" },
-  { key: "supplier-office", kind: "supplier" as const, name: "Office Supplies Co", email: "billing@office-demo.example" },
-  { key: "supplier-host", kind: "supplier" as const, name: "Cloud Hosting Partners", email: "ar@host-demo.example" },
+  {
+    key: "customer-acme",
+    kind: "customer" as const,
+    name: "Acme Consulting Ltd",
+    email: "ap@acme-demo.example",
+    phone: "+44 20 7946 0001",
+    terms: 30,
+    notes: "Primary demo customer — paid invoice INV-1001",
+  },
+  {
+    key: "customer-bright",
+    kind: "customer" as const,
+    name: "Brightside Ltd",
+    email: "accounts@brightside-demo.example",
+    phone: "+44 161 555 0102",
+    terms: 30,
+    notes: "Open retainer INV-1002 with credit SCN-1",
+  },
+  {
+    key: "customer-north",
+    kind: "customer" as const,
+    name: "Northwind Traders Ltd",
+    email: "finance@northwind-demo.example",
+    phone: "+44 113 555 0199",
+    terms: 14,
+    notes: "Quotes + overdue workshop invoice",
+  },
+  {
+    key: "supplier-office",
+    kind: "supplier" as const,
+    name: "Office Supplies Co",
+    email: "billing@office-demo.example",
+    phone: "+44 20 7946 2001",
+    terms: 30,
+    notes: "Paid bill BILL-2001",
+  },
+  {
+    key: "supplier-host",
+    kind: "supplier" as const,
+    name: "Cloud Hosting Partners",
+    email: "ar@host-demo.example",
+    phone: "+44 20 7946 2002",
+    terms: 14,
+    notes: "Credited bill + recurring hosting",
+  },
+  {
+    key: "supplier-print",
+    kind: "supplier" as const,
+    name: "PrintShop & Mail Ltd",
+    email: "orders@printshop-demo.example",
+    phone: "+44 121 555 0144",
+    terms: 30,
+    notes: "PO + open bill BILL-2003",
+  },
 ];
 
 export const DEMO_BANK = {
@@ -283,9 +333,9 @@ export const DEMO_MODULE_STATUS: Array<{
 }> = [
   { path: "/", label: "Dashboard", status: "ready", note: "Figures from posted ledger only" },
   { path: "/banking", label: "Banking", status: "ready", note: "Accounts, import, reconcile samples" },
-  { path: "/sales", label: "Sales", status: "ready", note: "Invoices, receipts, credit notes" },
-  { path: "/purchases", label: "Purchases", status: "ready", note: "Bills, expenses, payments, credits" },
-  { path: "/contacts", label: "Contacts", status: "ready", note: "Customers and suppliers" },
+  { path: "/sales", label: "Sales", status: "ready", note: "Quotes, invoices, receipts, credits, recurring (manual generate)" },
+  { path: "/purchases", label: "Purchases", status: "ready", note: "Bills, POs, expenses, payments, credits, claims, recurring" },
+  { path: "/contacts", label: "Contacts", status: "ready", note: "6 demo customers/suppliers" },
   {
     path: "/products-services",
     label: "Products & Services",

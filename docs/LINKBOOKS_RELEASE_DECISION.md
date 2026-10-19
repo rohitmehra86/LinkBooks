@@ -7,15 +7,18 @@
 | **Re-verified** | 2026-10-19T13:48Z — same decision after independent re-check |
 | **Inputs** | (1) Full Product Scope MD — **not found on disk**; (2) approved plan `docs/plan/*`; (3) `docs/LINKBOOKS_PRODUCTION_READINESS_REPORT.md`; (4) current repo + re-verified tests |
 | **Evidence refresh** | `npx vitest run` → 124 passed; `npx tsc --noEmit` → 0; no `.github/workflows`; branch `feature/foundational-production-readiness` with large uncommitted surface; Full Product Scope file still absent |
-| **Production deploy** | **Not authorised / not performed** |
+| **Production deploy** | **Friend demo authorised** → https://linkbooks-navy.vercel.app (Demo Company). **Commercial production not authorised.** |
+| **Owner audit pack** | 2026-10-19: [LINKBOOKS_PRODUCTION_READINESS.md](./LINKBOOKS_PRODUCTION_READINESS.md), [LINKBOOKS_FEATURE_CATALOG.md](./LINKBOOKS_FEATURE_CATALOG.md), [LINKBOOKS_GAP_REGISTER.md](./LINKBOOKS_GAP_REGISTER.md), [LINKBOOKS_ACCOUNTING_INTEGRITY.md](./LINKBOOKS_ACCOUNTING_INTEGRITY.md), [LINKBOOKS_SECURITY_REVIEW.md](./LINKBOOKS_SECURITY_REVIEW.md), [LINKBOOKS_COMPETITIVE_BENCHMARK.md](./LINKBOOKS_COMPETITIVE_BENCHMARK.md) |
 
 ---
 
 ## Overall decision
 
-# **A. No-go — critical blockers remain**
+# **A. No-go — critical blockers remain** (commercial / unrestricted production)
 
-This is **not** a Conditional go and **not** a Go.
+**Addendum (2026-10-19, owner):** **Conditional friend-demo deploy is authorised** on https://linkbooks-navy.vercel.app using Demo Company and the same ledger engine, subject to conditions in [LINKBOOKS_PRODUCTION_READINESS.md](./LINKBOOKS_PRODUCTION_READINESS.md). This does **not** change the commercial **No-go**.
+
+This is **not** a Conditional go and **not** a Go **for paying customers or real client books**.
 
 **Rationale (evidence-based):**
 
@@ -70,7 +73,7 @@ Independent review **concurs** with the report’s verdict and critical blocker 
 | Lint | Fail (1416) in readiness report | Blocks strict CI gate |
 | CI workflows | Absent | Blocker |
 | Live Supabase / Vercel smoke | Not run | Blocker |
-| Migrations applied remotely | Unknown / not applied in verification | Blocker |
+| Migrations applied remotely | **Applied** on `ipxflpzfcqwtenodbxwc` (owner-verified 2026-10-19); staging isolation still unproven | Blocker for commercial; OK for friend demo with disclosed risk |
 
 ---
 
@@ -170,6 +173,6 @@ Even then, **C. Go** for unrestricted “full product / firm / AI / feeds” wou
 
 Critical blockers remain in security evidence, migration/ops readiness, E2E accounting proof, CI, and scope ratification. Local unit tests and a successful production **build** do not constitute a production **release**.
 
-**No production deployment, destructive migration, or production data change is authorised by this review.**
+**No unrestricted commercial production deployment or onboarding of real client books is authorised by this review.**
 
-Await **explicit written approval** from the product owner before any production release attempt.
+Friend-demo deployment on the named Vercel host is **authorised by the owner** under the conditions in [LINKBOOKS_PRODUCTION_READINESS.md](./LINKBOOKS_PRODUCTION_READINESS.md). Further production expansion requires clearing G-001–G-007 and explicit written re-approval.
