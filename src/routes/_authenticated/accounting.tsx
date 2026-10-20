@@ -40,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
 
 export const Route = createFileRoute("/_authenticated/accounting")({
   head: () => ({
@@ -176,6 +177,7 @@ function AccountingWorkspace({ companyId, currency }: { companyId: string; curre
       <Tabs defaultValue="coa">
         <TabsList>
           <TabsTrigger value="coa">Chart of accounts</TabsTrigger>
+          <TabsTrigger value="industry">Industry library</TabsTrigger>
           <TabsTrigger value="journals">Journals</TabsTrigger>
           <TabsTrigger value="post">Post manual journal</TabsTrigger>
           <TabsTrigger value="periods">Periods</TabsTrigger>
@@ -233,6 +235,10 @@ function AccountingWorkspace({ companyId, currency }: { companyId: string; curre
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="industry" className="mt-4">
+          <IndustryCoaPanel companyId={companyId} />
         </TabsContent>
 
         <TabsContent value="journals" className="mt-4">

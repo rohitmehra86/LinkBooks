@@ -177,10 +177,67 @@ export function buildTrialBalance(
   return { rows, totalDebit, totalCredit, balances: totalDebit === totalCredit };
 }
 
+export type ProfitAndLossSectionId =
+  | "revenue"
+  | "contra_revenue"
+  | "cost_of_sales"
+  | "operating_expense"
+  | "other";
+
+export const PROFIT_AND_LOSS_SECTION_LABELS: Record<ProfitAndLossSectionId, string> = {
+  revenue: "Revenue",
+  contra_revenue: "Returns & discounts",
+  cost_of_sales: "Cost of sales",
+  operating_expense: "Operating expenses",
+  other: "Other income & expense",
+};
+
+/** Map account subtype / type to a P&L presentation section (no double-count). */
+export function profitAndLossSectionFor(row: {
+  account_type: AccountType;
+  subtype?: string | null;
+}): ProfitAndLossSectionId {
+  const sub = (row.subtype ?? "").toLowerCase();
+  if (row.account_type === "income") {
+    if (sub.includes("contra")) return "contra_revenue";
+    if (sub.includes("contribution") || sub.includes("other")) return "other";
+    return "revenue";
+  }
+  if (sub === "cogs" || sub.includes("cost_of_sales") || sub.includes("cost of sales")) {
+    return "cost_of_sales";
+  }
+  if (
+    sub.includes("finance") ||
+    sub.includes("program") ||
+    sub.includes("depreciation") ||
+    sub === "other_expense"
+  ) {
+    return "other";
+  }
+  return "operating_expense";
+}
+
 export function buildProfitAndLoss(
   lines: PostedLine[],
   opts: { from: string; to: string },
-): { income: bigint; expense: bigint; net: bigint; rows: TrialBalanceRow[] } {
+): {
+  income: bigint;
+  expense: bigint;
+  net: bigint;
+  revenue: bigint;
+  contraRevenue: bigint;
+  costOfSales: bigint;
+  grossProfit: bigint;
+  operatingExpense: bigint;
+  otherNet: bigint;
+  rows: TrialBalanceRow[];
+  sections: Array<{
+    id: ProfitAndLossSectionId;
+    label: string;
+    rows: TrialBalanceRow[];
+    total_minor: bigint;
+  }>;
+} {
   const filtered = lines.filter(
     (l) =>
       (l.account_type === "income" || l.account_type === "expense") &&
@@ -189,14 +246,73 @@ export function buildProfitAndLoss(
   const { rows } = buildTrialBalance(filtered, opts);
   let income = 0n;
   let expense = 0n;
+  let revenue = 0n;
+  let contraRevenue = 0n;
+  let costOfSales = 0n;
+  let operatingExpense = 0n;
+  let otherNet = 0n;
+
+  const buckets = new Map<ProfitAndLossSectionId, TrialBalanceRow[]>();
+  for (const id of Object.keys(PROFIT_AND_LOSS_SECTION_LABELS) as ProfitAndLossSectionId[]) {
+    buckets.set(id, []);
+  }
+
   for (const row of rows) {
+    const section = profitAndLossSectionFor(row);
+    buckets.get(section)!.push(row);
     if (row.account_type === "income") {
-      income += row.credit_minor - row.debit_minor;
+      const signed = row.credit_minor - row.debit_minor;
+      income += signed;
+      if (section === "contra_revenue") contraRevenue += signed;
+      else if (section === "other") otherNet += signed;
+      else revenue += signed;
     } else {
-      expense += row.debit_minor - row.credit_minor;
+      const signed = row.debit_minor - row.credit_minor;
+      expense += signed;
+      if (section === "cost_of_sales") costOfSales += signed;
+      else if (section === "other") otherNet -= signed;
+      else operatingExpense += signed;
     }
   }
-  return { income, expense, net: income - expense, rows };
+
+  const grossProfit = revenue + contraRevenue - costOfSales;
+  const sections = (Object.keys(PROFIT_AND_LOSS_SECTION_LABELS) as ProfitAndLossSectionId[])
+    .map((id) => {
+      const sectionRows = buckets.get(id) ?? [];
+      let total = 0n;
+      for (const r of sectionRows) {
+        total +=
+          r.account_type === "income"
+            ? r.credit_minor - r.debit_minor
+            : -(r.debit_minor - r.credit_minor);
+      }
+      // Present expenses as positive costs in cost_of_sales / operating sections
+      if (id === "cost_of_sales" || id === "operating_expense") {
+        total = 0n;
+        for (const r of sectionRows) total += r.debit_minor - r.credit_minor;
+      }
+      return {
+        id,
+        label: PROFIT_AND_LOSS_SECTION_LABELS[id],
+        rows: sectionRows,
+        total_minor: total,
+      };
+    })
+    .filter((s) => s.rows.length > 0);
+
+  return {
+    income,
+    expense,
+    net: income - expense,
+    revenue,
+    contraRevenue,
+    costOfSales,
+    grossProfit,
+    operatingExpense,
+    otherNet,
+    rows,
+    sections,
+  };
 }
 
 export function buildBalanceSheet(

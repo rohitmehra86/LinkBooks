@@ -66,6 +66,35 @@ describe("profit and loss", () => {
     expect(pl.expense).toBe(2500n);
     expect(pl.net).toBe(7500n);
   });
+
+  it("separates cost of sales for gross profit", () => {
+    const withCogs: PostedLine[] = [
+      ...sample,
+      {
+        account_id: "cogs1",
+        account_code: "5000",
+        account_name: "Cost of Sales",
+        account_type: "expense",
+        account_subtype: "cogs",
+        journal_date: "2026-01-20",
+        debit_minor: 3000n,
+        credit_minor: 0n,
+      },
+      {
+        account_id: bank,
+        account_code: "1000",
+        account_name: "Bank",
+        account_type: "asset",
+        journal_date: "2026-01-20",
+        debit_minor: 0n,
+        credit_minor: 3000n,
+      },
+    ];
+    const pl = buildProfitAndLoss(withCogs, { from: "2026-01-01", to: "2026-12-31" });
+    expect(pl.costOfSales).toBe(3000n);
+    expect(pl.grossProfit).toBe(7000n);
+    expect(pl.sections.some((s) => s.id === "cost_of_sales")).toBe(true);
+  });
 });
 
 describe("balance sheet", () => {

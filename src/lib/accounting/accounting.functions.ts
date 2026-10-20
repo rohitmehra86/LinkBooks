@@ -284,6 +284,21 @@ export const getProfitAndLoss = createServerFn({ method: "GET" })
       income: Number(result.income),
       expense: Number(result.expense),
       net: Number(result.net),
+      revenue: Number(result.revenue),
+      contraRevenue: Number(result.contraRevenue),
+      costOfSales: Number(result.costOfSales),
+      grossProfit: Number(result.grossProfit),
+      operatingExpense: Number(result.operatingExpense),
+      otherNet: Number(result.otherNet),
+      sections: result.sections.map((s) => ({
+        ...s,
+        total_minor: Number(s.total_minor),
+        rows: s.rows.map((r) => ({
+          ...r,
+          debit_minor: Number(r.debit_minor),
+          credit_minor: Number(r.credit_minor),
+        })),
+      })),
       rows: result.rows.map((r) => ({
         ...r,
         debit_minor: Number(r.debit_minor),

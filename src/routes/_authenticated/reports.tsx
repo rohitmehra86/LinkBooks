@@ -254,6 +254,13 @@ function Reports() {
               <>
                 <div className="mb-4 grid gap-3 sm:grid-cols-3">
                   <Stat label="Income" value={fromMinorUnits(plQuery.data.income, currency)} />
+                  <Stat
+                    label="Gross profit"
+                    value={fromMinorUnits(
+                      plQuery.data.grossProfit ?? plQuery.data.income,
+                      currency,
+                    )}
+                  />
                   <Stat label="Expense" value={fromMinorUnits(plQuery.data.expense, currency)} />
                   <Stat label="Net" value={fromMinorUnits(plQuery.data.net, currency)} />
                 </div>
