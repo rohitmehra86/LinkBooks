@@ -281,6 +281,9 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       return { id: data.billId };
     }
 
+    const { allocateDocumentNumber } = await import("@/lib/settings/document-numbering");
+    const billNumber = await allocateDocumentNumber(supabase, data.companyId, "purchase_bill");
+
     const { data: inserted, error } = await supabase
       .from("purchase_bills" as never)
       .insert({
@@ -288,6 +291,7 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         contact_id: data.contactId,
         bill_date: data.billDate,
         due_date: data.dueDate,
+        bill_number: billNumber,
         supplier_invoice_number: data.supplierInvoiceNumber,
         memo: data.memo,
         currency_code: data.currencyCode,

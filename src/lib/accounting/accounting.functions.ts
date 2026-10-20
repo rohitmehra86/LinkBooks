@@ -160,6 +160,17 @@ export const postManualJournal = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "journals.manual");
+    const { data: wf } = await context.supabase
+      .from("company_workflow_settings" as never)
+      .select("accounting_require_journal_memo" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (
+      (wf as { accounting_require_journal_memo?: boolean } | null)?.accounting_require_journal_memo &&
+      !data.memo
+    ) {
+      throw new Error("A journal memo is required by organisation settings.");
+    }
     const result = await postJournal(context.supabase, {
       company_id: data.companyId,
       journal_date: data.journalDate,

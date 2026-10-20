@@ -309,6 +309,12 @@ export const saveInvoiceDraft = createServerFn({ method: "POST" })
       return { id: data.invoiceId };
     }
 
+    let invoiceNumber = data.invoiceNumber;
+    if (!invoiceNumber) {
+      const { allocateDocumentNumber } = await import("@/lib/settings/document-numbering");
+      invoiceNumber = await allocateDocumentNumber(supabase, data.companyId, "sales_invoice");
+    }
+
     const { data: inserted, error } = await supabase
       .from("sales_invoices" as never)
       .insert({
@@ -316,7 +322,7 @@ export const saveInvoiceDraft = createServerFn({ method: "POST" })
         contact_id: data.contactId,
         invoice_date: data.invoiceDate,
         due_date: data.dueDate,
-        invoice_number: data.invoiceNumber,
+        invoice_number: invoiceNumber,
         memo: data.memo,
         currency_code: data.currencyCode,
         status: "draft",

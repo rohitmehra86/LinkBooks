@@ -27,7 +27,8 @@ export function validateCompanyInput(input: CreateCompanyInput): CreateCompanyIn
   const m = Number(input.fiscal_year_end_month);
   const d = Number(input.fiscal_year_end_day);
   if (!Number.isInteger(m) || m < 1 || m > 12) throw new Error("Choose a financial year end month.");
-  const maxDay = new Date(2023, m, 0).getDate();
+  // Leap year so 29 Feb is a valid year-end day.
+  const maxDay = new Date(2024, m, 0).getDate();
   if (!Number.isInteger(d) || d < 1 || d > maxDay) throw new Error("Choose a valid financial year end day.");
   const timezone = (input.timezone ?? "").trim();
   if (!timezone || timezone.length > 64) throw new Error("Choose a time zone.");

@@ -422,18 +422,38 @@ export const resetDemoCompany = createServerFn({ method: "POST" })
 
 export const listCompanyAuditEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; limit?: number }) => ({
-    companyId: assertUuid(input.companyId),
-    limit: Math.min(Math.max(Number(input.limit) || 50, 1), 200),
-  }))
+  .inputValidator(
+    (input: {
+      companyId: string;
+      limit?: number;
+      offset?: number;
+      action?: string;
+      entityType?: string;
+      fromDate?: string;
+      toDate?: string;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      limit: Math.min(Math.max(Number(input.limit) || 50, 1), 200),
+      offset: Math.max(0, Number(input.offset) || 0),
+      action: (input.action ?? "").trim().slice(0, 80),
+      entityType: (input.entityType ?? "").trim().slice(0, 80),
+      fromDate: (input.fromDate ?? "").slice(0, 10),
+      toDate: (input.toDate ?? "").slice(0, 10),
+    }),
+  )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "audit.view");
-    const { data: rows, error } = await context.supabase
+    let q = context.supabase
       .from("audit_events" as never)
       .select("id, action, entity_type, entity_id, details, actor_user_id, created_at" as never)
       .eq("company_id" as never, data.companyId as never)
       .order("created_at" as never, { ascending: false })
-      .limit(data.limit);
+      .range(data.offset, data.offset + data.limit - 1);
+    if (data.action) q = q.ilike("action" as never, `%${data.action}%` as never);
+    if (data.entityType) q = q.eq("entity_type" as never, data.entityType as never);
+    if (data.fromDate) q = q.gte("created_at" as never, `${data.fromDate}T00:00:00.000Z` as never);
+    if (data.toDate) q = q.lte("created_at" as never, `${data.toDate}T23:59:59.999Z` as never);
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return ((rows ?? []) as Array<{
       id: string;
@@ -453,3 +473,113 @@ export const listCompanyAuditEvents = createServerFn({ method: "GET" })
       created_at: r.created_at,
     }));
   });
+
+export const listCompanyInvitations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "members.manage");
+    const { data: rows, error } = await context.supabase
+      .from("company_invitations" as never)
+      .select("id, email, role, expires_at, accepted_at, revoked_at, created_at" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .order("created_at" as never, { ascending: false })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    const now = Date.now();
+    return ((rows ?? []) as Array<{
+      id: string;
+      email: string;
+      role: string;
+      expires_at: string;
+      accepted_at: string | null;
+      revoked_at: string | null;
+      created_at: string;
+    }>).map((r) => {
+      let status: "pending" | "accepted" | "expired" | "revoked" = "pending";
+      if (r.revoked_at) status = "revoked";
+      else if (r.accepted_at) status = "accepted";
+      else if (new Date(r.expires_at).getTime() < now) status = "expired";
+      return { ...r, status, emailDelivery: "unavailable" as const };
+    });
+  });
+
+export const createCompanyInvitation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; email: string; role: CompanyRole }) => {
+    const email = (input.email ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email");
+    const allowed: CompanyRole[] = ["admin", "accountant", "bookkeeper", "staff", "read_only"];
+    if (!allowed.includes(input.role)) throw new Error("Cannot invite as owner via invitation");
+    return { companyId: assertUuid(input.companyId), email: email.slice(0, 160), role: input.role };
+  })
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "members.manage");
+    const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const tokenHash = await sha256Hex(token);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: row, error } = await context.supabase
+      .from("company_invitations" as never)
+      .insert({
+        company_id: data.companyId,
+        email: data.email,
+        role: data.role,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        invited_by: context.userId,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    const id = (row as { id: string }).id;
+    await audit(context.supabase as never, data.companyId, "members.invite", "company_invitation", id, {
+      email: data.email,
+      role: data.role,
+      email_sent: false,
+      reason: "No outbound email provider configured",
+    });
+    return {
+      id,
+      email: data.email,
+      role: data.role,
+      expiresAt,
+      inviteToken: token,
+      emailDelivery: "unavailable" as const,
+      message:
+        "Invitation recorded. Outbound email is not configured — share the invite token manually.",
+    };
+  });
+
+export const revokeCompanyInvitation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; invitationId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    invitationId: assertUuid(input.invitationId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "members.manage");
+    const { error } = await context.supabase
+      .from("company_invitations" as never)
+      .delete()
+      .eq("id" as never, data.invitationId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .is("accepted_at" as never, null as never);
+    if (error) throw new Error(error.message);
+    await audit(
+      context.supabase as never,
+      data.companyId,
+      "members.invite_revoke",
+      "company_invitation",
+      data.invitationId,
+      {},
+    );
+    return { ok: true };
+  });
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}

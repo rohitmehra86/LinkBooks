@@ -56,6 +56,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SettingsDimensionsPanel } from "@/components/settings/SettingsDimensionsPanel";
+import {
+  SettingsAutomationPanel,
+  SettingsIntegrationsPanel,
+  SettingsInvitationsPanel,
+} from "@/components/settings/SettingsGovernanceExtras";
+import { maxFiscalYearEndDay, formatDocumentNumberPreview } from "@/lib/settings/dimension-helpers";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -63,12 +70,14 @@ export const Route = createFileRoute("/_authenticated/settings")({
       { title: "Settings — LinkBooks" },
       {
         name: "description",
-        content: "Organisation details, financial settings, users and notifications.",
+        content:
+          "Organisation governance: localisation, financial controls, dimensions, documents, FX, users and audit.",
       },
       { property: "og:title", content: "Settings — LinkBooks" },
       {
         property: "og:description",
-        content: "Organisation details, financial settings, users and notifications.",
+        content:
+          "Organisation governance: localisation, financial controls, dimensions, documents, FX, users and audit.",
       },
     ],
   }),
@@ -131,9 +140,20 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
     queryFn: () => fetchExtended({ data: { companyId } }),
   });
 
+  const [auditAction, setAuditAction] = useState("");
+  const [auditEntity, setAuditEntity] = useState("");
+
   const auditQuery = useQuery({
-    queryKey: ["org-audit", companyId],
-    queryFn: () => fetchAudit({ data: { companyId, limit: 40 } }),
+    queryKey: ["org-audit", companyId, auditAction, auditEntity],
+    queryFn: () =>
+      fetchAudit({
+        data: {
+          companyId,
+          limit: 80,
+          ...(auditAction ? { action: auditAction } : {}),
+          ...(auditEntity ? { entityType: auditEntity } : {}),
+        },
+      }),
   });
 
   const [name, setName] = useState("");
@@ -193,7 +213,7 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
 
   const canEdit = canManageCompany(detailsQuery.data?.role);
   const isDemo = Boolean(detailsQuery.data?.is_demo);
-  const maxDay = useMemo(() => new Date(2023, Number(fyMonth), 0).getDate(), [fyMonth]);
+  const maxDay = useMemo(() => maxFiscalYearEndDay(Number(fyMonth)), [fyMonth]);
   const baseCurrency = detailsQuery.data?.base_currency ?? "GBP";
 
   const saveMutation = useMutation({
@@ -309,16 +329,19 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
     <>
       <PageHeader
         title="Settings"
-        description="Organisation profile, financial defaults, numbering, currencies, users and audit."
+        description="Organisation governance — localisation, financial controls, dimensions, documents, FX, users, automation and audit."
       />
 
       <Tabs defaultValue="organisation">
         <TabsList className="flex h-auto flex-wrap gap-1">
           <TabsTrigger value="organisation">Organisation</TabsTrigger>
           <TabsTrigger value="financial">Financial</TabsTrigger>
+          <TabsTrigger value="dimensions">Dimensions</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="currencies">Currencies</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="automation">Automation</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="audit">Audit</TabsTrigger>
           {isDemo ? <TabsTrigger value="demo">Demo</TabsTrigger> : null}
         </TabsList>
@@ -528,7 +551,11 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
                 <Select
                   value={fyMonth}
                   disabled={!canEdit || saveMutation.isPending}
-                  onValueChange={setFyMonth}
+                  onValueChange={(m) => {
+                    setFyMonth(m);
+                    const max = maxFiscalYearEndDay(Number(m));
+                    if (Number(fyDay) > max) setFyDay(String(max));
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -579,6 +606,10 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
           </Card>
         </TabsContent>
 
+        <TabsContent value="dimensions" className="mt-4">
+          <SettingsDimensionsPanel companyId={companyId} canEdit={canEdit} currency={baseCurrency} />
+        </TabsContent>
+
         <TabsContent value="documents" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
@@ -622,7 +653,11 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Invoice and bill numbering</CardTitle>
-              <CardDescription>Prefix, next number and zero-padding per document type.</CardDescription>
+              <CardDescription>
+                Prefix, next number and zero-padding per document type. Allocation uses a concurrency-safe
+                database function when creating invoices/bills without a manual number. Changing next
+                number never renumbers historical documents.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {extendedQuery.isPending ? (
@@ -635,6 +670,7 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
                       <TableHead>Prefix</TableHead>
                       <TableHead>Next</TableHead>
                       <TableHead>Padding</TableHead>
+                      <TableHead>Preview</TableHead>
                       <TableHead />
                     </TableRow>
                   </TableHeader>
@@ -795,11 +831,10 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
             <CardHeader>
               <CardTitle className="text-base">Users and roles</CardTitle>
               <CardDescription>
-                Least-privilege roles. Last owner is protected. Email invite UI is not connected yet —
-                no fake invite status is shown.
+                Least-privilege roles. Last owner is protected. Permissions are enforced server-side.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               {membersQuery.isPending ? (
                 <LoadingState rows={3} />
               ) : membersQuery.isError ? (
@@ -864,8 +899,17 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
                   </TableBody>
                 </Table>
               )}
+              <SettingsInvitationsPanel companyId={companyId} canEdit={canEdit} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="automation" className="mt-4 space-y-4">
+          <SettingsAutomationPanel companyId={companyId} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="integrations" className="mt-4">
+          <SettingsIntegrationsPanel />
         </TabsContent>
 
         <TabsContent value="audit" className="mt-4">
@@ -873,11 +917,23 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
             <CardHeader>
               <CardTitle className="text-base">Audit history</CardTitle>
               <CardDescription>
-                Financial and administrative actions for this organisation. Secrets are stripped
-                server-side.
+                Append-only financial and administrative actions. Filter to reduce noise from
+                journal.posted / demo.seed bursts. Secrets are stripped server-side.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  placeholder="Filter action (e.g. settings, members, journal)"
+                  value={auditAction}
+                  onChange={(e) => setAuditAction(e.target.value)}
+                />
+                <Input
+                  placeholder="Entity type (e.g. company, exchange_rate)"
+                  value={auditEntity}
+                  onChange={(e) => setAuditEntity(e.target.value)}
+                />
+              </div>
               {auditQuery.isPending ? (
                 <LoadingState rows={4} />
               ) : auditQuery.isError ? (
@@ -886,6 +942,8 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
                   description={friendlyAuthError(auditQuery.error)}
                   onRetry={() => auditQuery.refetch()}
                 />
+              ) : (auditQuery.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No events match these filters.</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -991,6 +1049,9 @@ function SequenceRow({
       </TableCell>
       <TableCell>
         <Input className="h-8 w-16" value={pad} disabled={disabled} onChange={(e) => setPad(e.target.value)} />
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">
+        {formatDocumentNumberPreview(prefix, Number(next) || 1, Number(pad) || 4)}
       </TableCell>
       <TableCell>
         {disabled ? null : (
