@@ -2,7 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
-import { computeLineAmounts, deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
+import { deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
+import {
+  computeBillLine,
+  MAX_ATTACHMENT_BYTES,
+  validateAttachmentFile,
+  type TaxCalculationMode,
+} from "@/lib/purchases/bill-form-helpers";
 import { requireAccountInCompany } from "@/lib/purchases/accounts";
 import {
   postBillAuthorisation,
@@ -11,6 +17,25 @@ import {
   postSupplierPayment,
   voidPostedDocument,
 } from "@/lib/purchases/posting";
+
+async function recordBillAudit(
+  supabase: unknown,
+  companyId: string,
+  action: string,
+  billId: string | null,
+  details: Record<string, unknown>,
+) {
+  await (supabase as { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> }).rpc(
+    "record_audit_event",
+    {
+      _company_id: companyId,
+      _action: action,
+      _entity_type: "purchase_bill",
+      _entity_id: billId,
+      _details: details,
+    },
+  );
+}
 
 function companyIdOf(input: { companyId: string }) {
   return { companyId: assertUuid(input.companyId) };
@@ -28,9 +53,12 @@ export const listSuppliers = createServerFn({ method: "GET" })
     await assertCompanyMember(context.supabase, data.companyId);
     let q = context.supabase
       .from("contacts" as never)
-      .select("id, name, email, phone, tax_number, payment_terms_days, is_active, kind" as never)
+      .select(
+        "id, name, email, phone, tax_number, payment_terms_days, is_active, kind, default_currency, billing_address_line1, billing_address_line2, billing_city, billing_region, billing_postal, billing_country" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
       .in("kind" as never, ["supplier", "both"] as never)
+      .eq("is_active" as never, true as never)
       .order("name" as never);
     if (data.q) q = q.ilike("name" as never, `%${data.q}%` as never);
     const { data: rows, error } = await q;
@@ -49,6 +77,13 @@ export const upsertSupplier = createServerFn({ method: "POST" })
       phone?: string;
       taxNumber?: string;
       paymentTermsDays?: number;
+      billingAddressLine1?: string;
+      billingAddressLine2?: string;
+      billingCity?: string;
+      billingRegion?: string;
+      billingPostal?: string;
+      billingCountry?: string;
+      defaultCurrency?: string;
     }) => {
       const name = (input.name ?? "").trim();
       if (name.length < 1) throw new Error("Supplier name is required");
@@ -60,22 +95,55 @@ export const upsertSupplier = createServerFn({ method: "POST" })
         phone: (input.phone ?? "").trim().slice(0, 60) || null,
         taxNumber: (input.taxNumber ?? "").trim().slice(0, 60) || null,
         paymentTermsDays: Math.max(0, Number(input.paymentTermsDays ?? 30) || 0),
+        billingAddressLine1: (input.billingAddressLine1 ?? "").trim().slice(0, 200) || null,
+        billingAddressLine2: (input.billingAddressLine2 ?? "").trim().slice(0, 200) || null,
+        billingCity: (input.billingCity ?? "").trim().slice(0, 100) || null,
+        billingRegion: (input.billingRegion ?? "").trim().slice(0, 100) || null,
+        billingPostal: (input.billingPostal ?? "").trim().slice(0, 40) || null,
+        billingCountry: (input.billingCountry ?? "").trim().slice(0, 100) || null,
+        defaultCurrency: (input.defaultCurrency ?? "").trim().toUpperCase().slice(0, 3) || null,
       };
     },
   )
   .handler(async ({ data, context }) => {
-    await assertCompanyPermission(context.supabase, data.companyId, "contacts.manage");
+    // Quick-add from bills may use purchases.draft; full contact edits use contacts.manage
+    try {
+      await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    } catch {
+      await assertCompanyPermission(context.supabase, data.companyId, "contacts.manage");
+    }
+
+    const { data: dup } = await context.supabase
+      .from("contacts" as never)
+      .select("id, name" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("is_active" as never, true as never)
+      .ilike("name" as never, data.name as never);
+    const conflict = ((dup ?? []) as Array<{ id: string; name: string }>).find(
+      (c) => c.name.toLowerCase() === data.name.toLowerCase() && c.id !== data.id,
+    );
+    if (conflict) throw new Error(`A contact named "${conflict.name}" already exists`);
+
+    const payload = {
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      tax_number: data.taxNumber,
+      payment_terms_days: data.paymentTermsDays,
+      billing_address_line1: data.billingAddressLine1,
+      billing_address_line2: data.billingAddressLine2,
+      billing_city: data.billingCity,
+      billing_region: data.billingRegion,
+      billing_postal: data.billingPostal,
+      billing_country: data.billingCountry,
+      default_currency: data.defaultCurrency,
+      updated_at: new Date().toISOString(),
+    };
+
     if (data.id) {
       const { data: row, error } = await context.supabase
         .from("contacts" as never)
-        .update({
-          name: data.name,
-          email: data.email,
-          phone: data.phone,
-          tax_number: data.taxNumber,
-          payment_terms_days: data.paymentTermsDays,
-          updated_at: new Date().toISOString(),
-        } as never)
+        .update(payload as never)
         .eq("id" as never, data.id as never)
         .eq("company_id" as never, data.companyId as never)
         .select("id")
@@ -89,11 +157,7 @@ export const upsertSupplier = createServerFn({ method: "POST" })
       .insert({
         company_id: data.companyId,
         kind: "supplier",
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        tax_number: data.taxNumber,
-        payment_terms_days: data.paymentTermsDays,
+        ...payload,
       } as never)
       .select("id")
       .single();
@@ -110,26 +174,52 @@ type BillLineIn = {
   unitPriceMinor: number;
   discountMinor?: number;
   taxRateBps?: number;
+  productId?: string | null;
+  taxCodeId?: string | null;
+  classOptionId?: string | null;
+  locationOptionId?: string | null;
+  projectOptionId?: string | null;
+  customerContactId?: string | null;
+  isBillable?: boolean;
 };
 
-function validateBillLines(lines: BillLineIn[]) {
+function validateBillLines(lines: BillLineIn[], taxCalculation: TaxCalculationMode = "exclusive") {
   if (!Array.isArray(lines) || lines.length < 1) throw new Error("Add at least one bill line");
   return lines.map((l, i) => {
     const description = (l.description ?? "").trim();
     if (!description) throw new Error(`Line ${i + 1}: description required`);
-    const computed = computeLineAmounts({
-      quantity: Number(l.quantity),
-      unit_price_minor: l.unitPriceMinor,
-      discount_minor: l.discountMinor ?? 0,
-      tax_rate_bps: l.taxRateBps ?? 0,
-    });
+    if (!l.accountId) throw new Error(`Line ${i + 1}: expense/asset account required`);
+    const qty = Number(l.quantity);
+    if (!(qty > 0) || !Number.isFinite(qty)) throw new Error(`Line ${i + 1}: quantity must be positive`);
+    const unitPriceMinor = Number(l.unitPriceMinor);
+    if (!(unitPriceMinor >= 0) || !Number.isFinite(unitPriceMinor)) {
+      throw new Error(`Line ${i + 1}: unit price cannot be negative`);
+    }
+    const discountMinor = Number(l.discountMinor ?? 0);
+    if (!(discountMinor >= 0) || !Number.isFinite(discountMinor)) {
+      throw new Error(`Line ${i + 1}: discount cannot be negative`);
+    }
+    const taxRateBps = Math.min(10000, Math.max(0, Math.floor(Number(l.taxRateBps ?? 0) || 0)));
+    const computed = computeBillLine(
+      { quantity: qty, unitPriceMinor, discountMinor, taxRateBps },
+      taxCalculation,
+    );
     return {
       description,
       accountId: assertUuid(l.accountId, "account"),
-      quantity: Number(l.quantity),
-      unitPriceMinor: Number(l.unitPriceMinor),
-      discountMinor: Number(l.discountMinor ?? 0),
-      taxRateBps: Number(l.taxRateBps ?? 0),
+      quantity: qty,
+      unitPriceMinor,
+      discountMinor,
+      taxRateBps: taxCalculation === "none" ? 0 : taxRateBps,
+      productId: l.productId ? assertUuid(l.productId, "product") : null,
+      taxCodeId: l.taxCodeId ? assertUuid(l.taxCodeId, "tax code") : null,
+      classOptionId: l.classOptionId ? assertUuid(l.classOptionId, "class") : null,
+      locationOptionId: l.locationOptionId ? assertUuid(l.locationOptionId, "location") : null,
+      projectOptionId: l.projectOptionId ? assertUuid(l.projectOptionId, "project") : null,
+      customerContactId: l.customerContactId
+        ? assertUuid(l.customerContactId, "customer")
+        : null,
+      isBillable: Boolean(l.isBillable),
       ...computed,
     };
   });
@@ -187,6 +277,46 @@ export const getBill = createServerFn({ method: "GET" })
     return bill;
   });
 
+export const checkDuplicateSupplierBill = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      contactId: string;
+      supplierInvoiceNumber: string;
+      excludeBillId?: string;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      contactId: assertUuid(input.contactId, "supplier"),
+      supplierInvoiceNumber: (input.supplierInvoiceNumber ?? "").trim().slice(0, 80),
+      excludeBillId: input.excludeBillId ? assertUuid(input.excludeBillId, "bill") : undefined,
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    if (!data.supplierInvoiceNumber) return { duplicate: false as const };
+    let q = context.supabase
+      .from("purchase_bills" as never)
+      .select("id, bill_number, status, bill_date, total_minor" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("contact_id" as never, data.contactId as never)
+      .neq("status" as never, "void" as never)
+      .ilike("supplier_invoice_number" as never, data.supplierInvoiceNumber as never)
+      .limit(5);
+    if (data.excludeBillId) q = q.neq("id" as never, data.excludeBillId as never);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    const matches = (rows ?? []) as Array<{
+      id: string;
+      bill_number: string | null;
+      status: string;
+      bill_date: string;
+      total_minor: number;
+    }>;
+    if (!matches.length) return { duplicate: false as const };
+    return { duplicate: true as const, matches };
+  });
+
 export const saveBillDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -199,11 +329,31 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       supplierInvoiceNumber?: string;
       memo?: string;
       currencyCode: string;
+      taxCalculation?: TaxCalculationMode;
+      paymentTermId?: string | null;
+      paymentTermsDays?: number | null;
+      dueDateManualOverride?: boolean;
+      acknowledgeDuplicate?: boolean;
+      fxRateToBase?: number | null;
+      supplierAddress?: {
+        line1?: string;
+        line2?: string;
+        city?: string;
+        region?: string;
+        postal?: string;
+        country?: string;
+      };
       lines: BillLineIn[];
     }) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.billDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) {
         throw new Error("Bill and due dates are required (YYYY-MM-DD)");
       }
+      const taxCalculation: TaxCalculationMode =
+        input.taxCalculation === "inclusive" || input.taxCalculation === "none"
+          ? input.taxCalculation
+          : "exclusive";
+      const currencyCode = (input.currencyCode ?? "").toUpperCase();
+      if (!/^[A-Z]{3}$/.test(currencyCode)) throw new Error("Currency code required");
       return {
         companyId: assertUuid(input.companyId),
         billId: input.billId ? assertUuid(input.billId, "bill") : undefined,
@@ -212,8 +362,28 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         dueDate: input.dueDate,
         supplierInvoiceNumber: (input.supplierInvoiceNumber ?? "").trim().slice(0, 80) || null,
         memo: (input.memo ?? "").trim().slice(0, 500) || null,
-        currencyCode: (input.currencyCode ?? "").toUpperCase(),
-        lines: validateBillLines(input.lines),
+        currencyCode,
+        taxCalculation,
+        paymentTermId: input.paymentTermId ? assertUuid(input.paymentTermId, "payment term") : null,
+        paymentTermsDays:
+          input.paymentTermsDays == null
+            ? null
+            : Math.max(0, Math.min(3650, Math.floor(Number(input.paymentTermsDays) || 0))),
+        dueDateManualOverride: Boolean(input.dueDateManualOverride),
+        acknowledgeDuplicate: Boolean(input.acknowledgeDuplicate),
+        fxRateToBase:
+          input.fxRateToBase == null || input.fxRateToBase === 1
+            ? null
+            : Number(input.fxRateToBase),
+        supplierAddress: {
+          line1: (input.supplierAddress?.line1 ?? "").trim().slice(0, 200) || null,
+          line2: (input.supplierAddress?.line2 ?? "").trim().slice(0, 200) || null,
+          city: (input.supplierAddress?.city ?? "").trim().slice(0, 100) || null,
+          region: (input.supplierAddress?.region ?? "").trim().slice(0, 100) || null,
+          postal: (input.supplierAddress?.postal ?? "").trim().slice(0, 40) || null,
+          country: (input.supplierAddress?.country ?? "").trim().slice(0, 100) || null,
+        },
+        lines: validateBillLines(input.lines, taxCalculation),
       };
     },
   )
@@ -223,7 +393,57 @@ export const saveBillDraft = createServerFn({ method: "POST" })
     for (const line of data.lines) {
       await requireAccountInCompany(supabase, data.companyId, line.accountId);
     }
+    if (data.fxRateToBase != null && (!(data.fxRateToBase > 0) || !Number.isFinite(data.fxRateToBase))) {
+      throw new Error("Exchange rate must be a positive number");
+    }
     const totals = sumLines(data.lines);
+
+    const headerFields = {
+      contact_id: data.contactId,
+      bill_date: data.billDate,
+      due_date: data.dueDate,
+      supplier_invoice_number: data.supplierInvoiceNumber,
+      memo: data.memo,
+      currency_code: data.currencyCode,
+      tax_calculation: data.taxCalculation,
+      payment_term_id: data.paymentTermId,
+      payment_terms_days: data.paymentTermsDays,
+      due_date_manual_override: data.dueDateManualOverride,
+      duplicate_override: data.acknowledgeDuplicate,
+      fx_rate_to_base: data.fxRateToBase,
+      supplier_address_line1: data.supplierAddress.line1,
+      supplier_address_line2: data.supplierAddress.line2,
+      supplier_address_city: data.supplierAddress.city,
+      supplier_address_region: data.supplierAddress.region,
+      supplier_address_postal: data.supplierAddress.postal,
+      supplier_address_country: data.supplierAddress.country,
+      subtotal_minor: Number(totals.subtotal_minor),
+      tax_minor: Number(totals.tax_minor),
+      total_minor: Number(totals.total_minor),
+      updated_at: new Date().toISOString(),
+    };
+
+    const lineRows = (billId: string) =>
+      data.lines.map((l, i) => ({
+        company_id: data.companyId,
+        bill_id: billId,
+        line_no: i + 1,
+        description: l.description,
+        account_id: l.accountId,
+        product_id: l.productId,
+        tax_code_id: l.taxCodeId,
+        quantity: l.quantity,
+        unit_price_minor: l.unitPriceMinor,
+        discount_minor: l.discountMinor,
+        tax_rate_bps: l.taxRateBps,
+        net_minor: Number(l.net_minor),
+        tax_minor: Number(l.tax_minor),
+        class_option_id: l.classOptionId,
+        location_option_id: l.locationOptionId,
+        project_option_id: l.projectOptionId,
+        customer_contact_id: l.customerContactId,
+        is_billable: l.isBillable,
+      }));
 
     if (data.billId) {
       const { data: existing, error: exErr } = await supabase
@@ -239,22 +459,13 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       }
       const { error: upErr } = await supabase
         .from("purchase_bills" as never)
-        .update({
-          contact_id: data.contactId,
-          bill_date: data.billDate,
-          due_date: data.dueDate,
-          supplier_invoice_number: data.supplierInvoiceNumber,
-          memo: data.memo,
-          currency_code: data.currencyCode,
-          subtotal_minor: Number(totals.subtotal_minor),
-          tax_minor: Number(totals.tax_minor),
-          total_minor: Number(totals.total_minor),
-          updated_at: new Date().toISOString(),
-        } as never)
+        .update(headerFields as never)
         .eq("id" as never, data.billId as never);
       if (upErr) {
         if (upErr.message.toLowerCase().includes("duplicate") || upErr.code === "23505") {
-          throw new Error("A bill with this supplier invoice number already exists");
+          throw new Error(
+            "A bill with this supplier invoice number already exists. Acknowledge the duplicate to continue.",
+          );
         }
         throw new Error(upErr.message);
       }
@@ -262,70 +473,53 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         .from("purchase_bill_lines" as never)
         .delete()
         .eq("bill_id" as never, data.billId as never);
-      const { error: lineErr } = await supabase.from("purchase_bill_lines" as never).insert(
-        data.lines.map((l, i) => ({
-          company_id: data.companyId,
-          bill_id: data.billId,
-          line_no: i + 1,
-          description: l.description,
-          account_id: l.accountId,
-          quantity: l.quantity,
-          unit_price_minor: l.unitPriceMinor,
-          discount_minor: l.discountMinor,
-          tax_rate_bps: l.taxRateBps,
-          net_minor: Number(l.net_minor),
-          tax_minor: Number(l.tax_minor),
-        })) as never,
-      );
+      const { error: lineErr } = await supabase
+        .from("purchase_bill_lines" as never)
+        .insert(lineRows(data.billId) as never);
       if (lineErr) throw new Error(lineErr.message);
+      await recordBillAudit(supabase, data.companyId, "bill.draft.update", data.billId, {
+        total_minor: Number(totals.total_minor),
+        line_count: data.lines.length,
+      });
       return { id: data.billId };
     }
 
     const { allocateDocumentNumber } = await import("@/lib/settings/document-numbering");
-    const billNumber = await allocateDocumentNumber(supabase, data.companyId, "purchase_bill");
+    const billNumber = await allocateDocumentNumber(
+      supabase as never,
+      data.companyId,
+      "purchase_bill",
+    );
 
     const { data: inserted, error } = await supabase
       .from("purchase_bills" as never)
       .insert({
         company_id: data.companyId,
-        contact_id: data.contactId,
-        bill_date: data.billDate,
-        due_date: data.dueDate,
         bill_number: billNumber,
-        supplier_invoice_number: data.supplierInvoiceNumber,
-        memo: data.memo,
-        currency_code: data.currencyCode,
         status: "draft",
-        subtotal_minor: Number(totals.subtotal_minor),
-        tax_minor: Number(totals.tax_minor),
-        total_minor: Number(totals.total_minor),
         created_by: userId,
+        ...headerFields,
       } as never)
       .select("id")
       .single();
     if (error) {
       if (error.message.toLowerCase().includes("duplicate") || error.code === "23505") {
-        throw new Error("A bill with this supplier invoice number already exists");
+        throw new Error(
+          "A bill with this supplier invoice number already exists. Acknowledge the duplicate to continue.",
+        );
       }
       throw new Error(error.message);
     }
     const billId = (inserted as { id: string }).id;
-    const { error: lineErr } = await supabase.from("purchase_bill_lines" as never).insert(
-      data.lines.map((l, i) => ({
-        company_id: data.companyId,
-        bill_id: billId,
-        line_no: i + 1,
-        description: l.description,
-        account_id: l.accountId,
-        quantity: l.quantity,
-        unit_price_minor: l.unitPriceMinor,
-        discount_minor: l.discountMinor,
-        tax_rate_bps: l.taxRateBps,
-        net_minor: Number(l.net_minor),
-        tax_minor: Number(l.tax_minor),
-      })) as never,
-    );
+    const { error: lineErr } = await supabase
+      .from("purchase_bill_lines" as never)
+      .insert(lineRows(billId) as never);
     if (lineErr) throw new Error(lineErr.message);
+    await recordBillAudit(supabase, data.companyId, "bill.draft.create", billId, {
+      bill_number: billNumber,
+      total_minor: Number(totals.total_minor),
+      line_count: data.lines.length,
+    });
     return { id: billId };
   });
 
@@ -360,12 +554,19 @@ async function authoriseBillInternal(
   if (b.status !== "draft") throw new Error("Only draft bills can be authorised");
   if (b.posted_journal_id) throw new Error("Bill already posted");
 
+  const billFx = bill as { fx_rate_to_base?: number | string | null };
+  const fxRate =
+    billFx.fx_rate_to_base != null && Number(billFx.fx_rate_to_base) > 0
+      ? Number(billFx.fx_rate_to_base)
+      : undefined;
+
   const journalId = await postBillAuthorisation(supabase, {
     company_id: companyId,
     bill_id: billId,
     bill_date: b.bill_date,
     currency_code: b.currency_code,
     ...(b.memo ? { memo: b.memo } : {}),
+    ...(fxRate != null ? { fx_rate_to_base: fxRate } : {}),
     lines: b.purchase_bill_lines.map((l) => ({
       account_id: l.account_id,
       description: l.description,
@@ -385,6 +586,7 @@ async function authoriseBillInternal(
     } as never)
     .eq("id" as never, billId as never);
   if (upErr) throw new Error(upErr.message);
+  await recordBillAudit(supabase, companyId, "bill.authorise", billId, { journal_id: journalId });
   return { journalId };
 }
 
@@ -1772,4 +1974,341 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       unappliedCreditMinor: unappliedCredits,
       unappliedPaymentMinor: unappliedPayments,
     };
+  });
+
+// ---- Payment terms ----
+
+export const listPaymentTerms = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { data: rows, error } = await context.supabase
+      .from("company_payment_terms" as never)
+      .select("id, name, days, calculation_method, is_active" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("is_active" as never, true as never)
+      .order("days" as never);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const createPaymentTerm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      name: string;
+      days: number;
+      calculationMethod?: string;
+    }) => {
+      const name = (input.name ?? "").trim();
+      if (!name) throw new Error("Payment term name is required");
+      const method = input.calculationMethod ?? "days_after_bill_date";
+      if (!["days_after_bill_date", "due_on_receipt", "days_after_month_end"].includes(method)) {
+        throw new Error("Invalid calculation method");
+      }
+      return {
+        companyId: assertUuid(input.companyId),
+        name: name.slice(0, 80),
+        days: Math.max(0, Math.min(3650, Math.floor(Number(input.days) || 0))),
+        calculationMethod: method,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: row, error } = await context.supabase
+      .from("company_payment_terms" as never)
+      .insert({
+        company_id: data.companyId,
+        name: data.name,
+        days: data.days,
+        calculation_method: data.calculationMethod,
+      } as never)
+      .select("id")
+      .single();
+    if (error) {
+      if (error.code === "23505") throw new Error("A payment term with this name already exists");
+      throw new Error(error.message);
+    }
+    return { id: (row as { id: string }).id };
+  });
+
+// ---- Bill attachments ----
+
+export const listBillAttachments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: rows, error } = await context.supabase
+      .from("document_attachments" as never)
+      .select("id, file_name, content_type, size_bytes, created_at, uploaded_by, storage_path" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_id" as never, data.billId as never)
+      .order("created_at" as never, { ascending: false } as never);
+    if (error) throw new Error(error.message);
+    return ((rows ?? []) as Array<{
+      id: string;
+      file_name: string;
+      content_type: string | null;
+      size_bytes: number | null;
+      created_at: string;
+      uploaded_by: string | null;
+      storage_path: string;
+    }>).map((r) => ({
+      id: r.id,
+      file_name: r.file_name,
+      content_type: r.content_type,
+      size_bytes: r.size_bytes,
+      created_at: r.created_at,
+      uploaded_by: r.uploaded_by,
+      has_content: r.storage_path?.startsWith("inline:") ?? false,
+    }));
+  });
+
+export const uploadBillAttachment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      billId: string;
+      fileName: string;
+      contentType?: string;
+      contentBase64: string;
+      sizeBytes: number;
+    }) => {
+      const fileName = (input.fileName ?? "").trim().slice(0, 255);
+      const sizeBytes = Math.floor(Number(input.sizeBytes) || 0);
+      const check = validateAttachmentFile({
+        fileName,
+        sizeBytes,
+        contentType: input.contentType ?? null,
+      });
+      if (!check.ok) throw new Error(check.error);
+      const contentBase64 = (input.contentBase64 ?? "").replace(/\s/g, "");
+      if (!contentBase64) throw new Error("File content required");
+      // Rough base64 size check
+      const approxBytes = Math.floor((contentBase64.length * 3) / 4);
+      if (approxBytes > MAX_ATTACHMENT_BYTES) throw new Error("Max file size: 20 MB");
+      return {
+        companyId: assertUuid(input.companyId),
+        billId: assertUuid(input.billId, "bill"),
+        fileName,
+        contentType: (input.contentType ?? "").trim().slice(0, 120) || null,
+        contentBase64,
+        sizeBytes,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    const { data: bill } = await supabase
+      .from("purchase_bills" as never)
+      .select("id" as never)
+      .eq("id" as never, data.billId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (!bill) throw new Error("Bill not found");
+
+    const { data: row, error } = await supabase
+      .from("document_attachments" as never)
+      .insert({
+        company_id: data.companyId,
+        entity_type: "purchase_bill",
+        entity_id: data.billId,
+        file_name: data.fileName,
+        storage_path: `inline:${data.billId}`,
+        content_type: data.contentType,
+        size_bytes: data.sizeBytes,
+        content_base64: data.contentBase64,
+        uploaded_by: userId,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    const id = (row as { id: string }).id;
+    await supabase
+      .from("document_attachments" as never)
+      .update({ storage_path: `inline:${id}` } as never)
+      .eq("id" as never, id as never);
+    await recordBillAudit(supabase, data.companyId, "bill.attachment.upload", data.billId, {
+      attachment_id: id,
+      file_name: data.fileName,
+      size_bytes: data.sizeBytes,
+    });
+    return { id };
+  });
+
+export const downloadBillAttachment = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; attachmentId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    attachmentId: assertUuid(input.attachmentId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: row, error } = await context.supabase
+      .from("document_attachments" as never)
+      .select("id, file_name, content_type, size_bytes, content_base64, entity_type" as never)
+      .eq("id" as never, data.attachmentId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Attachment not found");
+    const r = row as {
+      file_name: string;
+      content_type: string | null;
+      size_bytes: number | null;
+      content_base64: string | null;
+      entity_type: string;
+    };
+    if (r.entity_type !== "purchase_bill") throw new Error("Attachment not found");
+    if (!r.content_base64) throw new Error("Attachment content unavailable");
+    return {
+      fileName: r.file_name,
+      contentType: r.content_type,
+      sizeBytes: r.size_bytes,
+      contentBase64: r.content_base64,
+    };
+  });
+
+export const deleteBillAttachment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; attachmentId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    attachmentId: assertUuid(input.attachmentId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: row } = await context.supabase
+      .from("document_attachments" as never)
+      .select("id, entity_id, file_name, entity_type" as never)
+      .eq("id" as never, data.attachmentId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (!row) throw new Error("Attachment not found");
+    const r = row as { entity_id: string; file_name: string; entity_type: string };
+    if (r.entity_type !== "purchase_bill") throw new Error("Attachment not found");
+    const { error } = await context.supabase
+      .from("document_attachments" as never)
+      .delete()
+      .eq("id" as never, data.attachmentId as never)
+      .eq("company_id" as never, data.companyId as never);
+    if (error) throw new Error(error.message);
+    await recordBillAudit(context.supabase, data.companyId, "bill.attachment.delete", r.entity_id, {
+      attachment_id: data.attachmentId,
+      file_name: r.file_name,
+    });
+    return { ok: true };
+  });
+
+// ---- Internal notes + activity ----
+
+export const listBillNotes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: rows, error } = await context.supabase
+      .from("bill_internal_notes" as never)
+      .select("id, body, created_by, created_at" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("bill_id" as never, data.billId as never)
+      .order("created_at" as never, { ascending: false } as never);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const addBillNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string; body: string }) => {
+    const body = (input.body ?? "").trim();
+    if (!body) throw new Error("Note body is required");
+    return {
+      companyId: assertUuid(input.companyId),
+      billId: assertUuid(input.billId, "bill"),
+      body: body.slice(0, 4000),
+    };
+  })
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: row, error } = await context.supabase
+      .from("bill_internal_notes" as never)
+      .insert({
+        company_id: data.companyId,
+        bill_id: data.billId,
+        body: data.body,
+        created_by: context.userId,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await recordBillAudit(context.supabase, data.companyId, "bill.note.add", data.billId, {
+      note_id: (row as { id: string }).id,
+    });
+    return { id: (row as { id: string }).id };
+  });
+
+export const listBillActivity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: rows, error } = await context.supabase
+      .from("audit_events" as never)
+      .select("id, action, details, actor_user_id, created_at" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_id" as never, data.billId as never)
+      .order("created_at" as never, { ascending: false } as never)
+      .limit(100);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const resolveFxRateForBill = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: { companyId: string; currencyCode: string; onDate: string; baseCurrency: string }) => ({
+      companyId: assertUuid(input.companyId),
+      currencyCode: (input.currencyCode ?? "").toUpperCase().slice(0, 3),
+      onDate: String(input.onDate ?? "").slice(0, 10),
+      baseCurrency: (input.baseCurrency ?? "").toUpperCase().slice(0, 3),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    if (data.currencyCode === data.baseCurrency) {
+      return { rate: 1, source: "base" as const, rateDate: data.onDate };
+    }
+    const { data: row, error } = await context.supabase
+      .from("exchange_rates" as never)
+      .select("rate, rate_date, from_currency, to_currency" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("from_currency" as never, data.currencyCode as never)
+      .eq("to_currency" as never, data.baseCurrency as never)
+      .is("voided_at" as never, null)
+      .lte("rate_date" as never, data.onDate as never)
+      .order("rate_date" as never, { ascending: false } as never)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) {
+      return { rate: null, source: "missing" as const, rateDate: null };
+    }
+    const r = row as { rate: number; rate_date: string };
+    return { rate: Number(r.rate), source: "exchange_rates" as const, rateDate: r.rate_date };
   });

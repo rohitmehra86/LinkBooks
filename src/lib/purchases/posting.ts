@@ -23,6 +23,7 @@ export async function postBillAuthorisation(
     currency_code: string;
     lines: BillLinePost[];
     memo?: string;
+    fx_rate_to_base?: number;
   },
 ): Promise<string> {
   const ap = await requireAccountByCode(supabase, args.company_id, "2000");
@@ -73,6 +74,7 @@ export async function postBillAuthorisation(
     source_id: args.bill_id,
     idempotency_key: `purchase_bill:${args.bill_id}:authorise`,
     ...(args.memo ? { memo: args.memo } : {}),
+    ...(args.fx_rate_to_base != null ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
     lines: journalLines,
   });
   return journalId;

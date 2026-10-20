@@ -97,15 +97,33 @@ function EditBill() {
     setSupplierInvoiceNumber(bill.supplier_invoice_number ?? "");
     setMemo(bill.memo ?? "");
     setLines(
-      (bill.purchase_bill_lines ?? []).map((l) => ({
-        productId: "",
-        description: l.description,
-        accountId: l.account_id,
-        quantity: String(l.quantity),
-        unitPrice: fromMinorUnits(l.unit_price_minor, currency),
-        discount: fromMinorUnits(l.discount_minor ?? 0, currency),
-        taxRateBps: String(l.tax_rate_bps ?? 0),
-      })),
+      (bill.purchase_bill_lines ?? []).map((l) => {
+        const row = l as typeof l & {
+          product_id?: string | null;
+          tax_code_id?: string | null;
+          class_option_id?: string | null;
+          location_option_id?: string | null;
+          project_option_id?: string | null;
+          customer_contact_id?: string | null;
+          is_billable?: boolean;
+        };
+        return {
+          ...emptyPurchaseLine(),
+          productId: row.product_id ?? "",
+          description: row.description,
+          accountId: row.account_id,
+          quantity: String(row.quantity),
+          unitPrice: fromMinorUnits(row.unit_price_minor, currency),
+          discount: fromMinorUnits(row.discount_minor ?? 0, currency),
+          taxRateBps: String(row.tax_rate_bps ?? 0),
+          taxCodeId: row.tax_code_id ?? "",
+          classOptionId: row.class_option_id ?? "",
+          locationOptionId: row.location_option_id ?? "",
+          projectOptionId: row.project_option_id ?? "",
+          customerContactId: row.customer_contact_id ?? "",
+          isBillable: Boolean(row.is_billable),
+        };
+      }),
     );
     setHydrated(true);
   }, [payload, hydrated, currency]);
@@ -254,6 +272,7 @@ function EditBill() {
           products={(productsQ.data ?? []) as never}
           accounts={expenseAccounts}
           currency={currency}
+          taxCalculation="exclusive"
           toMinor={(d) => toMinorUnits(d, currency)}
         />
         <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
