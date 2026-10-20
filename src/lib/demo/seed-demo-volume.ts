@@ -146,8 +146,9 @@ export async function seedDemoVolumeData(
     if (!error) products += 1;
   }
 
-  // ~120 invoice shells across statuses (list/perf); ledger unchanged
-  const statuses = ["draft", "authorised", "authorised", "paid", "partly_paid", "authorised"] as const;
+  // ~120 invoice shells for list/perf. Must stay draft or paid-without-journal so
+  // AR ageing (posted_journal_id only) never mixes UI shells into the subledger.
+  const statuses = ["draft", "draft", "draft", "paid", "draft", "draft"] as const;
   for (let i = 0; i < 120; i++) {
     const num = `INV-V${String(2000 + i).padStart(4, "0")}`;
     const { data: exists } = await supabase
@@ -163,8 +164,7 @@ export async function seedDemoVolumeData(
     const tax = Math.round(sub * 0.2);
     const total = sub + tax;
     const status = statuses[i % statuses.length];
-    const paid =
-      status === "paid" ? total : status === "partly_paid" ? Math.floor(total / 2) : 0;
+    const paid = status === "paid" ? total : 0;
     const day = 1 + (i % 28);
     const month = 4 + (i % 6);
     const date = `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -210,8 +210,8 @@ export async function seedDemoVolumeData(
     invoices += 1;
   }
 
-  // ~80 bills
-  const billStatuses = ["draft", "authorised", "paid", "authorised", "partly_paid"] as const;
+  // ~80 bill shells — draft/paid only (no authorised without posted_journal_id)
+  const billStatuses = ["draft", "draft", "paid", "draft", "draft"] as const;
   for (let i = 0; i < 80; i++) {
     const num = `BILL-V${String(3000 + i).padStart(4, "0")}`;
     const { data: exists } = await supabase
@@ -227,7 +227,7 @@ export async function seedDemoVolumeData(
     const tax = Math.round(sub * 0.2);
     const total = sub + tax;
     const status = billStatuses[i % billStatuses.length];
-    const paid = status === "paid" ? total : status === "partly_paid" ? Math.floor(total / 3) : 0;
+    const paid = status === "paid" ? total : 0;
     const day = 1 + (i % 28);
     const month = 4 + (i % 6);
     const date = `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;

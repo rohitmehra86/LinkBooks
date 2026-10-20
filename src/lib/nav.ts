@@ -50,7 +50,7 @@ export const navItems: NavItem[] = [
     icon: BookOpen,
     description: "Chart of accounts, journals, ledger",
   },
-  { label: "Reports", to: "/reports", icon: BarChart3, description: "Financial statements" },
+  { label: "Reports", to: "/reports", icon: BarChart3, description: "Reports Centre and financial statements" },
   {
     label: "Accountant",
     to: "/accountant",

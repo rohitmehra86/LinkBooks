@@ -404,13 +404,13 @@ export const getAgedReceivables = createServerFn({ method: "GET" })
     const { data: rows, error } = await context.supabase
       .from("sales_invoices" as never)
       .select(
-        "id, contact_id, invoice_date, due_date, invoice_number, status, total_minor, amount_paid_minor, amount_credited_minor, contacts(name)" as never,
+        "id, contact_id, invoice_date, due_date, invoice_number, status, total_minor, amount_paid_minor, amount_credited_minor, posted_journal_id, contacts(name)" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .in("status" as never, ["authorised", "partly_paid"] as never);
     if (error) throw new Error(error.message);
 
-    const docs: AgingDoc[] = ((rows ?? []) as Array<{
+    const raw = (rows ?? []) as Array<{
       id: string;
       contact_id: string;
       invoice_date: string;
@@ -419,8 +419,14 @@ export const getAgedReceivables = createServerFn({ method: "GET" })
       total_minor: number;
       amount_paid_minor: number;
       amount_credited_minor: number;
+      posted_journal_id: string | null;
       contacts: { name: string } | null;
-    }>).map((r) => ({
+    }>;
+    // Only documents posted to the ledger belong in AR ageing (excludes volume UI shells).
+    const posted = raw.filter((r) => Boolean(r.posted_journal_id));
+    const excludedUnposted = raw.length - posted.length;
+
+    const docs: AgingDoc[] = posted.map((r) => ({
       id: r.id,
       contact_id: r.contact_id,
       contact_name: r.contacts?.name ?? "Unknown",
@@ -444,6 +450,7 @@ export const getAgedReceivables = createServerFn({ method: "GET" })
       .maybeSingle();
     const arId = (arAcc as { id: string } | null)?.id;
     const controlBalance = arId ? accountBalanceAsOf(lines, arId, data.asOf) : 0n;
+    const variance = aged.total - controlBalance;
 
     return {
       rows: aged.rows.map((r) => ({
@@ -465,7 +472,13 @@ export const getAgedReceivables = createServerFn({ method: "GET" })
         "90_plus": Number(aged.byBucket["90_plus"]),
       },
       arControlBalanceMinor: Number(controlBalance),
-      tiesToControl: aged.total === controlBalance,
+      varianceMinor: Number(variance),
+      tiesToControl: variance === 0n,
+      excludedUnpostedCount: excludedUnposted,
+      diagnostic:
+        variance === 0n
+          ? null
+          : "Subledger total differs from AR control (1100). Check manual journals to AR, unallocated receipts, or documents posted without allocation updates.",
     };
   });
 
@@ -480,13 +493,13 @@ export const getAgedPayables = createServerFn({ method: "GET" })
     const { data: rows, error } = await context.supabase
       .from("purchase_bills" as never)
       .select(
-        "id, contact_id, bill_date, due_date, supplier_invoice_number, status, total_minor, amount_paid_minor, amount_credited_minor, contacts(name)" as never,
+        "id, contact_id, bill_date, due_date, supplier_invoice_number, status, total_minor, amount_paid_minor, amount_credited_minor, posted_journal_id, contacts(name)" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .in("status" as never, ["authorised", "partly_paid"] as never);
     if (error) throw new Error(error.message);
 
-    const docs: AgingDoc[] = ((rows ?? []) as Array<{
+    const raw = (rows ?? []) as Array<{
       id: string;
       contact_id: string;
       bill_date: string;
@@ -495,8 +508,13 @@ export const getAgedPayables = createServerFn({ method: "GET" })
       total_minor: number;
       amount_paid_minor: number;
       amount_credited_minor: number;
+      posted_journal_id: string | null;
       contacts: { name: string } | null;
-    }>).map((r) => ({
+    }>;
+    const posted = raw.filter((r) => Boolean(r.posted_journal_id));
+    const excludedUnposted = raw.length - posted.length;
+
+    const docs: AgingDoc[] = posted.map((r) => ({
       id: r.id,
       contact_id: r.contact_id,
       contact_name: r.contacts?.name ?? "Unknown",
@@ -522,6 +540,7 @@ export const getAgedPayables = createServerFn({ method: "GET" })
     // AP is credit-normal; outstanding docs should equal credit balance (negated debit-credit)
     const controlSigned = apId ? accountBalanceAsOf(lines, apId, data.asOf) : 0n;
     const controlBalance = -controlSigned;
+    const variance = aged.total - controlBalance;
 
     return {
       rows: aged.rows.map((r) => ({
@@ -543,7 +562,13 @@ export const getAgedPayables = createServerFn({ method: "GET" })
         "90_plus": Number(aged.byBucket["90_plus"]),
       },
       apControlBalanceMinor: Number(controlBalance),
-      tiesToControl: aged.total === controlBalance,
+      varianceMinor: Number(variance),
+      tiesToControl: variance === 0n,
+      excludedUnpostedCount: excludedUnposted,
+      diagnostic:
+        variance === 0n
+          ? null
+          : "Subledger total differs from AP control (2000). Check manual journals to AP or bills without posted journals.",
     };
   });
 
@@ -584,10 +609,11 @@ export const getCashFlow = createServerFn({ method: "GET" })
       net_change: Number(result.net_change),
       opening_cash: Number(result.opening_cash),
       closing_cash: Number(result.closing_cash),
+      closing_cash_ledger: Number(result.closing_cash_ledger),
+      reconciles: result.reconciles,
       rows: result.rows.map((r) => ({ ...r, amount_minor: Number(r.amount_minor) })),
       method: "bank_direct_proxy",
-      limitation:
-        "Classifies bank GL movements by counterpart account type. Not a statutory IAS 7 / local GAAP cash flow statement.",
+      limitation: result.limitation,
     };
   });
 
@@ -712,7 +738,7 @@ export const getAuditReport = createServerFn({ method: "GET" })
     await assertCompanyPermission(context.supabase, data.companyId, "audit.view");
     let q = context.supabase
       .from("audit_events" as never)
-      .select("id, action, entity_type, entity_id, payload, created_at, actor_user_id" as never)
+      .select("id, action, entity_type, entity_id, details, created_at, actor_user_id" as never)
       .eq("company_id" as never, data.companyId as never)
       .order("created_at" as never, { ascending: false })
       .limit(200);

@@ -526,18 +526,23 @@ export function buildCashFlowFromBank(
   net_change: bigint;
   opening_cash: bigint;
   closing_cash: bigint;
+  /** Bank GL balance as-of `to` (independent of classified movements). */
+  closing_cash_ledger: bigint;
+  reconciles: boolean;
   rows: Array<{ category: string; amount_minor: bigint }>;
+  limitation: string;
 } {
   const bankSet = new Set(opts.bankAccountIds);
   let opening = 0n;
+  let closingLedger = 0n;
   for (const l of lines) {
     if (!bankSet.has(l.account_id)) continue;
-    if (l.journal_date < opts.from) {
-      opening += asBig(l.debit_minor) - asBig(l.credit_minor);
-    }
+    const net = asBig(l.debit_minor) - asBig(l.credit_minor);
+    if (l.journal_date < opts.from) opening += net;
+    if (l.journal_date <= opts.to) closingLedger += net;
   }
 
-  // Group non-bank lines by journal to classify bank movements
+  // Group lines by journal to classify bank movements in the period
   const byJournal = new Map<string, PostedLine[]>();
   for (const l of lines) {
     if (!l.journal_id) continue;
@@ -558,34 +563,53 @@ export function buildCashFlowFromBank(
     let bankNet = 0n;
     for (const b of bankLines) bankNet += asBig(b.debit_minor) - asBig(b.credit_minor);
 
+    // Opening-balance / conversion journals are starting cash, not period activity.
+    const source = (bankLines[0]?.source_type ?? others[0]?.source_type ?? "").toLowerCase();
+    if (source === "opening_balance" || source === "opening") {
+      opening += bankNet;
+      continue;
+    }
+
     const counterpart = others[0]?.account_type ?? "unknown";
-    if (counterpart === "income" || counterpart === "expense" || counterpart === "liability") {
-      // AP/AR/tax/opex/revenue → operating
+    // Prefer counterpart semantics: loans (non-current liability) → financing; PPE → investing
+    const counterpartSubtype = (others[0]?.account_subtype ?? "").toLowerCase();
+    if (counterpart === "equity" || counterpartSubtype.includes("loan")) {
+      financing += bankNet;
+    } else if (
+      counterpart === "asset" &&
+      (counterpartSubtype.includes("non_current") ||
+        counterpartSubtype.includes("fixed") ||
+        others.some((o) => o.account_code.startsWith("15")))
+    ) {
+      investing += bankNet;
+    } else if (counterpart === "income" || counterpart === "expense" || counterpart === "liability") {
       operating += bankNet;
     } else if (counterpart === "asset") {
-      // Non-bank asset (equipment etc.) → investing; if unknown treat as investing when asset
       investing += bankNet;
-    } else if (counterpart === "equity") {
-      financing += bankNet;
     } else {
       operating += bankNet;
     }
   }
 
   const net = operating + investing + financing;
+  const closingFromMovements = opening + net;
   return {
     operating,
     investing,
     financing,
     net_change: net,
     opening_cash: opening,
-    closing_cash: opening + net,
+    closing_cash: closingFromMovements,
+    closing_cash_ledger: closingLedger,
+    reconciles: closingFromMovements === closingLedger,
     rows: [
       { category: "Operating", amount_minor: operating },
       { category: "Investing", amount_minor: investing },
       { category: "Financing", amount_minor: financing },
       { category: "Net change in cash", amount_minor: net },
     ],
+    limitation:
+      "Bank GL direct-method proxy. Opening-balance journals are treated as opening cash, not period inflows. Not a full IAS 7 / local-GAAP cash-flow statement.",
   };
 }
 

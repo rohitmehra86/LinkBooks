@@ -216,7 +216,68 @@ describe("cash flow bank proxy", () => {
     });
     expect(cf.opening_cash).toBe(0n);
     expect(cf.closing_cash).toBe(800n);
+    expect(cf.closing_cash_ledger).toBe(800n);
+    expect(cf.reconciles).toBe(true);
     expect(cf.net_change).toBe(800n);
+  });
+
+  it("treats opening_balance journals as opening cash, not period inflow", () => {
+    const withOpening = [
+      {
+        account_id: bank,
+        account_code: "1000",
+        account_name: "Bank",
+        account_type: "asset" as const,
+        journal_date: "2026-01-01",
+        journal_id: "j-open",
+        source_type: "opening_balance",
+        debit_minor: 50_000n,
+        credit_minor: 0n,
+      },
+      {
+        account_id: "eq",
+        account_code: "3100",
+        account_name: "Opening equity",
+        account_type: "equity" as const,
+        journal_date: "2026-01-01",
+        journal_id: "j-open",
+        source_type: "opening_balance",
+        debit_minor: 0n,
+        credit_minor: 50_000n,
+      },
+      {
+        account_id: bank,
+        account_code: "1000",
+        account_name: "Bank",
+        account_type: "asset" as const,
+        journal_date: "2026-01-15",
+        journal_id: "j-sale",
+        source_type: "customer_payment",
+        debit_minor: 1_000n,
+        credit_minor: 0n,
+      },
+      {
+        account_id: ar,
+        account_code: "1100",
+        account_name: "AR",
+        account_type: "asset" as const,
+        journal_date: "2026-01-15",
+        journal_id: "j-sale",
+        source_type: "customer_payment",
+        debit_minor: 0n,
+        credit_minor: 1_000n,
+      },
+    ];
+    const cf = buildCashFlowFromBank(withOpening, {
+      from: "2026-01-01",
+      to: "2026-01-31",
+      bankAccountIds: [bank],
+    });
+    expect(cf.opening_cash).toBe(50_000n);
+    expect(cf.net_change).toBe(1_000n);
+    expect(cf.closing_cash).toBe(51_000n);
+    expect(cf.closing_cash_ledger).toBe(51_000n);
+    expect(cf.reconciles).toBe(true);
   });
 });
 

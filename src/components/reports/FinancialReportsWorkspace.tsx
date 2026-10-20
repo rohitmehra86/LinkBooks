@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Printer } from "lucide-react";
@@ -30,17 +30,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
-export const Route = createFileRoute("/_authenticated/reports")({
-  head: () => ({
-    meta: [
-      { title: "Reports — LinkBooks" },
-      { name: "description", content: "Financial reports from the posted ledger." },
-    ],
-  }),
-  component: Reports,
-});
+export type ReportTabId =
+  | "tb"
+  | "pl"
+  | "bs"
+  | "gl"
+  | "ar"
+  | "ap"
+  | "cf"
+  | "tax"
+  | "journals"
+  | "audit";
 
-function exportCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
+export function exportCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const body = [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
   const blob = new Blob([body], { type: "text/csv;charset=utf-8" });
@@ -61,7 +63,13 @@ function fiscalYearStart(fyEndMonth: number, asOf = new Date()): string {
   return `${year}-${String(startMonth).padStart(2, "0")}-01`;
 }
 
-function Reports() {
+export function FinancialReportsWorkspace({
+  initialTab = "tb",
+  hideCatalogueLink = false,
+}: {
+  initialTab?: ReportTabId;
+  hideCatalogueLink?: boolean;
+}) {
   const { company, isPending } = useActiveCompany();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const defaultFrom = useMemo(() => {
@@ -71,6 +79,11 @@ function Reports() {
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(today);
   const [accountId, setAccountId] = useState("");
+  const [tab, setTab] = useState<ReportTabId>(initialTab);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   // When company loads, snap report range to its fiscal year (fixes empty Demo TB)
   useEffect(() => {
@@ -163,12 +176,19 @@ function Reports() {
   return (
     <>
       <PageHeader
-        title="Reports"
-        description="All figures derive from posted journals and open documents. Print or export CSV."
+        title="Report workspace"
+        description={`${company?.name ?? "Organisation"} · ${currency} · Posted ledger only · Generated ${today}`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="mr-1 size-4" /> Print / PDF
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {!hideCatalogueLink ? (
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/reports">All reports</Link>
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="mr-1 size-4" /> Print / PDF
+            </Button>
+          </div>
         }
       />
 
@@ -183,7 +203,10 @@ function Reports() {
         </div>
       </div>
 
-      <Tabs defaultValue="tb">
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as ReportTabId)}
+      >
         <TabsList className="mb-4 flex h-auto flex-wrap gap-1">
           <TabsTrigger value="tb">Trial balance</TabsTrigger>
           <TabsTrigger value="pl">P&amp;L</TabsTrigger>
@@ -368,7 +391,20 @@ function Reports() {
                   <Badge variant={arQuery.data.tiesToControl ? "secondary" : "destructive"}>
                     {arQuery.data.tiesToControl ? "Ties to control" : "Does not tie — investigate"}
                   </Badge>
+                  {arQuery.data.excludedUnpostedCount ? (
+                    <span className="ml-2 text-muted-foreground">
+                      ({arQuery.data.excludedUnpostedCount} unposted invoice shell(s) excluded)
+                    </span>
+                  ) : null}
                 </p>
+                {arQuery.data.diagnostic ? (
+                  <Alert className="mb-3">
+                    <AlertDescription>
+                      Variance {fromMinorUnits(arQuery.data.varianceMinor ?? 0, currency)}.{" "}
+                      {arQuery.data.diagnostic}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 <AgingTable currency={currency} rows={arQuery.data.rows} kind="ar" />
               </>
             ) : null}
@@ -385,7 +421,20 @@ function Reports() {
                   <Badge variant={apQuery.data.tiesToControl ? "secondary" : "destructive"}>
                     {apQuery.data.tiesToControl ? "Ties to control" : "Does not tie — investigate"}
                   </Badge>
+                  {apQuery.data.excludedUnpostedCount ? (
+                    <span className="ml-2 text-muted-foreground">
+                      ({apQuery.data.excludedUnpostedCount} unposted bill shell(s) excluded)
+                    </span>
+                  ) : null}
                 </p>
+                {apQuery.data.diagnostic ? (
+                  <Alert className="mb-3">
+                    <AlertDescription>
+                      Variance {fromMinorUnits(apQuery.data.varianceMinor ?? 0, currency)}.{" "}
+                      {apQuery.data.diagnostic}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 <AgingTable currency={currency} rows={apQuery.data.rows} kind="ap" />
               </>
             ) : null}
@@ -399,11 +448,22 @@ function Reports() {
                 <Alert className="mb-3">
                   <AlertDescription>{cfQuery.data.limitation}</AlertDescription>
                 </Alert>
-                <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                <div className="mb-4 grid gap-3 sm:grid-cols-4">
                   <Stat label="Opening cash" value={fromMinorUnits(cfQuery.data.opening_cash, currency)} />
                   <Stat label="Net change" value={fromMinorUnits(cfQuery.data.net_change, currency)} />
-                  <Stat label="Closing cash" value={fromMinorUnits(cfQuery.data.closing_cash, currency)} />
+                  <Stat label="Closing (movements)" value={fromMinorUnits(cfQuery.data.closing_cash, currency)} />
+                  <Stat
+                    label="Closing (bank ledger)"
+                    value={fromMinorUnits(cfQuery.data.closing_cash_ledger ?? cfQuery.data.closing_cash, currency)}
+                  />
                 </div>
+                <p className="mb-3 text-sm">
+                  <Badge variant={cfQuery.data.reconciles ? "secondary" : "destructive"}>
+                    {cfQuery.data.reconciles
+                      ? "Opening + movements = bank ledger"
+                      : "Cash movement total does not equal bank ledger — investigate"}
+                  </Badge>
+                </p>
                 <Table>
                   <TableHeader>
                     <TableRow>
