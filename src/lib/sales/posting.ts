@@ -26,7 +26,8 @@ export async function postInvoiceAuthorisation(
   },
 ): Promise<string> {
   const ar = await requireAccountByCode(supabase, args.company_id, "1100");
-  const taxPayable = await requireAccountByCode(supabase, args.company_id, "2100");
+  const { resolveOutputTaxAccount } = await import("@/lib/tax/tax-accounts");
+  const taxPayable = await resolveOutputTaxAccount(supabase, args.company_id);
 
   const journalLines: JournalLineDraft[] = [];
   let taxTotal = 0n;
@@ -136,7 +137,8 @@ export async function postSalesCreditAuthorisation(
   },
 ): Promise<string> {
   const ar = await requireAccountByCode(supabase, args.company_id, "1100");
-  const taxPayable = await requireAccountByCode(supabase, args.company_id, "2100");
+  const { resolveOutputTaxAccount } = await import("@/lib/tax/tax-accounts");
+  const taxPayable = await resolveOutputTaxAccount(supabase, args.company_id);
   const journalLines: JournalLineDraft[] = [];
   let taxTotal = 0n;
   let netTotal = 0n;

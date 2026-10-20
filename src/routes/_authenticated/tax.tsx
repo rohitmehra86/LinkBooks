@@ -8,13 +8,19 @@ import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   getTaxSettings,
   listTaxCodes,
+  listTaxCountryPacks,
   listTaxRates,
   saveTaxCode,
   saveTaxRate,
   seedTaxPack,
   updateTaxSettings,
 } from "@/lib/tax/tax.functions";
-import { SUPPORTED_TAX_PACKS } from "@/lib/tax/tax-math";
+import {
+  packsForCountry,
+  suggestedRegimeForCountry,
+  verificationStatusLabel,
+} from "@/lib/tax/country-packs";
+import { bpsToPercentLabel } from "@/lib/tax/tax-math";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -65,7 +72,11 @@ function TaxConfigPage() {
   const doSaveRate = useServerFn(saveTaxRate);
   const doSaveCode = useServerFn(saveTaxCode);
   const doSeed = useServerFn(seedTaxPack);
+  const fetchPacks = useServerFn(listTaxCountryPacks);
   const fetchAccounts = useServerFn(listAccounts);
+  const orgCountry = company?.country_code ?? "GB";
+  const [regDate, setRegDate] = useState("");
+  const [selectedPack, setSelectedPack] = useState("");
 
   const settingsQ = useQuery({
     queryKey: ["tax-settings", companyId],
@@ -86,6 +97,11 @@ function TaxConfigPage() {
     queryKey: ["accounts", companyId],
     enabled: Boolean(companyId),
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
+  });
+  const packsQ = useQuery({
+    queryKey: ["tax-packs", companyId, orgCountry],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchPacks({ data: { companyId: companyId!, countryCode: orgCountry } }),
   });
 
   const [regime, setRegime] = useState("none");
@@ -121,6 +137,7 @@ function TaxConfigPage() {
     setBasis(s.tax_basis ?? "invoice");
     setOutputAcc(s.output_tax_account_id ?? "");
     setInputAcc(s.input_tax_account_id ?? "");
+    setRegDate((s as { registration_date?: string | null }).registration_date ?? "");
   }, [settingsQ.data]);
 
   const settingsM = useMutation({
@@ -135,6 +152,7 @@ function TaxConfigPage() {
           jurisdictionCode: jurisdiction || null,
           outputTaxAccountId: outputAcc || null,
           inputTaxAccountId: inputAcc || null,
+          registrationDate: regDate || null,
         },
       }),
     onSuccess: async () => {
@@ -182,11 +200,22 @@ function TaxConfigPage() {
   });
 
   const seedM = useMutation({
-    mutationFn: () => doSeed({ data: { companyId: companyId! } }),
-    onSuccess: async () => {
+    mutationFn: (packId?: string) =>
+      doSeed({
+        data: {
+          companyId: companyId!,
+          ...(packId || selectedPack ? { packId: packId || selectedPack } : {}),
+        },
+      }),
+    onSuccess: async (res) => {
       await qc.invalidateQueries({ queryKey: ["tax-rates", companyId] });
       await qc.invalidateQueries({ queryKey: ["tax-codes", companyId] });
-      toast.success("Default pack seeded (if regime allows and no rates existed)");
+      await qc.invalidateQueries({ queryKey: ["tax-settings", companyId] });
+      const detail =
+        res.result && typeof res.result === "object"
+          ? ` Added ${(res.result as { added_rates?: number }).added_rates ?? 0} rates, ${(res.result as { added_codes?: number }).added_codes ?? 0} codes.`
+          : "";
+      toast.success(`Pack applied (idempotent — existing codes kept).${detail}`);
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -214,25 +243,43 @@ function TaxConfigPage() {
   return (
     <>
       <PageHeader
-        title="Tax configuration"
-        description="Organisation-specific rates, codes and GL mappings. Changing rates does not rewrite posted journals."
+        title="Tax"
+        description={`Country-aware configuration for ${orgCountry}. Rates, codes and GL mappings — not filing compliance.`}
         actions={
           <Button variant="outline" size="sm" asChild>
-            <Link to="/reports">Tax report</Link>
+            <Link to="/reports/$reportId" params={{ reportId: "tax-summary" }}>
+              Tax summary report
+            </Link>
           </Button>
         }
       />
 
       <Alert className="mb-6">
-        <AlertTitle>Not a filing product</AlertTitle>
+        <AlertTitle>Calculation &amp; reporting ≠ filing</AlertTitle>
         <AlertDescription>
-          LinkBooks stores configurable rates and reports tax control movements. It does not claim MTD, BAS, IRS, or
-          other filing compliance. Review jurisdiction packs below before relying on seeded rates.
+          LinkBooks calculates tax on documents and reports control-account movements. It does not claim MTD, BAS,
+          GSTN, IRS, or electronic filing. Country packs are configuration scaffolds — verify rates against official
+          sources. Changing settings never rewrites posted journals.
         </AlertDescription>
       </Alert>
 
-      <div className="mb-8 grid max-w-2xl gap-4 rounded-md border p-4">
+      <Tabs defaultValue="registration">
+        <TabsList className="mb-4 flex h-auto flex-wrap">
+          <TabsTrigger value="registration">Registration</TabsTrigger>
+          <TabsTrigger value="rates">Rates</TabsTrigger>
+          <TabsTrigger value="codes">Codes</TabsTrigger>
+          <TabsTrigger value="mappings">GL mappings</TabsTrigger>
+          <TabsTrigger value="packs">Country packs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="registration" className="space-y-4">
+      <div className="grid max-w-2xl gap-4 rounded-md border p-4">
         <h2 className="text-sm font-medium">Organisation tax settings</h2>
+        <p className="text-xs text-muted-foreground">
+          Suggested regime for {orgCountry}:{" "}
+          <strong>{suggestedRegimeForCountry(orgCountry)}</strong>. Country alone does not determine tax treatment —
+          set jurisdiction, registration and codes explicitly.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>Regime</Label>
@@ -262,14 +309,18 @@ function TaxConfigPage() {
             <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label>Tax basis</Label>
+            <Label>Registration date</Label>
+            <Input type="date" value={regDate} onChange={(e) => setRegDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Tax basis (reporting preference)</Label>
             <Select value={basis} onValueChange={setBasis}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="invoice">Invoice (accrual)</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="cash">Cash (stored; report uses posted journals by date)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -278,12 +329,25 @@ function TaxConfigPage() {
           <Switch checked={includeTax} onCheckedChange={setIncludeTax} />
           <Label>Prices include tax (inclusive treatment on documents)</Label>
         </div>
+        <Button size="sm" disabled={settingsM.isPending} onClick={() => settingsM.mutate()}>
+          Save registration &amp; defaults
+        </Button>
+      </div>
+        </TabsContent>
+
+        <TabsContent value="mappings" className="space-y-4">
+      <div className="grid max-w-2xl gap-4 rounded-md border p-4">
+        <h2 className="text-sm font-medium">GL mappings</h2>
+        <p className="text-xs text-muted-foreground">
+          Posting uses these accounts when set; otherwise falls back to CoA codes 2100 (output) / 1200 (input).
+          Mapped accounts must belong to this organisation and be postable.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label>Output tax account</Label>
+            <Label>Output tax liability</Label>
             <Select value={outputAcc} onValueChange={setOutputAcc}>
               <SelectTrigger>
-                <SelectValue placeholder="Default 2100" />
+                <SelectValue placeholder="Fallback 2100" />
               </SelectTrigger>
               <SelectContent>
                 {liabilityAccounts.map((a) => (
@@ -295,10 +359,10 @@ function TaxConfigPage() {
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Input tax account</Label>
+            <Label>Recoverable input tax</Label>
             <Select value={inputAcc} onValueChange={setInputAcc}>
               <SelectTrigger>
-                <SelectValue placeholder="Optional" />
+                <SelectValue placeholder="Fallback 1200" />
               </SelectTrigger>
               <SelectContent>
                 {liabilityAccounts.map((a) => (
@@ -310,26 +374,46 @@ function TaxConfigPage() {
             </Select>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={settingsM.isPending} onClick={() => settingsM.mutate()}>
-            Save settings
-          </Button>
-          <Button size="sm" variant="outline" disabled={seedM.isPending} onClick={() => seedM.mutate()}>
-            Seed default pack for regime
-          </Button>
-        </div>
+        <Button size="sm" disabled={settingsM.isPending} onClick={() => settingsM.mutate()}>
+          Save mappings
+        </Button>
       </div>
+        </TabsContent>
 
-      <h2 className="mb-2 text-sm font-medium">Supported packs (limitations)</h2>
-      <ul className="mb-8 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-        {SUPPORTED_TAX_PACKS.map((p) => (
-          <li key={p.regime}>
-            <strong>{p.label}</strong> [{p.jurisdictions.join(", ")}]: {p.notes}
-          </li>
-        ))}
-      </ul>
+        <TabsContent value="packs" className="space-y-4">
+      <div className="rounded-md border p-4">
+        <h2 className="mb-2 text-sm font-medium">Country packs for {orgCountry}</h2>
+        <p className="mb-4 text-xs text-muted-foreground">{packsQ.data?.disclaimer}</p>
+        <ul className="mb-4 space-y-3 text-sm">
+          {(packsQ.data?.packs ?? packsForCountry(orgCountry)).map((p) => (
+            <li key={p.id} className="rounded-md border p-3">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <strong>{p.label}</strong>
+                <Badge variant="secondary">{verificationStatusLabel(p.verificationStatus)}</Badge>
+                <Badge variant="outline">Filing: {p.filingStatus}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{p.sourceEffectiveNote}</p>
+              <p className="mt-1 text-xs">Limitations: {p.knownLimitations.join("; ")}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={seedM.isPending}
+                onClick={() => {
+                  setSelectedPack(p.id);
+                  seedM.mutate(p.id);
+                }}
+              >
+                Apply pack (idempotent)
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </div>
+        </TabsContent>
 
-      <div className="mb-8 grid max-w-xl gap-3 rounded-md border p-4">
+        <TabsContent value="rates" className="space-y-4">
+      <div className="grid max-w-xl gap-3 rounded-md border p-4">
         <Label>Add tax rate (basis points; 2000 = 20%)</Label>
         <Input placeholder="Name" value={rateName} onChange={(e) => setRateName(e.target.value)} />
         <Input placeholder="Rate bps" value={rateBps} onChange={(e) => setRateBps(e.target.value)} />
@@ -362,7 +446,7 @@ function TaxConfigPage() {
             }>).map((r) => (
               <TableRow key={r.id}>
                 <TableCell>{r.name}</TableCell>
-                <TableCell>{(r.rate_bps / 100).toFixed(2)}%</TableCell>
+                <TableCell>{bpsToPercentLabel(r.rate_bps)}</TableCell>
                 <TableCell>
                   {r.effective_from}
                   {r.effective_to ? ` → ${r.effective_to}` : " →"}
@@ -376,7 +460,10 @@ function TaxConfigPage() {
         </Table>
       )}
 
-      <div className="mb-8 mt-8 grid max-w-xl gap-3 rounded-md border p-4">
+        </TabsContent>
+
+        <TabsContent value="codes" className="space-y-4">
+      <div className="grid max-w-xl gap-3 rounded-md border p-4">
         <Label>Add tax code</Label>
         <Input placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} />
         <Input placeholder="Name" value={codeName} onChange={(e) => setCodeName(e.target.value)} />
@@ -437,6 +524,8 @@ function TaxConfigPage() {
           </TableBody>
         </Table>
       )}
+        </TabsContent>
+      </Tabs>
     </>
   );
 }

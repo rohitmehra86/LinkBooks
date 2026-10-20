@@ -26,7 +26,9 @@ export async function postBillAuthorisation(
   },
 ): Promise<string> {
   const ap = await requireAccountByCode(supabase, args.company_id, "2000");
-  const vat = await requireAccountByCode(supabase, args.company_id, "1200");
+  const { resolveInputTaxAccount } = await import("@/lib/tax/tax-accounts");
+  const vatAcc = await resolveInputTaxAccount(supabase, args.company_id);
+  const vat = { id: vatAcc.id };
 
   const journalLines: JournalLineDraft[] = [];
   let taxTotal = 0n;
@@ -91,7 +93,9 @@ export async function postDirectExpense(
     memo?: string;
   },
 ): Promise<string> {
-  const vat = await requireAccountByCode(supabase, args.company_id, "1200");
+  const { resolveInputTaxAccount } = await import("@/lib/tax/tax-accounts");
+  const vatAcc = await resolveInputTaxAccount(supabase, args.company_id);
+  const vat = { id: vatAcc.id };
   const net = typeof args.net_minor === "bigint" ? args.net_minor : BigInt(args.net_minor);
   const tax = typeof args.tax_minor === "bigint" ? args.tax_minor : BigInt(args.tax_minor);
   const total = net + tax;
@@ -189,7 +193,9 @@ export async function postCreditNoteAuthorisation(
   },
 ): Promise<string> {
   const ap = await requireAccountByCode(supabase, args.company_id, "2000");
-  const vat = await requireAccountByCode(supabase, args.company_id, "1200");
+  const { resolveInputTaxAccount } = await import("@/lib/tax/tax-accounts");
+  const vatAcc = await resolveInputTaxAccount(supabase, args.company_id);
+  const vat = { id: vatAcc.id };
   const journalLines: JournalLineDraft[] = [];
   let taxTotal = 0n;
   let netTotal = 0n;

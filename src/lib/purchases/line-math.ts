@@ -1,13 +1,16 @@
 /**
  * Purchase document line math in integer minor units.
- * Tax uses basis points (10000 = 100%). Half-up on tax.
+ * Delegates to shared tax-math (exclusive/inclusive) so sales and purchases stay consistent.
  */
+
+import { computeTaxLine, type TaxTreatment } from "@/lib/tax/tax-math";
 
 export type LineInput = {
   quantity: number;
   unit_price_minor: bigint | number;
   discount_minor?: bigint | number;
   tax_rate_bps?: number;
+  treatment?: TaxTreatment;
 };
 
 export type LineComputed = {
@@ -21,29 +24,15 @@ function asBig(v: bigint | number | undefined): bigint {
   return typeof v === "number" ? BigInt(v) : v;
 }
 
-/** net = max(0, round(qty * unit) - discount); tax = round(net * bps / 10000) */
+/** Shared with sales: exclusive by default; inclusive when treatment is set. */
 export function computeLineAmounts(input: LineInput): LineComputed {
-  if (!(input.quantity > 0) || !Number.isFinite(input.quantity)) {
-    throw new Error("Quantity must be a positive number");
-  }
-  const unit = asBig(input.unit_price_minor);
-  if (unit < 0n) throw new Error("Unit price cannot be negative");
-  const discount = asBig(input.discount_minor);
-  if (discount < 0n) throw new Error("Discount cannot be negative");
-  const bps = input.tax_rate_bps ?? 0;
-  if (!Number.isInteger(bps) || bps < 0 || bps > 10000) {
-    throw new Error("Tax rate must be 0–10000 basis points");
-  }
-
-  // quantity may be fractional — compute via string-safe integer scaling (6 dp)
-  const qtyScaled = BigInt(Math.round(input.quantity * 1_000_000));
-  const extended = (unit * qtyScaled) / 1_000_000n;
-  let net = extended - discount;
-  if (net < 0n) throw new Error("Discount exceeds line net");
-
-  // half-up tax
-  const tax = (net * BigInt(bps) + 5000n) / 10000n;
-  return { net_minor: net, tax_minor: tax, gross_minor: net + tax };
+  return computeTaxLine({
+    quantity: input.quantity,
+    unit_price_minor: input.unit_price_minor,
+    discount_minor: input.discount_minor ?? 0,
+    tax_rate_bps: input.tax_rate_bps ?? 0,
+    treatment: input.treatment ?? "exclusive",
+  });
 }
 
 export function sumLines(lines: LineComputed[]): {

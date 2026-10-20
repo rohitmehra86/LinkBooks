@@ -18,7 +18,7 @@ export const getTaxSettings = createServerFn({ method: "GET" })
     const { data: row, error } = await context.supabase
       .from("company_tax_settings" as never)
       .select(
-        "tax_regime, registration_number, prices_include_tax, filing_frequency, tax_basis, jurisdiction_code, default_sales_tax_code_id, default_purchase_tax_code_id, output_tax_account_id, input_tax_account_id" as never,
+        "tax_regime, registration_number, prices_include_tax, filing_frequency, tax_basis, jurisdiction_code, default_sales_tax_code_id, default_purchase_tax_code_id, output_tax_account_id, input_tax_account_id, registration_date, registration_end_date, applied_pack_id, applied_pack_version, non_recoverable_tax_account_id" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
@@ -41,12 +41,19 @@ export const updateTaxSettings = createServerFn({ method: "POST" })
       defaultPurchaseTaxCodeId?: string | null;
       outputTaxAccountId?: string | null;
       inputTaxAccountId?: string | null;
+      nonRecoverableTaxAccountId?: string | null;
+      registrationDate?: string | null;
+      registrationEndDate?: string | null;
     }) => {
       if (!["none", "vat", "gst", "sales_tax", "other"].includes(input.taxRegime)) {
         throw new Error("Invalid tax regime");
       }
       const basis = input.taxBasis ?? "invoice";
       if (!["invoice", "cash"].includes(basis)) throw new Error("Invalid tax basis");
+      const regDate = (input.registrationDate ?? "").trim();
+      const regEnd = (input.registrationEndDate ?? "").trim();
+      if (regDate && !isIsoDate(regDate)) throw new Error("registrationDate must be YYYY-MM-DD");
+      if (regEnd && !isIsoDate(regEnd)) throw new Error("registrationEndDate must be YYYY-MM-DD");
       return {
         companyId: assertUuid(input.companyId),
         taxRegime: input.taxRegime,
@@ -65,6 +72,11 @@ export const updateTaxSettings = createServerFn({ method: "POST" })
           ? assertUuid(input.outputTaxAccountId)
           : null,
         inputTaxAccountId: input.inputTaxAccountId ? assertUuid(input.inputTaxAccountId) : null,
+        nonRecoverableTaxAccountId: input.nonRecoverableTaxAccountId
+          ? assertUuid(input.nonRecoverableTaxAccountId)
+          : null,
+        registrationDate: regDate || null,
+        registrationEndDate: regEnd || null,
       };
     },
   )
@@ -83,6 +95,9 @@ export const updateTaxSettings = createServerFn({ method: "POST" })
         default_purchase_tax_code_id: data.defaultPurchaseTaxCodeId,
         output_tax_account_id: data.outputTaxAccountId,
         input_tax_account_id: data.inputTaxAccountId,
+        non_recoverable_tax_account_id: data.nonRecoverableTaxAccountId,
+        registration_date: data.registrationDate,
+        registration_end_date: data.registrationEndDate,
         updated_at: new Date().toISOString(),
       } as never)
       .eq("company_id" as never, data.companyId as never);
@@ -100,7 +115,9 @@ export const listTaxRates = createServerFn({ method: "GET" })
     await assertCompanyMember(context.supabase, data.companyId);
     const { data: rows, error } = await context.supabase
       .from("tax_rates" as never)
-      .select("id, name, rate_bps, effective_from, effective_to, is_active" as never)
+      .select(
+        "id, name, code, rate_bps, effective_from, effective_to, is_active, treatment, applies_to, jurisdiction_code, source_note" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
       .order("effective_from" as never, { ascending: false });
     if (error) throw new Error(error.message);
@@ -277,14 +294,41 @@ export const saveTaxCode = createServerFn({ method: "POST" })
 
 export const seedTaxPack = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
+  .inputValidator((input: { companyId: string; packId?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    packId: (input.packId ?? "").trim().slice(0, 60) || null,
+  }))
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "tax.settings");
-    const { error } = await context.supabase.rpc("seed_default_tax_pack" as never, {
+    const { data: result, error } = await context.supabase.rpc("seed_country_tax_pack" as never, {
       _company_id: data.companyId,
+      _pack_id: data.packId,
     } as never);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    if (error) {
+      const { error: e2 } = await context.supabase.rpc("seed_default_tax_pack" as never, {
+        _company_id: data.companyId,
+      } as never);
+      if (e2) throw new Error(error.message);
+      return { ok: true, result: null, fallback: true as const };
+    }
+    return { ok: true, result, fallback: false as const };
+  });
+
+export const listTaxCountryPacks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; countryCode?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    countryCode: (input.countryCode ?? "").trim().toUpperCase().slice(0, 2),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { packsForCountry, TAX_COUNTRY_PACKS } = await import("@/lib/tax/country-packs");
+    const packs = data.countryCode ? packsForCountry(data.countryCode) : TAX_COUNTRY_PACKS;
+    return {
+      packs,
+      disclaimer:
+        "Packs configure rates and codes only. Filing is not implemented. Verify starter rates against official sources.",
+    };
   });
 
 /**

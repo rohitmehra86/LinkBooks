@@ -82,33 +82,36 @@ export function isRateEffective(
   return true;
 }
 
-/**
- * Jurisdiction packs that may be seeded. Filing/box maps are NOT claimed compliant.
- */
-export const SUPPORTED_TAX_PACKS = [
-  {
-    regime: "vat",
-    label: "VAT (generic / UK-style seed)",
-    jurisdictions: ["GB"],
-    notes:
-      "Seeds Standard 20% and Zero rates. Does not implement MTD, VAT boxes, or partial exemption.",
-  },
-  {
-    regime: "gst",
-    label: "GST (generic seed)",
-    jurisdictions: ["AU", "NZ", "SG"],
-    notes: "Seeds a single standard rate stub. Country-specific rates must be configured. No BAS/IR filing.",
-  },
-  {
-    regime: "sales_tax",
-    label: "Sales tax (manual)",
-    jurisdictions: ["US", "CA"],
-    notes: "No automatic nexus/state rates. Configure per-company rates. No filing.",
-  },
-  {
-    regime: "none",
-    label: "No tax",
-    jurisdictions: ["*"],
-    notes: "Tax codes optional; reports show zero tax control movement.",
-  },
-] as const;
+export {
+  SUPPORTED_TAX_PACKS,
+  TAX_COUNTRY_PACKS,
+  packsForCountry,
+  suggestedRegimeForCountry,
+  verificationStatusLabel,
+  packById,
+} from "@/lib/tax/country-packs";
+
+/** Tax treatments are not interchangeable — reporting/classification differs even at 0 bps. */
+export type TaxCodeTreatment =
+  | "standard"
+  | "reduced"
+  | "zero_rated"
+  | "exempt"
+  | "outside_scope"
+  | "no_tax"
+  | "reverse_charge";
+
+export function taxPostsToControlAccount(treatment: string, taxMinor: bigint): boolean {
+  if (taxMinor === 0n) {
+    // Zero-rated may still be reportable; exempt/outside_scope/no_tax do not create control movements from zero tax.
+    return false;
+  }
+  if (treatment === "exempt" || treatment === "outside_scope" || treatment === "no_tax") {
+    return false;
+  }
+  return true;
+}
+
+export function bpsToPercentLabel(rateBps: number): string {
+  return `${(rateBps / 100).toFixed(rateBps % 100 === 0 ? 0 : 2)}%`;
+}
