@@ -9,6 +9,7 @@ import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   approveAndReimburseClaim,
   listEmployeeClaims,
+  rejectEmployeeClaim,
   submitEmployeeClaim,
 } from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
@@ -95,12 +96,24 @@ function EmployeeExpensesPage() {
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
+  const doReject = useServerFn(rejectEmployeeClaim);
+
   const approveMutation = useMutation({
     mutationFn: (claimId: string) =>
       approve({ data: { companyId: companyId!, claimId, paymentAccountId } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["claims", companyId] });
       toast.success("Claim approved and reimbursed (ledger posted)");
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (claimId: string) =>
+      doReject({ data: { companyId: companyId!, claimId } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["claims", companyId] });
+      toast.success("Claim rejected (no ledger posting)");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -206,16 +219,26 @@ function EmployeeExpensesPage() {
                 <TableCell className="text-right">
                   {fromMinorUnits(BigInt(c.amount_minor), currency)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="space-x-2 text-right">
                   {c.status === "submitted" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={approveMutation.isPending || !paymentAccountId}
-                      onClick={() => approveMutation.mutate(c.id)}
-                    >
-                      Approve & reimburse
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={rejectMutation.isPending}
+                        onClick={() => rejectMutation.mutate(c.id)}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={approveMutation.isPending || !paymentAccountId}
+                        onClick={() => approveMutation.mutate(c.id)}
+                      >
+                        Approve & reimburse
+                      </Button>
+                    </>
                   ) : null}
                 </TableCell>
               </TableRow>

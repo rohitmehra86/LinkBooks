@@ -11,7 +11,6 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
-import { PurchasesSubnav } from "@/components/purchases/PurchasesSubnav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,7 +31,6 @@ function PurchasesSettingsPage() {
   }
   return (
     <>
-      <PurchasesSubnav />
       <PageHeader
         title="Purchases settings"
         description="Defaults for supplier terms and bill policies. Sequences live under Settings → Documents."

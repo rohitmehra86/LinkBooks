@@ -94,10 +94,17 @@ function InvoiceDetail() {
               <Printer className="mr-1 size-4" /> Print / PDF
             </Button>
             {inv.status === "draft" ? (
-              <Button size="sm" disabled={authoriseMutation.isPending} onClick={() => authoriseMutation.mutate()}>
-                {authoriseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                Authorise & post
-              </Button>
+              <>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/sales/invoices/$invoiceId/edit" params={{ invoiceId }}>
+                    Edit draft
+                  </Link>
+                </Button>
+                <Button size="sm" disabled={authoriseMutation.isPending} onClick={() => authoriseMutation.mutate()}>
+                  {authoriseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Authorise & post
+                </Button>
+              </>
             ) : null}
             {inv.status !== "void" ? (
               <Button size="sm" variant="destructive" disabled={voidMutation.isPending} onClick={() => voidMutation.mutate()}>

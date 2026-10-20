@@ -43,7 +43,11 @@ function CreditNotesList() {
           <TableBody>
             {(query.data as Array<{ id: string; credit_date: string; status: string; total_minor: number; amount_allocated_minor: number; contacts: { name: string } | null }>).map((c) => (
               <TableRow key={c.id}>
-                <TableCell>{c.credit_date}</TableCell>
+                <TableCell>
+                  <Link className="underline-offset-2 hover:underline" to="/sales/credit-notes/$creditNoteId" params={{ creditNoteId: c.id }}>
+                    {c.credit_date}
+                  </Link>
+                </TableCell>
                 <TableCell>{c.contacts?.name ?? "—"}</TableCell>
                 <TableCell><Badge variant="secondary">{c.status}</Badge></TableCell>
                 <TableCell className="text-right">{fromMinorUnits(c.total_minor, currency)}</TableCell>

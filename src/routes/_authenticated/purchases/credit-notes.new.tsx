@@ -80,7 +80,10 @@ function NewCreditNote() {
     onSuccess: async (r) => {
       await queryClient.invalidateQueries({ queryKey: ["credits", companyId] });
       toast.success(r.journalId ? "Credit note authorised and posted" : "Draft credit note saved");
-      navigate({ to: "/purchases/credit-notes" });
+      navigate({
+        to: "/purchases/credit-notes/$creditNoteId",
+        params: { creditNoteId: r.id },
+      });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });

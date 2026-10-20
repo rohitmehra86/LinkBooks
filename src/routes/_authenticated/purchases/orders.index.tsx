@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ export const Route = createFileRoute("/_authenticated/purchases/orders/")({
 
 function OrdersList() {
   const { company } = useActiveCompany();
+  const navigate = useNavigate();
   const fetch = useServerFn(listPurchaseOrders);
   const convert = useServerFn(convertPurchaseOrderToBill);
   const queryClient = useQueryClient();
@@ -41,8 +42,7 @@ function OrdersList() {
       await queryClient.invalidateQueries({ queryKey: ["orders", companyId] });
       await queryClient.invalidateQueries({ queryKey: ["bills", companyId] });
       toast.success("Converted to draft bill (no ledger post until bill is authorised)");
-      // stay on list; user can open bill
-      void r.billId;
+      navigate({ to: "/purchases/bills/$billId", params: { billId: r.billId } });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });

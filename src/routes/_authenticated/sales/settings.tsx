@@ -11,7 +11,6 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
-import { SalesSubnav } from "@/components/sales/SalesSubnav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,7 +31,6 @@ function SalesSettingsPage() {
   }
   return (
     <>
-      <SalesSubnav />
       <PageHeader
         title="Sales settings"
         description="Defaults for payment terms, quotes and invoice notes. Document sequences are managed in Settings → Documents."

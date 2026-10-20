@@ -70,15 +70,22 @@ function QuotesList() {
               contacts: { name: string } | null; converted_invoice_id: string | null;
             }>).map((q) => (
               <TableRow key={q.id}>
-                <TableCell>{q.quote_date}</TableCell>
+                <TableCell>
+                  <Link className="underline-offset-2 hover:underline" to="/sales/quotes/$quoteId" params={{ quoteId: q.id }}>
+                    {q.quote_date}
+                  </Link>
+                </TableCell>
                 <TableCell>{q.contacts?.name ?? "—"}</TableCell>
                 <TableCell><Badge variant="secondary">{q.status}</Badge></TableCell>
                 <TableCell className="text-right">{fromMinorUnits(q.total_minor, currency)}</TableCell>
-                <TableCell>
+                <TableCell className="space-x-2 text-right">
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link to="/sales/quotes/$quoteId" params={{ quoteId: q.id }}>Open</Link>
+                  </Button>
                   {q.status !== "converted" && q.status !== "void" ? (
                     <Button size="sm" variant="outline" disabled={convertM.isPending}
                       onClick={() => convertM.mutate(q.id)}>
-                      Convert to invoice
+                      Convert
                     </Button>
                   ) : q.converted_invoice_id ? (
                     <Link className="text-sm underline" to="/sales/invoices/$invoiceId"

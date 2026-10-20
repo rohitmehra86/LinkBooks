@@ -7,7 +7,11 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
-  generateRecurringInvoice, listCustomers, listRecurringInvoices, saveRecurringInvoice,
+  generateRecurringInvoice,
+  listCustomers,
+  listRecurringInvoices,
+  saveRecurringInvoice,
+  setRecurringActive,
 } from "@/lib/sales/sales.functions";
 import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
@@ -35,6 +39,7 @@ function RecurringInvoices() {
   const fetchAccounts = useServerFn(listAccounts);
   const save = useServerFn(saveRecurringInvoice);
   const generate = useServerFn(generateRecurringInvoice);
+  const setActive = useServerFn(setRecurringActive);
 
   const listQ = useQuery({ queryKey: ["sales-recurring", companyId], enabled: Boolean(companyId),
     queryFn: () => fetchList({ data: { companyId: companyId! } }) });
@@ -79,6 +84,16 @@ function RecurringInvoices() {
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: ["sales-recurring", companyId] });
       toast.success(`Generated invoice ${r.invoiceId.slice(0, 8)}… next due ${r.nextDueDate}`);
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const activeM = useMutation({
+    mutationFn: (args: { recurringId: string; isActive: boolean }) =>
+      setActive({ data: { companyId: companyId!, ...args } }),
+    onSuccess: async (r) => {
+      await qc.invalidateQueries({ queryKey: ["sales-recurring", companyId] });
+      toast.success(r.is_active ? "Schedule resumed" : "Schedule paused");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -143,8 +158,23 @@ function RecurringInvoices() {
                 <TableCell><Badge variant="secondary">{r.is_active ? "active" : "paused"}</Badge>
                   {r.last_error ? <span className="ml-2 text-xs text-destructive">{r.last_error}</span> : null}
                 </TableCell>
-                <TableCell>
-                  <Button size="sm" variant="outline" disabled={genM.isPending} onClick={() => genM.mutate(r.id)}>
+                <TableCell className="space-x-2 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={activeM.isPending}
+                    onClick={() =>
+                      activeM.mutate({ recurringId: r.id, isActive: !r.is_active })
+                    }
+                  >
+                    {r.is_active ? "Pause" : "Resume"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={genM.isPending || !r.is_active}
+                    onClick={() => genM.mutate(r.id)}
+                  >
                     Generate now
                   </Button>
                 </TableCell>

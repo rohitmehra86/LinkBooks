@@ -11,6 +11,8 @@ export type SalesLineInput = {
   unitPriceMinor: number;
   discountMinor?: number;
   taxRateBps?: number;
+  /** Optional catalogue product/service — does not invent inventory movements. */
+  productId?: string | null;
 };
 
 export type SalesLineComputed = SalesLineInput & {
@@ -47,9 +49,18 @@ export function validateSalesLines(
       unitPriceMinor: l.unitPriceMinor,
       discountMinor: l.discountMinor ?? 0,
       taxRateBps: l.taxRateBps ?? 0,
+      productId: l.productId ?? null,
       ...computed,
     };
   });
+}
+
+/** Add calendar days to YYYY-MM-DD (UTC date arithmetic). */
+export function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export function nextDate(from: string, frequency: string): string {

@@ -11,6 +11,7 @@ import {
   listRecurringBills,
   listSuppliers,
   saveRecurringBill,
+  setRecurringBillActive,
 } from "@/lib/purchases/purchases.functions";
 import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
@@ -48,6 +49,7 @@ function RecurringPage() {
   const fetchAccounts = useServerFn(listAccounts);
   const save = useServerFn(saveRecurringBill);
   const generate = useServerFn(generateRecurringBill);
+  const setActive = useServerFn(setRecurringBillActive);
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
   const today = new Date().toISOString().slice(0, 10);
@@ -118,6 +120,16 @@ function RecurringPage() {
           ? "Bill generated and authorised"
           : "Draft bill generated (not posted — policy default)",
       );
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const activeMutation = useMutation({
+    mutationFn: (args: { recurringId: string; isActive: boolean }) =>
+      setActive({ data: { companyId: companyId!, ...args } }),
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: ["recurring", companyId] });
+      toast.success(r.is_active ? "Schedule resumed" : "Schedule paused");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -238,6 +250,7 @@ function RecurringPage() {
                 name: string;
                 next_due_date: string;
                 last_error: string | null;
+                is_active: boolean;
                 contacts: { name: string } | null;
               }>
             ).map((r) => (
@@ -248,11 +261,21 @@ function RecurringPage() {
                 <TableCell className="max-w-[200px] truncate text-destructive">
                   {r.last_error ?? "—"}
                 </TableCell>
-                <TableCell>
+                <TableCell className="space-x-2 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={activeMutation.isPending}
+                    onClick={() =>
+                      activeMutation.mutate({ recurringId: r.id, isActive: !r.is_active })
+                    }
+                  >
+                    {r.is_active ? "Pause" : "Resume"}
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={genMutation.isPending}
+                    disabled={genMutation.isPending || !r.is_active}
                     onClick={() => genMutation.mutate(r.id)}
                   >
                     Generate now

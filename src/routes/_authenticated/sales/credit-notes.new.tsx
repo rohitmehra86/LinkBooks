@@ -60,10 +60,10 @@ function NewCredit() {
       if (alsoAuthorise) await authorise({ data: { companyId, creditNoteId: saved.id } });
       return saved;
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await qc.invalidateQueries({ queryKey: ["sales-credits", companyId] });
       toast.success("Credit note saved");
-      navigate({ to: "/sales/credit-notes" });
+      navigate({ to: "/sales/credit-notes/$creditNoteId", params: { creditNoteId: saved.id } });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });

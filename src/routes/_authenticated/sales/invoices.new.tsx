@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -7,31 +7,27 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { listCustomers, saveInvoiceDraft, authoriseInvoice } from "@/lib/sales/sales.functions";
-import { toMinorUnits, fromMinorUnits } from "@/lib/accounting/money";
-import { computeLineAmounts, sumLines } from "@/lib/purchases/line-math";
+import { listProducts } from "@/lib/products/products.functions";
+import { getWorkflowSettings } from "@/lib/settings/workflow-settings.functions";
+import { addDaysIso } from "@/lib/sales/line-helpers";
+import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { EntityCombobox } from "@/components/common/EntityCombobox";
+import {
+  SalesDocumentLines,
+  emptySalesLine,
+  type SalesLineFormState,
+} from "@/components/sales/SalesDocumentLines";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/sales/invoices/new")({
   head: () => ({ meta: [{ title: "New invoice — LinkBooks" }] }),
   component: NewInvoice,
 });
-
-type LineState = {
-  description: string;
-  accountId: string;
-  quantity: string;
-  unitPrice: string;
-  discount: string;
-  taxRateBps: string;
-};
 
 function NewInvoice() {
   const { company } = useActiveCompany();
@@ -39,6 +35,8 @@ function NewInvoice() {
   const queryClient = useQueryClient();
   const fetchCustomers = useServerFn(listCustomers);
   const fetchAccounts = useServerFn(listAccounts);
+  const fetchProducts = useServerFn(listProducts);
+  const fetchSettings = useServerFn(getWorkflowSettings);
   const saveDraft = useServerFn(saveInvoiceDraft);
   const authorise = useServerFn(authoriseInvoice);
 
@@ -56,36 +54,64 @@ function NewInvoice() {
     enabled: Boolean(companyId),
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
   });
+  const productsQ = useQuery({
+    queryKey: ["products", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchProducts({ data: { companyId: companyId!, limit: 200 } }),
+  });
+  const settingsQ = useQuery({
+    queryKey: ["workflow-settings", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchSettings({ data: { companyId: companyId! } }),
+  });
 
   const [contactId, setContactId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(today);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [memo, setMemo] = useState("");
-  const [lines, setLines] = useState<LineState[]>([
-    { description: "", accountId: "", quantity: "1", unitPrice: "0.00", discount: "0", taxRateBps: "0" },
-  ]);
+  const [lines, setLines] = useState<SalesLineFormState[]>([emptySalesLine()]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
 
-  const incomeAccounts = ((accountsQ.data ?? []) as Array<{
-    id: string; code: string; name: string; account_type: string; is_postable: boolean; is_active: boolean;
-  }>).filter((a) => a.is_active && a.is_postable && (a.account_type === "income" || a.code === "4000"));
+  useEffect(() => {
+    if (defaultsApplied || !settingsQ.data) return;
+    const terms = settingsQ.data.sales_default_payment_terms_days ?? 30;
+    setDueDate(addDaysIso(today, terms));
+    if (settingsQ.data.sales_default_notes) setMemo(settingsQ.data.sales_default_notes);
+    setDefaultsApplied(true);
+  }, [settingsQ.data, defaultsApplied, today]);
 
-  const preview = (() => {
-    try {
-      const computed = lines.map((l) =>
-        computeLineAmounts({
-          quantity: Number(l.quantity),
-          unit_price_minor: toMinorUnits(l.unitPrice || "0", currency),
-          discount_minor: toMinorUnits(l.discount || "0", currency),
-          tax_rate_bps: Number(l.taxRateBps || 0),
-        }),
-      );
-      return sumLines(computed);
-    } catch {
-      return null;
-    }
-  })();
+  const customers = (customersQ.data ?? []) as Array<{
+    id: string;
+    name: string;
+    payment_terms_days: number | null;
+  }>;
+
+  const incomeAccounts = (
+    (accountsQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      account_type: string;
+      is_postable: boolean;
+      is_active: boolean;
+    }>
+  ).filter(
+    (a) => a.is_active && a.is_postable && (a.account_type === "income" || a.code.startsWith("4")),
+  );
+
+  const treatment = settingsQ.data?.sales_prices_include_tax ? "inclusive" : "exclusive";
+
+  const onCustomerChange = (id: string) => {
+    setContactId(id);
+    const c = customers.find((x) => x.id === id);
+    const terms =
+      c?.payment_terms_days ??
+      settingsQ.data?.sales_default_payment_terms_days ??
+      30;
+    setDueDate(addDaysIso(invoiceDate, terms));
+  };
 
   const mutation = useMutation({
     mutationFn: async (alsoAuthorise: boolean) => {
@@ -99,6 +125,7 @@ function NewInvoice() {
         unitPriceMinor: Number(toMinorUnits(l.unitPrice || "0", currency)),
         discountMinor: Number(toMinorUnits(l.discount || "0", currency)),
         taxRateBps: Number(l.taxRateBps || 0),
+        productId: l.productId || null,
       }));
       const saved = await saveDraft({
         data: {
@@ -129,6 +156,11 @@ function NewInvoice() {
     },
   });
 
+  const customerOptions = useMemo(
+    () => customers.map((c) => ({ value: c.id, label: c.name })),
+    [customers],
+  );
+
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (customersQ.isPending || accountsQ.isPending) return <LoadingState />;
 
@@ -136,7 +168,7 @@ function NewInvoice() {
     <>
       <PageHeader
         title="New invoice"
-        description="Save as draft, or authorise to post AR + revenue/tax through the shared posting engine."
+        description="Defaults come from Sales settings and the customer’s payment terms. Authorise posts AR + revenue/tax once."
         actions={
           <Button variant="outline" size="sm" asChild>
             <Link to="/sales/invoices">Back</Link>
@@ -148,22 +180,34 @@ function NewInvoice() {
           <AlertDescription>{formError}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid max-w-3xl gap-4">
+      <div className="grid max-w-4xl gap-4">
         <div className="space-y-2">
           <Label>Customer</Label>
-          <Select value={contactId} onValueChange={setContactId}>
-            <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-            <SelectContent>
-              {((customersQ.data ?? []) as Array<{ id: string; name: string }>).map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <EntityCombobox
+            aria-label="Customer"
+            options={customerOptions}
+            value={contactId}
+            onChange={onCustomerChange}
+            placeholder="Search customers"
+            allowClear={false}
+          />
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-2">
             <Label>Invoice date</Label>
-            <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+            <Input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => {
+                setInvoiceDate(e.target.value);
+                const c = customers.find((x) => x.id === contactId);
+                const terms =
+                  c?.payment_terms_days ??
+                  settingsQ.data?.sales_default_payment_terms_days ??
+                  30;
+                setDueDate(addDaysIso(e.target.value, terms));
+              }}
+            />
           </div>
           <div className="space-y-2">
             <Label>Due date</Label>
@@ -171,49 +215,26 @@ function NewInvoice() {
           </div>
           <div className="space-y-2">
             <Label>Invoice #</Label>
-            <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+            <Input
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+              placeholder="Optional — leave blank for later"
+            />
           </div>
         </div>
         <div className="space-y-2">
-          <Label>Memo</Label>
+          <Label>Memo / customer message</Label>
           <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
         </div>
-        <div className="space-y-3">
-          <Label>Lines</Label>
-          {lines.map((line, idx) => (
-            <div key={idx} className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-6">
-              <Input className="sm:col-span-2" placeholder="Description" value={line.description}
-                onChange={(e) => { const next = [...lines]; next[idx] = { ...line, description: e.target.value }; setLines(next); }} />
-              <Select value={line.accountId} onValueChange={(v) => { const next = [...lines]; next[idx] = { ...line, accountId: v }; setLines(next); }}>
-                <SelectTrigger><SelectValue placeholder="Revenue account" /></SelectTrigger>
-                <SelectContent>
-                  {incomeAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input placeholder="Qty" value={line.quantity}
-                onChange={(e) => { const next = [...lines]; next[idx] = { ...line, quantity: e.target.value }; setLines(next); }} />
-              <Input placeholder={`Price`} value={line.unitPrice}
-                onChange={(e) => { const next = [...lines]; next[idx] = { ...line, unitPrice: e.target.value }; setLines(next); }} />
-              <Input placeholder="Disc." value={line.discount}
-                onChange={(e) => { const next = [...lines]; next[idx] = { ...line, discount: e.target.value }; setLines(next); }} />
-              <Input placeholder="Tax bps" value={line.taxRateBps}
-                onChange={(e) => { const next = [...lines]; next[idx] = { ...line, taxRateBps: e.target.value }; setLines(next); }} />
-            </div>
-          ))}
-          <Button type="button" variant="outline" size="sm"
-            onClick={() => setLines([...lines, { description: "", accountId: "", quantity: "1", unitPrice: "0.00", discount: "0", taxRateBps: "0" }])}>
-            Add line
-          </Button>
-        </div>
-        {preview ? (
-          <p className="text-sm text-muted-foreground">
-            Subtotal {fromMinorUnits(preview.subtotal_minor, currency)} · Tax{" "}
-            {fromMinorUnits(preview.tax_minor, currency)} · Total{" "}
-            {fromMinorUnits(preview.total_minor, currency)}
-          </p>
-        ) : null}
+        <SalesDocumentLines
+          lines={lines}
+          onChange={setLines}
+          products={(productsQ.data ?? []) as never}
+          accounts={incomeAccounts}
+          currency={currency}
+          treatment={treatment}
+          toMinor={(d) => toMinorUnits(d, currency)}
+        />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate(false)}>
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}

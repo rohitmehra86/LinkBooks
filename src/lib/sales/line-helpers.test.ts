@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addDaysIso,
   deriveInvoiceStatus,
   invoiceOutstanding,
   nextDate,
@@ -45,6 +46,28 @@ describe("validateSalesLines", () => {
     expect(() =>
       validateSalesLines([{ description: " ", accountId: "a", quantity: 1, unitPriceMinor: 1 }]),
     ).toThrow(/description/i);
+  });
+
+  it("preserves optional productId without changing amounts", () => {
+    const lines = validateSalesLines([
+      {
+        description: "Catalogue item",
+        accountId: "acc",
+        quantity: 1,
+        unitPriceMinor: 5000,
+        taxRateBps: 0,
+        productId: "11111111-1111-1111-1111-111111111111",
+      },
+    ]);
+    expect(lines[0]!.productId).toBe("11111111-1111-1111-1111-111111111111");
+    expect(lines[0]!.net_minor).toBe(5000n);
+  });
+});
+
+describe("addDaysIso", () => {
+  it("adds payment terms days across month boundaries", () => {
+    expect(addDaysIso("2026-01-31", 1)).toBe("2026-02-01");
+    expect(addDaysIso("2026-04-01", 30)).toBe("2026-05-01");
   });
 });
 

@@ -106,14 +106,21 @@ function BillDetail() {
               <Link to="/purchases/bills">Back</Link>
             </Button>
             {bill.status === "draft" ? (
-              <Button
-                size="sm"
-                disabled={authoriseMutation.isPending}
-                onClick={() => authoriseMutation.mutate()}
-              >
-                {authoriseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                Authorise & post
-              </Button>
+              <>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/purchases/bills/$billId/edit" params={{ billId }}>
+                    Edit draft
+                  </Link>
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={authoriseMutation.isPending}
+                  onClick={() => authoriseMutation.mutate()}
+                >
+                  {authoriseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Authorise & post
+                </Button>
+              </>
             ) : null}
             {bill.status !== "void" ? (
               <Button

@@ -108,5 +108,29 @@ export const upsertWorkflowSettings = createServerFn({ method: "POST" })
       .from("company_workflow_settings" as never)
       .upsert(payload as never, { onConflict: "company_id" });
     if (error) throw new Error(error.message);
+
+    // Keep posting tax treatment in sync with sales prices-include-tax setting.
+    const { data: taxRow } = await context.supabase
+      .from("company_tax_settings" as never)
+      .select("company_id" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (taxRow) {
+      const { error: taxErr } = await context.supabase
+        .from("company_tax_settings" as never)
+        .update({
+          prices_include_tax: data.salesPricesIncludeTax,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq("company_id" as never, data.companyId as never);
+      if (taxErr) console.warn("[workflow settings] tax sync:", taxErr.message);
+    } else {
+      const { error: taxErr } = await context.supabase.from("company_tax_settings" as never).insert({
+        company_id: data.companyId,
+        prices_include_tax: data.salesPricesIncludeTax,
+        tax_regime: "none",
+      } as never);
+      if (taxErr) console.warn("[workflow settings] tax insert:", taxErr.message);
+    }
     return { ok: true };
   });
