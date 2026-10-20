@@ -37,6 +37,9 @@ import { Route as AuthenticatedBankingTransactionsRouteImport } from './routes/_
 import { Route as AuthenticatedBankingTransfersRouteImport } from './routes/_authenticated/banking/transfers'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedContactsContactIdRouteImport } from './routes/_authenticated/contacts/$contactId'
+import { Route as AuthenticatedContactsDuplicatesRouteImport } from './routes/_authenticated/contacts/duplicates'
+import { Route as AuthenticatedContactsImportRouteImport } from './routes/_authenticated/contacts/import'
+import { Route as AuthenticatedContactsSettingsRouteImport } from './routes/_authenticated/contacts/settings'
 import { Route as AuthenticatedPurchasesIndexRouteImport } from './routes/_authenticated/purchases/index'
 import { Route as AuthenticatedPurchasesEmployeeExpensesRouteImport } from './routes/_authenticated/purchases/employee-expenses'
 import { Route as AuthenticatedPurchasesRecurringRouteImport } from './routes/_authenticated/purchases/recurring'
@@ -228,6 +231,24 @@ const AuthenticatedContactsContactIdRoute =
   AuthenticatedContactsContactIdRouteImport.update({
     id: '/contacts/$contactId',
     path: '/contacts/$contactId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedContactsDuplicatesRoute =
+  AuthenticatedContactsDuplicatesRouteImport.update({
+    id: '/contacts/duplicates',
+    path: '/contacts/duplicates',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedContactsImportRoute =
+  AuthenticatedContactsImportRouteImport.update({
+    id: '/contacts/import',
+    path: '/contacts/import',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedContactsSettingsRoute =
+  AuthenticatedContactsSettingsRouteImport.update({
+    id: '/contacts/settings',
+    path: '/contacts/settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedPurchasesIndexRoute =
@@ -490,6 +511,9 @@ export interface FileRoutesByFullPath {
   '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
+  '/contacts/import': typeof AuthenticatedContactsImportRoute
+  '/contacts/settings': typeof AuthenticatedContactsSettingsRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -555,6 +579,9 @@ export interface FileRoutesByTo {
   '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
+  '/contacts/import': typeof AuthenticatedContactsImportRoute
+  '/contacts/settings': typeof AuthenticatedContactsSettingsRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -625,6 +652,9 @@ export interface FileRoutesById {
   '/_authenticated/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/_authenticated/banking/transfers': typeof AuthenticatedBankingTransfersRoute
   '/_authenticated/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
+  '/_authenticated/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
+  '/_authenticated/contacts/import': typeof AuthenticatedContactsImportRoute
+  '/_authenticated/contacts/settings': typeof AuthenticatedContactsSettingsRoute
   '/_authenticated/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/_authenticated/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/_authenticated/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -695,6 +725,9 @@ export interface FileRouteTypes {
     | '/banking/transactions'
     | '/banking/transfers'
     | '/contacts/$contactId'
+    | '/contacts/duplicates'
+    | '/contacts/import'
+    | '/contacts/settings'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
     | '/purchases/settings'
@@ -760,6 +793,9 @@ export interface FileRouteTypes {
     | '/banking/transactions'
     | '/banking/transfers'
     | '/contacts/$contactId'
+    | '/contacts/duplicates'
+    | '/contacts/import'
+    | '/contacts/settings'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
     | '/purchases/settings'
@@ -829,6 +865,9 @@ export interface FileRouteTypes {
     | '/_authenticated/banking/transactions'
     | '/_authenticated/banking/transfers'
     | '/_authenticated/contacts/$contactId'
+    | '/_authenticated/contacts/duplicates'
+    | '/_authenticated/contacts/import'
+    | '/_authenticated/contacts/settings'
     | '/_authenticated/purchases/employee-expenses'
     | '/_authenticated/purchases/recurring'
     | '/_authenticated/purchases/settings'
@@ -1075,6 +1114,27 @@ declare module '@tanstack/react-router' {
       path: '/contacts/$contactId'
       fullPath: '/contacts/$contactId'
       preLoaderRoute: typeof AuthenticatedContactsContactIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contacts/duplicates': {
+      id: '/_authenticated/contacts/duplicates'
+      path: '/contacts/duplicates'
+      fullPath: '/contacts/duplicates'
+      preLoaderRoute: typeof AuthenticatedContactsDuplicatesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contacts/import': {
+      id: '/_authenticated/contacts/import'
+      path: '/contacts/import'
+      fullPath: '/contacts/import'
+      preLoaderRoute: typeof AuthenticatedContactsImportRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contacts/settings': {
+      id: '/_authenticated/contacts/settings'
+      path: '/contacts/settings'
+      fullPath: '/contacts/settings'
+      preLoaderRoute: typeof AuthenticatedContactsSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/purchases/': {
@@ -1539,6 +1599,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedTaxRoute: typeof AuthenticatedTaxRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedContactsContactIdRoute: typeof AuthenticatedContactsContactIdRoute
+  AuthenticatedContactsDuplicatesRoute: typeof AuthenticatedContactsDuplicatesRoute
+  AuthenticatedContactsImportRoute: typeof AuthenticatedContactsImportRoute
+  AuthenticatedContactsSettingsRoute: typeof AuthenticatedContactsSettingsRoute
   AuthenticatedReportsReportIdRoute: typeof AuthenticatedReportsReportIdRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
@@ -1561,6 +1624,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTaxRoute: AuthenticatedTaxRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedContactsContactIdRoute: AuthenticatedContactsContactIdRoute,
+  AuthenticatedContactsDuplicatesRoute: AuthenticatedContactsDuplicatesRoute,
+  AuthenticatedContactsImportRoute: AuthenticatedContactsImportRoute,
+  AuthenticatedContactsSettingsRoute: AuthenticatedContactsSettingsRoute,
   AuthenticatedReportsReportIdRoute: AuthenticatedReportsReportIdRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
