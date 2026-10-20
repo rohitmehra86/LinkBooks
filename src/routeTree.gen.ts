@@ -28,6 +28,8 @@ import { Route as AuthenticatedSalesRouteRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTaxRouteImport } from './routes/_authenticated/tax'
 import { Route as AuthenticatedBankingIndexRouteImport } from './routes/_authenticated/banking/index'
+import { Route as AuthenticatedBankingCashCodingRouteImport } from './routes/_authenticated/banking/cash-coding'
+import { Route as AuthenticatedBankingFeedsRouteImport } from './routes/_authenticated/banking/feeds'
 import { Route as AuthenticatedBankingImportRouteImport } from './routes/_authenticated/banking/import'
 import { Route as AuthenticatedBankingReconcileRouteImport } from './routes/_authenticated/banking/reconcile'
 import { Route as AuthenticatedBankingRulesRouteImport } from './routes/_authenticated/banking/rules'
@@ -172,6 +174,18 @@ const AuthenticatedBankingIndexRoute =
   AuthenticatedBankingIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingCashCodingRoute =
+  AuthenticatedBankingCashCodingRouteImport.update({
+    id: '/cash-coding',
+    path: '/cash-coding',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingFeedsRoute =
+  AuthenticatedBankingFeedsRouteImport.update({
+    id: '/feeds',
+    path: '/feeds',
     getParentRoute: () => AuthenticatedBankingRouteRoute,
   } as any)
 const AuthenticatedBankingImportRoute =
@@ -468,6 +482,8 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
+  '/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
+  '/banking/feeds': typeof AuthenticatedBankingFeedsRoute
   '/banking/import': typeof AuthenticatedBankingImportRoute
   '/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
   '/banking/rules': typeof AuthenticatedBankingRulesRoute
@@ -531,6 +547,8 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/': typeof AuthenticatedIndexRoute
+  '/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
+  '/banking/feeds': typeof AuthenticatedBankingFeedsRoute
   '/banking/import': typeof AuthenticatedBankingImportRoute
   '/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
   '/banking/rules': typeof AuthenticatedBankingRulesRoute
@@ -599,6 +617,8 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tax': typeof AuthenticatedTaxRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
+  '/_authenticated/banking/feeds': typeof AuthenticatedBankingFeedsRoute
   '/_authenticated/banking/import': typeof AuthenticatedBankingImportRoute
   '/_authenticated/banking/reconcile': typeof AuthenticatedBankingReconcileRoute
   '/_authenticated/banking/rules': typeof AuthenticatedBankingRulesRoute
@@ -667,6 +687,8 @@ export interface FileRouteTypes {
     | '/profile'
     | '/settings'
     | '/tax'
+    | '/banking/cash-coding'
+    | '/banking/feeds'
     | '/banking/import'
     | '/banking/reconcile'
     | '/banking/rules'
@@ -730,6 +752,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tax'
     | '/'
+    | '/banking/cash-coding'
+    | '/banking/feeds'
     | '/banking/import'
     | '/banking/reconcile'
     | '/banking/rules'
@@ -797,6 +821,8 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/tax'
     | '/_authenticated/'
+    | '/_authenticated/banking/cash-coding'
+    | '/_authenticated/banking/feeds'
     | '/_authenticated/banking/import'
     | '/_authenticated/banking/reconcile'
     | '/_authenticated/banking/rules'
@@ -986,6 +1012,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/banking/'
       preLoaderRoute: typeof AuthenticatedBankingIndexRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/cash-coding': {
+      id: '/_authenticated/banking/cash-coding'
+      path: '/cash-coding'
+      fullPath: '/banking/cash-coding'
+      preLoaderRoute: typeof AuthenticatedBankingCashCodingRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/feeds': {
+      id: '/_authenticated/banking/feeds'
+      path: '/feeds'
+      fullPath: '/banking/feeds'
+      preLoaderRoute: typeof AuthenticatedBankingFeedsRouteImport
       parentRoute: typeof AuthenticatedBankingRouteRoute
     }
     '/_authenticated/banking/import': {
@@ -1314,6 +1354,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedBankingRouteRouteChildren {
+  AuthenticatedBankingCashCodingRoute: typeof AuthenticatedBankingCashCodingRoute
+  AuthenticatedBankingFeedsRoute: typeof AuthenticatedBankingFeedsRoute
   AuthenticatedBankingImportRoute: typeof AuthenticatedBankingImportRoute
   AuthenticatedBankingReconcileRoute: typeof AuthenticatedBankingReconcileRoute
   AuthenticatedBankingRulesRoute: typeof AuthenticatedBankingRulesRoute
@@ -1324,6 +1366,8 @@ interface AuthenticatedBankingRouteRouteChildren {
 
 const AuthenticatedBankingRouteRouteChildren: AuthenticatedBankingRouteRouteChildren =
   {
+    AuthenticatedBankingCashCodingRoute: AuthenticatedBankingCashCodingRoute,
+    AuthenticatedBankingFeedsRoute: AuthenticatedBankingFeedsRoute,
     AuthenticatedBankingImportRoute: AuthenticatedBankingImportRoute,
     AuthenticatedBankingReconcileRoute: AuthenticatedBankingReconcileRoute,
     AuthenticatedBankingRulesRoute: AuthenticatedBankingRulesRoute,

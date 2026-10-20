@@ -6,6 +6,11 @@ import { requireAccountInCompany } from "@/lib/purchases/accounts";
 import { categoriseBankTransaction } from "@/lib/accounting/posting-engine";
 import { postBankTransfer, voidPostedDocument } from "@/lib/sales/posting";
 import { parseBankCsv, applyBankRule } from "@/lib/banking/csv-import";
+import {
+  directionFromAmount,
+  normalizePayee,
+  rankCodingSuggestions,
+} from "@/lib/banking/suggestions";
 
 function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -86,30 +91,106 @@ export const createBankAccount = createServerFn({ method: "POST" })
 export const listBankTransactions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { companyId: string; bankAccountId?: string; status?: string; page?: number }) => ({
+    (input: {
+      companyId: string;
+      bankAccountId?: string;
+      status?: string;
+      /** unreconciled = uncategorised + matched; all = no status filter */
+      statusGroup?: string;
+      q?: string;
+      page?: number;
+      pageSize?: number;
+    }) => ({
       companyId: assertUuid(input.companyId),
       bankAccountId: input.bankAccountId ? assertUuid(input.bankAccountId) : null,
       status: (input.status ?? "").trim() || null,
+      statusGroup: (input.statusGroup ?? "").trim() || null,
+      q: (input.q ?? "").trim().slice(0, 120) || null,
       page: Math.max(0, Number(input.page ?? 0) || 0),
+      pageSize: Math.min(200, Math.max(10, Number(input.pageSize ?? 50) || 50)),
     }),
   )
   .handler(async ({ data, context }) => {
     await assertCompanyMember(context.supabase, data.companyId);
-    const pageSize = 50;
+    const pageSize = data.pageSize;
     let q = context.supabase
       .from("bank_transactions" as never)
       .select(
-        "id, bank_account_id, txn_date, amount_minor, description, external_id, status, created_at" as never,
+        "id, bank_account_id, txn_date, amount_minor, description, external_id, status, created_at, exclude_reason, excluded_at, payee_normalized" as never,
         { count: "exact" },
       )
       .eq("company_id" as never, data.companyId as never)
       .order("txn_date" as never, { ascending: false })
       .range(data.page * pageSize, data.page * pageSize + pageSize - 1);
     if (data.bankAccountId) q = q.eq("bank_account_id" as never, data.bankAccountId as never);
-    if (data.status) q = q.eq("status" as never, data.status as never);
+    if (data.statusGroup === "unreconciled") {
+      q = q.in("status" as never, ["uncategorised", "matched"] as never);
+    } else if (data.statusGroup === "posted") {
+      q = q.in("status" as never, ["matched", "reconciled"] as never);
+    } else if (data.status) {
+      q = q.eq("status" as never, data.status as never);
+    }
+    if (data.q) q = q.ilike("description" as never, `%${data.q}%` as never);
     const { data: rows, error, count } = await q;
     if (error) throw new Error(error.message);
-    return { rows: rows ?? [], total: count ?? 0, page: data.page, pageSize };
+
+    const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+    const linkMap = new Map<
+      string,
+      { journal_line_id: string; journal_id: string | null; journal_number: number | null }
+    >();
+    if (ids.length) {
+      const { data: links } = await context.supabase
+        .from("reconciliation_links" as never)
+        .select("bank_transaction_id, journal_line_id" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .in("bank_transaction_id" as never, ids as never);
+      const lineIds = ((links ?? []) as Array<{ journal_line_id: string }>).map((l) => l.journal_line_id);
+      const lineToJournal = new Map<string, { journal_id: string; journal_number: number | null }>();
+      if (lineIds.length) {
+        const { data: lines } = await context.supabase
+          .from("journal_lines" as never)
+          .select("id, journal_id" as never)
+          .in("id" as never, lineIds as never);
+        const journalIds = [
+          ...new Set(((lines ?? []) as Array<{ journal_id: string }>).map((l) => l.journal_id)),
+        ];
+        const journalNums = new Map<string, number>();
+        if (journalIds.length) {
+          const { data: journals } = await context.supabase
+            .from("journals" as never)
+            .select("id, journal_number" as never)
+            .in("id" as never, journalIds as never);
+          for (const j of (journals ?? []) as Array<{ id: string; journal_number: number }>) {
+            journalNums.set(j.id, j.journal_number);
+          }
+        }
+        for (const line of (lines ?? []) as Array<{ id: string; journal_id: string }>) {
+          lineToJournal.set(line.id, {
+            journal_id: line.journal_id,
+            journal_number: journalNums.get(line.journal_id) ?? null,
+          });
+        }
+      }
+      for (const l of (links ?? []) as Array<{ bank_transaction_id: string; journal_line_id: string }>) {
+        const j = lineToJournal.get(l.journal_line_id);
+        linkMap.set(l.bank_transaction_id, {
+          journal_line_id: l.journal_line_id,
+          journal_id: j?.journal_id ?? null,
+          journal_number: j?.journal_number ?? null,
+        });
+      }
+    }
+
+    return {
+      rows: ((rows ?? []) as Array<Record<string, unknown>>).map((r) => ({
+        ...r,
+        link: linkMap.get(String(r["id"])) ?? null,
+      })),
+      total: count ?? 0,
+      page: data.page,
+      pageSize,
+    };
   });
 
 export const importBankCsv = createServerFn({ method: "POST" })
@@ -242,6 +323,9 @@ export const categoriseTransaction = createServerFn({ method: "POST" })
     if (t.status === "matched" || t.status === "reconciled") {
       throw new Error("Transaction is already matched");
     }
+    if (t.status === "excluded") {
+      throw new Error("Restore this excluded transaction before categorising");
+    }
 
     const { data: bankAcc, error: bErr } = await supabase
       .from("bank_accounts" as never)
@@ -264,6 +348,44 @@ export const categoriseTransaction = createServerFn({ method: "POST" })
       idempotency_key: `bank_transaction:${data.bankTransactionId}:categorise`,
       ...(description ? { description } : {}),
     });
+
+    // Persist org-local coding history for future suggestions (tenant-scoped)
+    const payee = normalizePayee(description);
+    if (payee) {
+      const direction = directionFromAmount(t.amount_minor);
+      const { data: existing } = await supabase
+        .from("bank_coding_history" as never)
+        .select("id, times_used" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("payee_normalized" as never, payee as never)
+        .eq("offset_account_id" as never, data.offsetAccountId as never)
+        .eq("direction" as never, direction as never)
+        .maybeSingle();
+      if (existing) {
+        await supabase
+          .from("bank_coding_history" as never)
+          .update({
+            times_used: ((existing as { times_used: number }).times_used ?? 1) + 1,
+            last_used_at: new Date().toISOString(),
+            description_sample: description,
+          } as never)
+          .eq("id" as never, (existing as { id: string }).id as never);
+      } else {
+        await supabase.from("bank_coding_history" as never).insert({
+          company_id: data.companyId,
+          payee_normalized: payee,
+          description_sample: description,
+          offset_account_id: data.offsetAccountId,
+          direction,
+          times_used: 1,
+        } as never);
+      }
+      await supabase
+        .from("bank_transactions" as never)
+        .update({ payee_normalized: payee } as never)
+        .eq("id" as never, data.bankTransactionId as never);
+    }
+
     return result;
   });
 
@@ -797,4 +919,301 @@ export const voidTransfer = createServerFn({ method: "POST" })
       .update({ status: "void", void_journal_id: journalId } as never)
       .eq("id" as never, data.transferId as never);
     return { journalId };
+  });
+
+export const getBankingWorkspaceCounts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; bankAccountId?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    bankAccountId: input.bankAccountId ? assertUuid(input.bankAccountId) : null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const statuses = ["uncategorised", "matched", "reconciled", "excluded"] as const;
+    const base = { uncategorised: 0, matched: 0, reconciled: 0, excluded: 0 };
+    for (const status of statuses) {
+      let q = context.supabase
+        .from("bank_transactions" as never)
+        .select("id" as never, { count: "exact", head: true })
+        .eq("company_id" as never, data.companyId as never)
+        .eq("status" as never, status as never);
+      if (data.bankAccountId) q = q.eq("bank_account_id" as never, data.bankAccountId as never);
+      const { count } = await q;
+      base[status] = count ?? 0;
+    }
+    return {
+      ...base,
+      unreconciled: base.uncategorised + base.matched,
+      posted: base.matched + base.reconciled,
+      all: base.uncategorised + base.matched + base.reconciled + base.excluded,
+    };
+  });
+
+export const excludeBankTransaction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; bankTransactionId: string; reason?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    bankTransactionId: assertUuid(input.bankTransactionId),
+    reason: (input.reason ?? "").trim().slice(0, 500) || null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "banking.categorise");
+    const { data: txn, error } = await context.supabase
+      .from("bank_transactions" as never)
+      .select("id, status" as never)
+      .eq("id" as never, data.bankTransactionId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!txn) throw new Error("Transaction not found");
+    const status = (txn as { status: string }).status;
+    if (status === "matched" || status === "reconciled") {
+      throw new Error("Cannot exclude a matched or reconciled transaction — reverse the posting first");
+    }
+    if (status === "excluded") return { ok: true as const, already: true };
+    const { error: uErr } = await context.supabase
+      .from("bank_transactions" as never)
+      .update({
+        status: "excluded",
+        exclude_reason: data.reason,
+        excluded_at: new Date().toISOString(),
+        excluded_by: context.userId,
+      } as never)
+      .eq("id" as never, data.bankTransactionId as never);
+    if (uErr) throw new Error(uErr.message);
+    await context.supabase.from("audit_events" as never).insert({
+      company_id: data.companyId,
+      actor_user_id: context.userId,
+      action: "bank_transaction.exclude",
+      entity_type: "bank_transaction",
+      entity_id: data.bankTransactionId,
+      details: { reason: data.reason },
+    } as never);
+    return { ok: true as const, already: false };
+  });
+
+export const restoreBankTransaction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; bankTransactionId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    bankTransactionId: assertUuid(input.bankTransactionId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "banking.categorise");
+    const { data: txn, error } = await context.supabase
+      .from("bank_transactions" as never)
+      .select("id, status" as never)
+      .eq("id" as never, data.bankTransactionId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!txn) throw new Error("Transaction not found");
+    if ((txn as { status: string }).status !== "excluded") {
+      throw new Error("Only excluded transactions can be restored");
+    }
+    // Ensure no reconciliation link exists (should not for excluded)
+    const { count } = await context.supabase
+      .from("reconciliation_links" as never)
+      .select("id" as never, { count: "exact", head: true })
+      .eq("bank_transaction_id" as never, data.bankTransactionId as never);
+    if ((count ?? 0) > 0) {
+      throw new Error("Cannot restore: a journal link already exists for this statement line");
+    }
+    const { error: uErr } = await context.supabase
+      .from("bank_transactions" as never)
+      .update({
+        status: "uncategorised",
+        exclude_reason: null,
+        excluded_at: null,
+        excluded_by: null,
+      } as never)
+      .eq("id" as never, data.bankTransactionId as never);
+    if (uErr) throw new Error(uErr.message);
+    await context.supabase.from("audit_events" as never).insert({
+      company_id: data.companyId,
+      actor_user_id: context.userId,
+      action: "bank_transaction.restore",
+      entity_type: "bank_transaction",
+      entity_id: data.bankTransactionId,
+      details: {},
+    } as never);
+    return { ok: true as const };
+  });
+
+export const bulkCategoriseTransactions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: {
+    companyId: string;
+    bankTransactionIds: string[];
+    offsetAccountId: string;
+  }) => ({
+    companyId: assertUuid(input.companyId),
+    bankTransactionIds: [...new Set((input.bankTransactionIds ?? []).map((id) => assertUuid(id)))].slice(0, 100),
+    offsetAccountId: assertUuid(input.offsetAccountId),
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "banking.categorise");
+    if (!data.bankTransactionIds.length) throw new Error("Select at least one transaction");
+    await requireAccountInCompany(supabase, data.companyId, data.offsetAccountId);
+
+    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+    for (const id of data.bankTransactionIds) {
+      try {
+        const { data: txn, error } = await supabase
+          .from("bank_transactions" as never)
+          .select("id, status, amount_minor, txn_date, description, bank_account_id" as never)
+          .eq("id" as never, id as never)
+          .eq("company_id" as never, data.companyId as never)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!txn) throw new Error("Not found");
+        const t = txn as {
+          status: string;
+          amount_minor: number;
+          txn_date: string;
+          description: string | null;
+          bank_account_id: string;
+        };
+        if (t.status !== "uncategorised") throw new Error(`Status is ${t.status}`);
+        const { data: bankAcc } = await supabase
+          .from("bank_accounts" as never)
+          .select("gl_account_id" as never)
+          .eq("id" as never, t.bank_account_id as never)
+          .maybeSingle();
+        if (!bankAcc) throw new Error("Bank account missing");
+        await categoriseBankTransaction(supabase, {
+          company_id: data.companyId,
+          bank_transaction_id: id,
+          bank_gl_account_id: (bankAcc as { gl_account_id: string }).gl_account_id,
+          offset_account_id: data.offsetAccountId,
+          journal_date: t.txn_date,
+          amount_minor: t.amount_minor,
+          idempotency_key: `bank_transaction:${id}:categorise`,
+          ...(t.description ? { description: t.description } : {}),
+        });
+        const payee = normalizePayee(t.description);
+        if (payee) {
+          await supabase.from("bank_coding_history" as never).upsert(
+            {
+              company_id: data.companyId,
+              payee_normalized: payee,
+              description_sample: t.description,
+              offset_account_id: data.offsetAccountId,
+              direction: directionFromAmount(t.amount_minor),
+              times_used: 1,
+              last_used_at: new Date().toISOString(),
+            } as never,
+            { onConflict: "company_id,payee_normalized,offset_account_id,direction" } as never,
+          );
+        }
+        results.push({ id, ok: true });
+      } catch (e) {
+        results.push({ id, ok: false, error: e instanceof Error ? e.message : "Failed" });
+      }
+    }
+    return {
+      succeeded: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
+  });
+
+export const suggestBankCoding = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; bankTransactionId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    bankTransactionId: assertUuid(input.bankTransactionId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { data: txn, error } = await context.supabase
+      .from("bank_transactions" as never)
+      .select("id, description, amount_minor, status" as never)
+      .eq("id" as never, data.bankTransactionId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!txn) throw new Error("Transaction not found");
+    const t = txn as { description: string | null; amount_minor: number; status: string };
+
+    const { data: history } = await context.supabase
+      .from("bank_coding_history" as never)
+      .select("payee_normalized, offset_account_id, direction, times_used, accounts(code, name)" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .limit(100);
+    const { data: rules } = await context.supabase
+      .from("bank_rules" as never)
+      .select(
+        "id, name, match_field, match_pattern, match_type, offset_account_id, priority, is_active, accounts(code, name)" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("is_active" as never, true as never);
+
+    const suggestions = rankCodingSuggestions({
+      description: t.description,
+      amountMinor: t.amount_minor,
+      history: ((history ?? []) as Array<{
+        payee_normalized: string;
+        offset_account_id: string;
+        direction: "in" | "out";
+        times_used: number;
+        accounts: { code: string; name: string } | null;
+      }>).map((h) => ({
+        payee_normalized: h.payee_normalized,
+        offset_account_id: h.offset_account_id,
+        direction: h.direction,
+        times_used: h.times_used,
+        account_code: h.accounts?.code ?? null,
+        account_name: h.accounts?.name ?? null,
+      })),
+      rules: ((rules ?? []) as Array<{
+        id: string;
+        name: string;
+        match_field: string;
+        match_pattern: string;
+        match_type: string;
+        offset_account_id: string;
+        priority: number;
+        is_active: boolean;
+        accounts: { code: string; name: string } | null;
+      }>).map((r) => ({
+        id: r.id,
+        name: r.name,
+        match_field: r.match_field,
+        match_pattern: r.match_pattern,
+        match_type: r.match_type,
+        offset_account_id: r.offset_account_id,
+        priority: r.priority,
+        is_active: r.is_active,
+        account_code: r.accounts?.code ?? null,
+        account_name: r.accounts?.name ?? null,
+      })),
+    });
+
+    return {
+      status: t.status,
+      payeeNormalized: normalizePayee(t.description),
+      externalResearchAvailable: false,
+      externalResearchNote:
+        "No external search/AI provider is configured. Suggestions use this organisation’s coding history and bank rules only.",
+      suggestions,
+    };
+  });
+
+export const listBankTransfers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { data: rows, error } = await context.supabase
+      .from("bank_transfers" as never)
+      .select(
+        "id, transfer_date, amount_minor, memo, status, posted_journal_id, from_bank_account_id, to_bank_account_id, created_at" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .order("transfer_date" as never, { ascending: false })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
   });

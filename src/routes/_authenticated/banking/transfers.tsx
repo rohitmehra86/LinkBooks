@@ -5,14 +5,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { createTransfer, listBankAccounts } from "@/lib/banking/banking.functions";
-import { toMinorUnits } from "@/lib/accounting/money";
+import { createTransfer, listBankAccounts, listBankTransfers, voidTransfer } from "@/lib/banking/banking.functions";
+import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/banking/transfers")({
   head: () => ({ meta: [{ title: "Transfers — LinkBooks" }] }),
@@ -26,7 +28,9 @@ function Transfers() {
   const today = new Date().toISOString().slice(0, 10);
   const qc = useQueryClient();
   const fetchAccounts = useServerFn(listBankAccounts);
+  const fetchTransfers = useServerFn(listBankTransfers);
   const doTransfer = useServerFn(createTransfer);
+  const doVoid = useServerFn(voidTransfer);
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
   const [date, setDate] = useState(today);
@@ -37,6 +41,11 @@ function Transfers() {
     queryKey: ["bank-accounts", companyId],
     enabled: Boolean(companyId),
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
+  });
+  const transfersQ = useQuery({
+    queryKey: ["bank-transfers", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchTransfers({ data: { companyId: companyId! } }),
   });
 
   const mutation = useMutation({
@@ -51,9 +60,19 @@ function Transfers() {
         memo,
       },
     }),
-    onSuccess: (r) => {
+    onSuccess: async (r) => {
       toast.success(`Transfer posted (journal ${r.journalId.slice(0, 8)}…). One journal only.`);
       setAmount(""); setMemo("");
+      await qc.invalidateQueries({ queryKey: ["bank-transfers", companyId] });
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const voidM = useMutation({
+    mutationFn: (transferId: string) => doVoid({ data: { companyId: companyId!, transferId } }),
+    onSuccess: async () => {
+      toast.success("Transfer voided via reversal journal");
+      await qc.invalidateQueries({ queryKey: ["bank-transfers", companyId] });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -90,6 +109,59 @@ function Transfers() {
           {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null} Post transfer
         </Button>
       </div>
+
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Transfer history</h2>
+      {transfersQ.isPending ? (
+        <LoadingState />
+      ) : (transfersQ.data ?? []).length === 0 ? (
+        <p className="text-sm text-muted-foreground">No transfers yet.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Memo</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(
+              (transfersQ.data ?? []) as Array<{
+                id: string;
+                transfer_date: string;
+                amount_minor: number;
+                memo: string | null;
+                status: string;
+              }>
+            ).map((t) => (
+              <TableRow key={t.id}>
+                <TableCell>{t.transfer_date}</TableCell>
+                <TableCell>{fromMinorUnits(t.amount_minor, currency)}</TableCell>
+                <TableCell>{t.memo ?? "—"}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{t.status}</Badge>
+                </TableCell>
+                <TableCell>
+                  {t.status === "posted" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={voidM.isPending}
+                      onClick={() => {
+                        if (confirm("Void this transfer with a reversal journal?")) voidM.mutate(t.id);
+                      }}
+                    >
+                      Void
+                    </Button>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </>
   );
 }
