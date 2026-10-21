@@ -9,7 +9,6 @@ import {
   FileText,
   HelpCircle,
   Loader2,
-  MoreHorizontal,
   Paperclip,
   Plus,
   Search,
@@ -19,11 +18,9 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import {
   authoriseBill,
-  deleteDraftBill,
   getBillsWorkspaceSummary,
   listBills,
   listRecurringBills,
-  rejectBillApproval,
   setRecurringBillActive,
   submitBillForApproval,
   type BillsWorkspaceTab,
@@ -268,8 +265,6 @@ function BillsWorkspace() {
   const persistPrefs = useServerFn(saveBillsListPrefs);
   const doAuthorise = useServerFn(authoriseBill);
   const doSubmit = useServerFn(submitBillForApproval);
-  const doReject = useServerFn(rejectBillApproval);
-  const doDelete = useServerFn(deleteDraftBill);
   const doSetRecurring = useServerFn(setRecurringBillActive);
 
   useEffect(() => {
@@ -407,9 +402,29 @@ function BillsWorkspace() {
 
   const visibleCols = useMemo(() => {
     const order = prefs.columnOrder.length ? prefs.columnOrder : DEFAULT_BILLS_LIST_PREFS.columnOrder;
-    const visible = new Set(prefs.visibleColumns);
-    return order.filter((c) => visible.has(c));
+    const visible = new Set(prefs.visibleColumns.filter((c) => c !== "actions"));
+    return order.filter((c) => c !== "actions" && visible.has(c));
   }, [prefs]);
+
+  const openBill = (b: BillRow, opts?: { files?: boolean }) => {
+    const editable = b.status === "draft" || b.status === "awaiting_approval";
+    if (editable) {
+      void navigate({
+        to: "/purchases/bills/$billId/edit",
+        params: { billId: b.id },
+        search: opts?.files ? { files: true } : {},
+      });
+    } else {
+      void navigate({
+        to: "/purchases/bills/$billId",
+        params: { billId: b.id },
+        search: {
+          ...(tab !== "all" ? { fromTab: tab } : {}),
+          ...(opts?.files ? { files: true } : {}),
+        },
+      });
+    }
+  };
 
   const pageTotals = useMemo(() => {
     let total = 0;
@@ -424,7 +439,7 @@ function BillsWorkspace() {
   }, [rows]);
 
   const toggleColumn = (col: BillsListColumnId) => {
-    const essential: BillsListColumnId[] = ["supplier", "reference", "status", "actions"];
+    const essential: BillsListColumnId[] = ["supplier", "reference", "status"];
     if (essential.includes(col) && prefs.visibleColumns.includes(col)) {
       toast.message("Keep essential columns visible");
       return;
@@ -975,18 +990,33 @@ function BillsWorkspace() {
                   <TableBody>
                     {rows.map((b) => {
                       const cur = b.currency_code || baseCurrency;
-                      const hrefParams = { billId: b.id };
                       return (
                         <TableRow
                           key={b.id}
-                          className={cn(selected.has(b.id) && "bg-muted/40", "group")}
+                          role="link"
+                          tabIndex={0}
+                          className={cn(
+                            selected.has(b.id) && "bg-muted/40",
+                            "group cursor-pointer hover:bg-muted/50",
+                          )}
                           data-state={selected.has(b.id) ? "selected" : undefined}
+                          onClick={() => openBill(b)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openBill(b);
+                            }
+                          }}
                         >
                           {visibleCols.map((col) => {
                             switch (col) {
                               case "select":
                                 return (
-                                  <TableCell key={col}>
+                                  <TableCell
+                                    key={col}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                  >
                                     <div className="flex items-center gap-1">
                                       <Checkbox
                                         aria-label={`Select bill ${b.display_reference ?? b.id}`}
@@ -1016,27 +1046,17 @@ function BillsWorkspace() {
                               case "supplier":
                                 return (
                                   <TableCell key={col}>
-                                    <Link
-                                      to="/purchases/bills/$billId"
-                                      params={hrefParams}
-                                      search={{ fromTab: tab }}
-                                      className="font-medium text-foreground underline-offset-2 hover:underline"
-                                    >
+                                    <span className="font-medium text-foreground underline-offset-2 group-hover:underline">
                                       {b.contacts?.name ?? "—"}
-                                    </Link>
+                                    </span>
                                   </TableCell>
                                 );
                               case "reference":
                                 return (
                                   <TableCell key={col}>
-                                    <Link
-                                      to="/purchases/bills/$billId"
-                                      params={hrefParams}
-                                      search={{ fromTab: tab }}
-                                      className="font-mono text-sm underline-offset-2 hover:underline"
-                                    >
+                                    <span className="font-mono text-sm underline-offset-2 group-hover:underline">
                                       {b.display_reference ?? "—"}
-                                    </Link>
+                                    </span>
                                     {!b.supplier_invoice_number && b.bill_number ? (
                                       <span className="mt-0.5 block text-[11px] text-muted-foreground">
                                         Internal · no supplier invoice #
@@ -1092,9 +1112,17 @@ function BillsWorkspace() {
                                 );
                               case "attachments":
                                 return (
-                                  <TableCell key={col}>
+                                  <TableCell
+                                    key={col}
+                                    onClick={(e) => {
+                                      if (b.attachment_count > 0) {
+                                        e.stopPropagation();
+                                        openBill(b, { files: true });
+                                      }
+                                    }}
+                                  >
                                     {b.attachment_count > 0 ? (
-                                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <span className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
                                         <Paperclip className="size-3.5" />
                                         {b.attachment_count}
                                       </span>
@@ -1154,53 +1182,6 @@ function BillsWorkspace() {
                               case "updated_at":
                                 return (
                                   <TableCell key={col}>{b.updated_at?.slice(0, 10) ?? "—"}</TableCell>
-                                );
-                              case "actions":
-                                return (
-                                  <TableCell key={col}>
-                                    <RowActions
-                                      bill={b}
-                                      tab={tab}
-                                      companyId={companyId}
-                                      onAuthorise={() =>
-                                        doAuthorise({ data: { companyId, billId: b.id } }).then(
-                                          async () => {
-                                            await invalidateBills();
-                                            toast.success("Bill authorised");
-                                          },
-                                        )
-                                      }
-                                      onSubmit={() =>
-                                        doSubmit({ data: { companyId, billId: b.id } }).then(
-                                          async () => {
-                                            await invalidateBills();
-                                            toast.success("Submitted for approval");
-                                          },
-                                        )
-                                      }
-                                      onReject={() =>
-                                        doReject({
-                                          data: {
-                                            companyId,
-                                            billId: b.id,
-                                            reason: "Returned for correction",
-                                          },
-                                        }).then(async () => {
-                                          await invalidateBills();
-                                          toast.success("Returned to draft");
-                                        })
-                                      }
-                                      onDelete={() =>
-                                        doDelete({ data: { companyId, billId: b.id } }).then(
-                                          async () => {
-                                            await invalidateBills();
-                                            toast.success("Draft deleted");
-                                          },
-                                        )
-                                      }
-                                      onPreview={() => setPreviewId(b.id)}
-                                    />
-                                  </TableCell>
                                 );
                               default:
                                 return <TableCell key={col}>—</TableCell>;
@@ -1270,99 +1251,6 @@ function SummaryChip({
   );
 }
 
-function RowActions({
-  bill,
-  tab,
-  companyId: _companyId,
-  onAuthorise,
-  onSubmit,
-  onReject,
-  onDelete,
-  onPreview,
-}: {
-  bill: BillRow;
-  tab: BillsWorkspaceTab;
-  companyId: string;
-  onAuthorise: () => Promise<unknown>;
-  onSubmit: () => Promise<unknown>;
-  onReject: () => Promise<unknown>;
-  onDelete: () => Promise<unknown>;
-  onPreview: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-    } catch (e) {
-      toast.error(friendlyAuthError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1">
-      <Button variant="outline" size="sm" asChild>
-        <Link to="/purchases/bills/$billId" params={{ billId: bill.id }} search={{ fromTab: tab }}>
-          {bill.status === "draft" || bill.status === "awaiting_approval" ? "Edit" : "View"}
-        </Link>
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" disabled={busy} aria-label="More actions">
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <MoreHorizontal className="size-4" />}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onPreview}>Quick preview</DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/purchases/bills/$billId" params={{ billId: bill.id }}>
-              Open document
-            </Link>
-          </DropdownMenuItem>
-          {bill.status === "draft" ? (
-            <>
-              <DropdownMenuItem asChild>
-                <Link to="/purchases/bills/$billId/edit" params={{ billId: bill.id }}>
-                  Edit draft
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void run(onSubmit)}>Submit for approval</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void run(onAuthorise)}>Authorise & post</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => {
-                  if (confirm("Delete this unposted draft?")) void run(onDelete);
-                }}
-              >
-                Delete draft
-              </DropdownMenuItem>
-            </>
-          ) : null}
-          {bill.status === "awaiting_approval" ? (
-            <>
-              <DropdownMenuItem onClick={() => void run(onAuthorise)}>Approve & authorise</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void run(onReject)}>Return for correction</DropdownMenuItem>
-            </>
-          ) : null}
-          {["authorised", "partly_paid"].includes(bill.status) ? (
-            <DropdownMenuItem asChild>
-              <Link to="/purchases/payments/new">Record payment</Link>
-            </DropdownMenuItem>
-          ) : null}
-          {bill.status === "paid" ? (
-            <DropdownMenuItem asChild>
-              <Link to="/purchases/bills/new">Duplicate into new draft</Link>
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
 function PreviewBody({
   bill,
   currency,
@@ -1414,10 +1302,20 @@ function PreviewBody({
           <dd>{bill.attachment_count}</dd>
         </div>
       </dl>
-      <Button asChild className="w-full">
-        <Link to="/purchases/bills/$billId" params={{ billId: bill.id }} search={{ fromTab: tab }}>
-          Open full document
-        </Link>
+      <Button
+        className="w-full"
+        onClick={() => {
+          const editable = bill.status === "draft" || bill.status === "awaiting_approval";
+          if (editable) {
+            window.location.href = `/purchases/bills/${bill.id}/edit`;
+          } else {
+            window.location.href = `/purchases/bills/${bill.id}${tab !== "all" ? `?fromTab=${tab}` : ""}`;
+          }
+        }}
+      >
+        {bill.status === "draft" || bill.status === "awaiting_approval"
+          ? "Open & edit"
+          : "Open full document"}
       </Button>
     </div>
   );

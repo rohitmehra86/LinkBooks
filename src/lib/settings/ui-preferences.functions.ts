@@ -95,7 +95,6 @@ export const DEFAULT_BILLS_LIST_PREFS: BillsListWorkspacePrefs = {
     "paid",
     "balance",
     "attachments",
-    "actions",
   ],
   columnOrder: [
     "select",
@@ -108,7 +107,6 @@ export const DEFAULT_BILLS_LIST_PREFS: BillsListWorkspacePrefs = {
     "paid",
     "balance",
     "attachments",
-    "actions",
     "account_number",
     "bill_number",
     "supplier_invoice",
@@ -141,14 +139,16 @@ export const getBillsListPrefs = createServerFn({ method: "GET" })
       .maybeSingle();
     const stored = (row as { preference_value?: Partial<BillsListWorkspacePrefs> } | null)
       ?.preference_value;
+    const stripActions = (cols: BillsListColumnId[] | undefined) =>
+      (cols ?? []).filter((c) => c !== "actions");
     return {
       ...DEFAULT_BILLS_LIST_PREFS,
       ...(stored ?? {}),
       visibleColumns: stored?.visibleColumns?.length
-        ? stored.visibleColumns
+        ? stripActions(stored.visibleColumns)
         : DEFAULT_BILLS_LIST_PREFS.visibleColumns,
       columnOrder: stored?.columnOrder?.length
-        ? stored.columnOrder
+        ? stripActions(stored.columnOrder)
         : DEFAULT_BILLS_LIST_PREFS.columnOrder,
       savedViews: stored?.savedViews ?? [],
     } satisfies BillsListWorkspacePrefs;

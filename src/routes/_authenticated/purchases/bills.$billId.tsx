@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -27,6 +27,10 @@ import {
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import {
+  BillAttachmentsButton,
+  BillRelatedFilesOverlay,
+} from "@/components/purchases/BillRelatedFilesOverlay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,12 +51,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
-type BillSearch = { fromTab?: string };
+type BillSearch = { fromTab?: string; files?: boolean };
 
 export const Route = createFileRoute("/_authenticated/purchases/bills/$billId")({
   validateSearch: (s: Record<string, unknown>): BillSearch => {
     const out: BillSearch = {};
     if (typeof s["fromTab"] === "string" && s["fromTab"]) out.fromTab = s["fromTab"];
+    if (s["files"] === true || s["files"] === "1" || s["files"] === "true") out.files = true;
     return out;
   },
   head: () => ({ meta: [{ title: "Bill — LinkBooks" }] }),
@@ -80,6 +85,11 @@ function BillDocumentWorkspace() {
   const [supplierOpen, setSupplierOpen] = useState(true);
   const [noteDraft, setNoteDraft] = useState("");
   const [approvalComment, setApprovalComment] = useState("");
+  const [filesOpen, setFilesOpen] = useState(Boolean(search.files));
+
+  useEffect(() => {
+    if (search.files) setFilesOpen(true);
+  }, [search.files]);
 
   const query = useQuery({
     queryKey: ["bill", companyId, billId],
@@ -353,10 +363,14 @@ function BillDocumentWorkspace() {
               <Printer className="mr-1 size-4" />
               Print / PDF
             </Button>
+            <BillAttachmentsButton
+              count={bill.attachments?.length ?? 0}
+              onClick={() => setFilesOpen(true)}
+            />
             {bill.status === "draft" || bill.status === "awaiting_approval" ? (
-              <Button size="sm" variant="outline" asChild>
+              <Button size="sm" asChild>
                 <Link to="/purchases/bills/$billId/edit" params={{ billId }}>
-                  Edit
+                  Edit bill
                 </Link>
               </Button>
             ) : null}
@@ -632,10 +646,15 @@ function BillDocumentWorkspace() {
           </section>
 
           <section className="rounded-lg border border-border bg-background p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <Paperclip className="size-4" />
-              Attachments ({bill.attachments?.length ?? 0})
-            </h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Paperclip className="size-4" />
+                Attachments ({bill.attachments?.length ?? 0})
+              </h2>
+              <Button size="sm" variant="outline" onClick={() => setFilesOpen(true)}>
+                Open related files
+              </Button>
+            </div>
             {(bill.attachments ?? []).length === 0 ? (
               <p className="text-sm text-muted-foreground">No attachments.</p>
             ) : (
@@ -645,13 +664,20 @@ function BillDocumentWorkspace() {
                     key={a.id}
                     className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{a.file_name}</p>
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => setFilesOpen(true)}
+                    >
+                      <p className="truncate font-medium underline-offset-2 hover:underline">
+                        {a.file_name}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {a.content_type ?? "file"}
                         {a.size_bytes != null ? ` · ${Math.round(a.size_bytes / 1024)} KB` : ""}
+                        {" · click to preview"}
                       </p>
-                    </div>
+                    </button>
                     <Button size="sm" variant="outline" onClick={() => void downloadAttachment(a.id)}>
                       Download
                     </Button>
@@ -822,6 +848,15 @@ function BillDocumentWorkspace() {
           ) : null}
         </aside>
       </div>
+
+      <BillRelatedFilesOverlay
+        open={filesOpen}
+        onOpenChange={setFilesOpen}
+        companyId={companyId}
+        billId={billId}
+        attachments={bill.attachments ?? []}
+        canUpload={bill.status === "draft" || bill.status === "awaiting_approval"}
+      />
     </div>
   );
 }

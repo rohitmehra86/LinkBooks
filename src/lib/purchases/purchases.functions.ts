@@ -944,8 +944,9 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         .maybeSingle();
       if (exErr) throw new Error(exErr.message);
       if (!existing) throw new Error("Bill not found");
-      if ((existing as { status: string }).status !== "draft") {
-        throw new Error("Only draft bills can be edited");
+      const existingStatus = (existing as { status: string }).status;
+      if (existingStatus !== "draft" && existingStatus !== "awaiting_approval") {
+        throw new Error("Only draft or awaiting-approval bills can be edited");
       }
       const { error: upErr } = await supabase
         .from("purchase_bills" as never)
