@@ -61,7 +61,10 @@ function NewPayment() {
   });
 
   const openBills = useMemo(() => {
-    const rows = (billsQ.data ?? []) as Array<{
+    const payload = billsQ.data as { rows?: unknown[] } | unknown[] | undefined;
+    const rows = (
+      Array.isArray(payload) ? payload : (payload?.rows ?? [])
+    ) as Array<{
       id: string;
       contact_id: string;
       status: string;

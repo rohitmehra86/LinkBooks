@@ -74,7 +74,7 @@ function EditBill() {
   const payload = billQ.data;
   useEffect(() => {
     if (hydrated || !payload) return;
-    const bill = payload as {
+    const bill = payload as unknown as {
       status: string;
       contact_id: string;
       bill_date: string;
@@ -201,11 +201,12 @@ function EditBill() {
       />
     );
   }
-  if ((billQ.data as { status: string }).status !== "draft") {
+  const editStatus = (billQ.data as unknown as { status: string }).status;
+  if (editStatus !== "draft" && editStatus !== "awaiting_approval") {
     return (
       <div className="space-y-4">
         <EmptyState
-          title="Only drafts can be edited"
+          title="Only unposted bills can be edited here"
           description="Posted bills must be corrected via void or supplier credit."
         />
         <Button asChild size="sm">

@@ -60,7 +60,10 @@ function CreditNoteDetail() {
 
   const openBills = useMemo(() => {
     return (
-      (billsQ.data ?? []) as Array<{
+      ((() => {
+        const payload = billsQ.data as { rows?: unknown[] } | unknown[] | undefined;
+        return Array.isArray(payload) ? payload : (payload?.rows ?? []);
+      })()) as Array<{
         id: string;
         status: string;
         contact_id: string;

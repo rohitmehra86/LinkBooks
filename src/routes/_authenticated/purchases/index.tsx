@@ -44,7 +44,10 @@ function PurchasesOverview() {
     return <EmptyState title="No organisation" description="Create an organisation first." />;
   }
 
-  const bills = (billsQ.data ?? []) as Array<{
+  const billsPayload = billsQ.data as { rows?: unknown[] } | unknown[] | undefined;
+  const bills = (
+    Array.isArray(billsPayload) ? billsPayload : (billsPayload?.rows ?? [])
+  ) as Array<{
     status: string;
     total_minor: number;
     amount_paid_minor: number;

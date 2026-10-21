@@ -225,37 +225,374 @@ function validateBillLines(lines: BillLineIn[], taxCalculation: TaxCalculationMo
   });
 }
 
+export type BillsWorkspaceTab =
+  | "all"
+  | "drafts"
+  | "for_approval"
+  | "to_pay"
+  | "paid"
+  | "recurring";
+
+function statusesForTab(tab: BillsWorkspaceTab | undefined): string[] | null {
+  switch (tab) {
+    case "drafts":
+      return ["draft"];
+    case "for_approval":
+      return ["awaiting_approval"];
+    case "to_pay":
+      return ["authorised", "partly_paid"];
+    case "paid":
+      return ["paid"];
+    case "all":
+    default:
+      return null;
+  }
+}
+
 export const listBills = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { companyId: string; status?: string; q?: string; limit?: number; offset?: number }) => ({
+    (input: {
+      companyId: string;
+      status?: string;
+      tab?: BillsWorkspaceTab;
+      q?: string;
+      fromDate?: string;
+      toDate?: string;
+      dateField?: "bill_date" | "due_date";
+      contactId?: string;
+      includeVoid?: boolean;
+      overdueOnly?: boolean;
+      limit?: number;
+      offset?: number;
+      sortBy?: string;
+      sortDir?: "asc" | "desc";
+    }) => ({
       companyId: assertUuid(input.companyId),
-      status: input.status,
+      status: (input.status ?? "").trim() || undefined,
+      tab: input.tab,
       q: (input.q ?? "").trim().slice(0, 100),
-      limit: Math.min(Math.max(Number(input.limit ?? 50), 1), 100),
+      fromDate: input.fromDate && /^\d{4}-\d{2}-\d{2}$/.test(input.fromDate) ? input.fromDate : undefined,
+      toDate: input.toDate && /^\d{4}-\d{2}-\d{2}$/.test(input.toDate) ? input.toDate : undefined,
+      dateField: input.dateField === "due_date" ? ("due_date" as const) : ("bill_date" as const),
+      contactId: input.contactId ? assertUuid(input.contactId, "supplier") : undefined,
+      includeVoid: Boolean(input.includeVoid),
+      overdueOnly: Boolean(input.overdueOnly),
+      limit: Math.min(Math.max(Number(input.limit ?? 50), 1), 200),
       offset: Math.max(Number(input.offset ?? 0), 0),
+      sortBy: (input.sortBy ?? "bill_date").slice(0, 40),
+      sortDir: input.sortDir === "asc" ? ("asc" as const) : ("desc" as const),
     }),
   )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const today = new Date().toISOString().slice(0, 10);
+    const sortCol = ["bill_date", "due_date", "total_minor", "status", "bill_number"].includes(
+      data.sortBy,
+    )
+      ? data.sortBy
+      : "bill_date";
+
     let q = context.supabase
       .from("purchase_bills" as never)
       .select(
-        "id, bill_number, supplier_invoice_number, bill_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, currency_code, contact_id, contacts(name)" as never,
+        "id, bill_number, supplier_invoice_number, bill_date, due_date, status, total_minor, tax_minor, amount_paid_minor, amount_credited_minor, currency_code, contact_id, memo, posted_journal_id, fx_rate_to_base, created_at, updated_at, created_by, contacts(id, name, account_number)" as never,
+        { count: "exact" },
       )
       .eq("company_id" as never, data.companyId as never)
-      .order("bill_date" as never, { ascending: false } as never)
+      .order(sortCol as never, { ascending: data.sortDir === "asc" } as never)
       .range(data.offset, data.offset + data.limit - 1);
-    if (data.status) q = q.eq("status" as never, data.status as never);
+
+    const tabStatuses = statusesForTab(data.tab);
+    if (data.status) {
+      q = q.eq("status" as never, data.status as never);
+    } else if (tabStatuses) {
+      q = q.in("status" as never, tabStatuses as never);
+    } else if (!data.includeVoid) {
+      q = q.neq("status" as never, "void" as never);
+    }
+
+    if (data.contactId) q = q.eq("contact_id" as never, data.contactId as never);
+    if (data.fromDate) q = q.gte(data.dateField as never, data.fromDate as never);
+    if (data.toDate) q = q.lte(data.dateField as never, data.toDate as never);
+    if (data.overdueOnly) {
+      q = q
+        .in("status" as never, ["authorised", "partly_paid"] as never)
+        .lt("due_date" as never, today as never);
+    }
     if (data.q) {
       const term = `%${data.q}%`;
       q = q.or(
         `bill_number.ilike.${term},supplier_invoice_number.ilike.${term},memo.ilike.${term}` as never,
       );
     }
-    const { data: rows, error } = await q;
+
+    const { data: rows, error, count } = await q;
     if (error) throw new Error(error.message);
-    return rows ?? [];
+
+    const billIds = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+    let attachmentCounts: Record<string, number> = {};
+    if (billIds.length) {
+      const { data: atts } = await context.supabase
+        .from("document_attachments" as never)
+        .select("entity_id" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("entity_type" as never, "purchase_bill" as never)
+        .in("entity_id" as never, billIds as never);
+      for (const a of (atts ?? []) as Array<{ entity_id: string }>) {
+        attachmentCounts[a.entity_id] = (attachmentCounts[a.entity_id] ?? 0) + 1;
+      }
+    }
+
+    type BillListRaw = {
+      id: string;
+      bill_number: string | null;
+      supplier_invoice_number: string | null;
+      bill_date: string;
+      due_date: string;
+      status: string;
+      total_minor: number;
+      tax_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      currency_code: string | null;
+      contact_id: string;
+      memo: string | null;
+      posted_journal_id: string | null;
+      fx_rate_to_base: number | null;
+      created_at: string;
+      updated_at: string;
+      created_by: string | null;
+      contacts:
+        | { id: string; name: string; account_number: string | null }
+        | Array<{ id: string; name: string; account_number: string | null }>
+        | null;
+    };
+
+    const mapped = ((rows ?? []) as BillListRaw[]).map((r) => {
+      const contactRaw = r.contacts;
+      const contact = Array.isArray(contactRaw) ? contactRaw[0] : contactRaw;
+      const total = Number(r.total_minor ?? 0);
+      const paid = Number(r.amount_paid_minor ?? 0);
+      const credited = Number(r.amount_credited_minor ?? 0);
+      const balance = Math.max(0, total - paid - credited);
+      const status = String(r.status);
+      const dueDate = String(r.due_date ?? "");
+      const daysOverdue =
+        ["authorised", "partly_paid"].includes(status) && dueDate && dueDate < today
+          ? Math.floor((Date.parse(today) - Date.parse(dueDate)) / 86400000)
+          : 0;
+      return {
+        id: r.id,
+        bill_number: r.bill_number ?? null,
+        supplier_invoice_number: r.supplier_invoice_number ?? null,
+        bill_date: r.bill_date,
+        due_date: dueDate,
+        status,
+        total_minor: total,
+        tax_minor: Number(r.tax_minor ?? 0),
+        amount_paid_minor: paid,
+        amount_credited_minor: credited,
+        balance_due_minor: status === "draft" || status === "awaiting_approval" ? 0 : balance,
+        document_total_minor: total,
+        currency_code: r.currency_code ?? "GBP",
+        contact_id: r.contact_id,
+        memo: r.memo ?? null,
+        posted_journal_id: r.posted_journal_id ?? null,
+        fx_rate_to_base: r.fx_rate_to_base ?? null,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        created_by: r.created_by ?? null,
+        contacts: contact
+          ? { id: contact.id, name: contact.name, account_number: contact.account_number }
+          : null,
+        attachment_count: attachmentCounts[r.id] ?? 0,
+        days_overdue: daysOverdue,
+        display_reference:
+          r.supplier_invoice_number?.trim() || r.bill_number?.trim() || null,
+      };
+    });
+
+    return { rows: mapped, totalCount: count ?? mapped.length };
+  });
+
+export const getBillsWorkspaceSummary = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string }) => ({
+    companyId: assertUuid(input.companyId),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: rows, error } = await context.supabase
+      .from("purchase_bills" as never)
+      .select(
+        "id, status, total_minor, amount_paid_minor, amount_credited_minor, due_date" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .neq("status" as never, "void" as never);
+    if (error) throw new Error(error.message);
+
+    let drafts = 0;
+    let forApproval = 0;
+    let toPay = 0;
+    let paid = 0;
+    let all = 0;
+    let outstandingMinor = 0;
+    let overdueMinor = 0;
+
+    for (const r of (rows ?? []) as Array<{
+      status: string;
+      total_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      due_date: string;
+    }>) {
+      all += 1;
+      if (r.status === "draft") drafts += 1;
+      else if (r.status === "awaiting_approval") forApproval += 1;
+      else if (r.status === "paid") paid += 1;
+      else if (r.status === "authorised" || r.status === "partly_paid") {
+        toPay += 1;
+        const bal = Math.max(
+          0,
+          Number(r.total_minor) - Number(r.amount_paid_minor) - Number(r.amount_credited_minor),
+        );
+        outstandingMinor += bal;
+        if (r.due_date < today) overdueMinor += bal;
+      }
+    }
+
+    const { count: recurringCount } = await context.supabase
+      .from("recurring_bills" as never)
+      .select("id" as never, { count: "exact", head: true })
+      .eq("company_id" as never, data.companyId as never)
+      .eq("is_active" as never, true as never);
+
+    return {
+      counts: {
+        all,
+        drafts,
+        for_approval: forApproval,
+        to_pay: toPay,
+        paid,
+        recurring: recurringCount ?? 0,
+      },
+      outstandingMinor,
+      overdueMinor,
+      approvalQueue: forApproval,
+    };
+  });
+
+export const submitBillForApproval = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string; comment?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+    comment: (input.comment ?? "").trim().slice(0, 1000) || null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: bill, error } = await context.supabase
+      .from("purchase_bills" as never)
+      .select("id, status" as never)
+      .eq("id" as never, data.billId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!bill) throw new Error("Bill not found");
+    if ((bill as { status: string }).status !== "draft") {
+      throw new Error("Only draft bills can be submitted for approval");
+    }
+    const { error: upErr } = await context.supabase
+      .from("purchase_bills" as never)
+      .update({
+        status: "awaiting_approval",
+        submitted_for_approval_at: new Date().toISOString(),
+        submitted_for_approval_by: context.userId,
+        approval_comment: data.comment,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id" as never, data.billId as never);
+    if (upErr) throw new Error(upErr.message);
+    await recordBillAudit(context.supabase, data.companyId, "bill.submit_approval", data.billId, {
+      comment: data.comment,
+    });
+    return { ok: true };
+  });
+
+export const rejectBillApproval = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string; reason?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+    reason: (input.reason ?? "").trim().slice(0, 1000) || null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.authorise");
+    const { data: bill, error } = await context.supabase
+      .from("purchase_bills" as never)
+      .select("id, status" as never)
+      .eq("id" as never, data.billId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!bill) throw new Error("Bill not found");
+    if ((bill as { status: string }).status !== "awaiting_approval") {
+      throw new Error("Only bills awaiting approval can be rejected");
+    }
+    const { error: upErr } = await context.supabase
+      .from("purchase_bills" as never)
+      .update({
+        status: "draft",
+        rejected_at: new Date().toISOString(),
+        rejected_by: context.userId,
+        rejection_reason: data.reason,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id" as never, data.billId as never);
+    if (upErr) throw new Error(upErr.message);
+    await recordBillAudit(context.supabase, data.companyId, "bill.reject_approval", data.billId, {
+      reason: data.reason,
+    });
+    return { ok: true };
+  });
+
+export const deleteDraftBill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: bill, error } = await context.supabase
+      .from("purchase_bills" as never)
+      .select("id, status, posted_journal_id" as never)
+      .eq("id" as never, data.billId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!bill) throw new Error("Bill not found");
+    const b = bill as { status: string; posted_journal_id: string | null };
+    if (b.status !== "draft" && b.status !== "awaiting_approval") {
+      throw new Error("Only unposted draft/awaiting-approval bills can be deleted");
+    }
+    if (b.posted_journal_id) throw new Error("Cannot delete a posted bill");
+    await context.supabase
+      .from("document_attachments" as never)
+      .delete()
+      .eq("company_id" as never, data.companyId as never)
+      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_id" as never, data.billId as never);
+    const { error: delErr } = await context.supabase
+      .from("purchase_bills" as never)
+      .delete()
+      .eq("id" as never, data.billId as never)
+      .eq("company_id" as never, data.companyId as never);
+    if (delErr) throw new Error(delErr.message);
+    await recordBillAudit(context.supabase, data.companyId, "bill.draft.delete", data.billId, {});
+    return { ok: true };
   });
 
 export const getBill = createServerFn({ method: "GET" })
@@ -268,13 +605,166 @@ export const getBill = createServerFn({ method: "GET" })
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
     const { data: bill, error } = await context.supabase
       .from("purchase_bills" as never)
-      .select("*, contacts(id, name, email), purchase_bill_lines(*)" as never)
+      .select(
+        "*, contacts(id, name, email, phone, account_number, tax_number, billing_address_line1, billing_city, billing_country), purchase_bill_lines(*)" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
       .eq("id" as never, data.billId as never)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!bill) throw new Error("Bill not found");
-    return bill;
+    type ContactOut = {
+      id: string;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      account_number: string | null;
+      tax_number: string | null;
+      billing_address_line1: string | null;
+      billing_city: string | null;
+      billing_country: string | null;
+    };
+    const b = bill as {
+      id: string;
+      status: string;
+      total_minor: number;
+      tax_minor: number;
+      subtotal_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      supplier_invoice_number: string | null;
+      bill_number: string | null;
+      bill_date: string;
+      due_date: string;
+      memo: string | null;
+      currency_code: string | null;
+      fx_rate_to_base: number | null;
+      payment_terms_days: number | null;
+      posted_journal_id: string | null;
+      contact_id: string;
+      approval_comment: string | null;
+      rejection_reason: string | null;
+      submitted_for_approval_at: string | null;
+      contacts: ContactOut | ContactOut[] | null;
+      purchase_bill_lines: Array<{
+        id: string;
+        line_no?: number;
+        description: string;
+        quantity: number;
+        unit_price_minor: number;
+        discount_minor: number;
+        net_minor: number;
+        tax_minor: number;
+        tax_rate_bps: number;
+        account_id: string | null;
+        class_id: string | null;
+        location_id: string | null;
+        project_id: string | null;
+      }> | null;
+    };
+    const contactRaw = b.contacts;
+    const contacts: ContactOut | null = Array.isArray(contactRaw)
+      ? (contactRaw[0] ?? null)
+      : contactRaw;
+    const lines = Array.isArray(b.purchase_bill_lines)
+      ? [...b.purchase_bill_lines].sort((a, c) => (a.line_no ?? 0) - (c.line_no ?? 0))
+      : [];
+    const { data: atts } = await context.supabase
+      .from("document_attachments" as never)
+      .select("id, file_name, content_type, size_bytes, created_at" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_id" as never, data.billId as never)
+      .order("created_at" as never, { ascending: false } as never);
+
+    const { data: allocations } = await context.supabase
+      .from("supplier_payment_allocations" as never)
+      .select(
+        "id, amount_minor, supplier_payments(id, payment_date, reference, total_minor, status)" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("bill_id" as never, data.billId as never);
+
+    const status = String(b.status);
+    const total = Number(b.total_minor ?? 0);
+    const paid = Number(b.amount_paid_minor ?? 0);
+    const credited = Number(b.amount_credited_minor ?? 0);
+    const balance = Math.max(0, total - paid - credited);
+
+    return {
+      id: b.id,
+      status: b.status,
+      bill_date: b.bill_date,
+      due_date: b.due_date,
+      bill_number: b.bill_number,
+      supplier_invoice_number: b.supplier_invoice_number,
+      memo: b.memo,
+      currency_code: b.currency_code,
+      fx_rate_to_base: b.fx_rate_to_base,
+      payment_terms_days: b.payment_terms_days,
+      total_minor: total,
+      tax_minor: Number(b.tax_minor ?? 0),
+      subtotal_minor: Number(b.subtotal_minor ?? 0),
+      amount_paid_minor: paid,
+      amount_credited_minor: credited,
+      posted_journal_id: b.posted_journal_id,
+      contact_id: b.contact_id,
+      approval_comment: b.approval_comment ?? null,
+      rejection_reason: b.rejection_reason ?? null,
+      submitted_for_approval_at: b.submitted_for_approval_at ?? null,
+      contacts,
+      purchase_bill_lines: lines,
+      attachments: (atts ?? []) as Array<{
+        id: string;
+        file_name: string;
+        content_type: string | null;
+        size_bytes: number | null;
+        created_at: string;
+      }>,
+      payment_allocations: (allocations ?? []) as Array<{
+        id: string;
+        amount_minor: number;
+        supplier_payments: {
+          id: string;
+          payment_date: string;
+          reference: string | null;
+          total_minor: number;
+          status: string;
+        } | null;
+      }>,
+      balance_due_minor: status === "draft" || status === "awaiting_approval" ? 0 : balance,
+      document_total_minor: total,
+      display_reference:
+        b.supplier_invoice_number?.trim() || b.bill_number?.trim() || null,
+    };
+  });
+
+/** Previous / next bill ids for document workspace navigation (bill_date desc, id desc). */
+export const getBillNeighbors = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; billId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    billId: assertUuid(input.billId, "bill"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: rows, error } = await context.supabase
+      .from("purchase_bills" as never)
+      .select("id, bill_date" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .neq("status" as never, "void" as never)
+      .order("bill_date" as never, { ascending: false } as never)
+      .order("id" as never, { ascending: false } as never)
+      .limit(500);
+    if (error) throw new Error(error.message);
+    const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+    const idx = ids.indexOf(data.billId);
+    return {
+      previousId: idx > 0 ? ids[idx - 1]! : null,
+      nextId: idx >= 0 && idx < ids.length - 1 ? ids[idx + 1]! : null,
+      position: idx >= 0 ? idx + 1 : null,
+      total: ids.length,
+    };
   });
 
 export const checkDuplicateSupplierBill = createServerFn({ method: "GET" })
@@ -551,7 +1041,9 @@ async function authoriseBillInternal(
       tax_minor: number;
     }>;
   };
-  if (b.status !== "draft") throw new Error("Only draft bills can be authorised");
+  if (b.status !== "draft" && b.status !== "awaiting_approval") {
+    throw new Error("Only draft or awaiting-approval bills can be authorised");
+  }
   if (b.posted_journal_id) throw new Error("Bill already posted");
 
   const billFx = bill as { fx_rate_to_base?: number | string | null };
