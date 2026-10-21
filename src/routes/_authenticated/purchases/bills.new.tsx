@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, Paperclip, Printer } from "lucide-react";
+import { ChevronDown, Loader2, MoreHorizontal, Paperclip, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
@@ -25,10 +25,23 @@ import {
   saveRecurringBill,
 } from "@/lib/purchases/purchases.functions";
 import { listProducts, upsertProduct } from "@/lib/products/products.functions";
-import { listTaxCodes } from "@/lib/tax/tax.functions";
-import { listTrackingDimensions } from "@/lib/settings/dimensions.functions";
+import { listTaxCodes, saveTaxRate, saveTaxCode } from "@/lib/tax/tax.functions";
+import {
+  listTrackingDimensions,
+  upsertTrackingOption,
+  upsertTrackingCategory,
+} from "@/lib/settings/dimensions.functions";
 import { getOrgExtendedSettings } from "@/lib/settings/org-settings.functions";
 import { getWorkflowSettings } from "@/lib/settings/workflow-settings.functions";
+import {
+  getBillWorkspacePrefs,
+  saveBillWorkspacePrefs,
+  DEFAULT_BILL_WORKSPACE_PREFS,
+  type BillSidebarState,
+  type BillWorkspacePrefs,
+} from "@/lib/settings/ui-preferences.functions";
+import { createManualAccount } from "@/lib/accounting/coa.functions";
+import { listCustomers, upsertCustomer } from "@/lib/sales/sales.functions";
 import { toMinorUnits, fromMinorUnits } from "@/lib/accounting/money";
 import { convertMinorToBase } from "@/lib/accounting/fx";
 import { friendlyAuthError } from "@/lib/auth-helpers";
@@ -43,13 +56,15 @@ import {
   type BillFormSnapshot,
   type TaxCalculationMode,
 } from "@/lib/purchases/bill-form-helpers";
-import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { cleanupBlankPurchaseLines, incompletePurchaseLines } from "@/lib/purchases/blank-lines";
+import { LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
 import {
   PurchasesDocumentLines,
   emptyPurchaseLine,
   type PurchaseLineFormState,
 } from "@/components/purchases/PurchasesDocumentLines";
+import { BillWorkspaceLayout } from "@/components/purchases/BillWorkspaceLayout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +95,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated/purchases/bills/new")({
   head: () => ({ meta: [{ title: "New bill — LinkBooks" }] }),
@@ -100,6 +127,15 @@ function NewBill() {
   const fetchDimensions = useServerFn(listTrackingDimensions);
   const fetchTerms = useServerFn(listPaymentTerms);
   const fetchFx = useServerFn(resolveFxRateForBill);
+  const fetchPrefs = useServerFn(getBillWorkspacePrefs);
+  const persistPrefs = useServerFn(saveBillWorkspacePrefs);
+  const fetchCustomers = useServerFn(listCustomers);
+  const doCreateAccount = useServerFn(createManualAccount);
+  const doSaveTaxRate = useServerFn(saveTaxRate);
+  const doSaveTaxCode = useServerFn(saveTaxCode);
+  const doUpsertDimOption = useServerFn(upsertTrackingOption);
+  const doUpsertDimCategory = useServerFn(upsertTrackingCategory);
+  const doUpsertCustomer = useServerFn(upsertCustomer);
   const saveDraft = useServerFn(saveBillDraft);
   const authorise = useServerFn(authoriseBill);
   const checkDup = useServerFn(checkDuplicateSupplierBill);
@@ -159,6 +195,16 @@ function NewBill() {
     enabled: Boolean(companyId),
     queryFn: () => fetchTerms({ data: { companyId: companyId! } }),
   });
+  const prefsQ = useQuery({
+    queryKey: ["bill-workspace-prefs", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchPrefs({ data: { companyId: companyId! } }),
+  });
+  const customersQ = useQuery({
+    queryKey: ["customers", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchCustomers({ data: { companyId: companyId! } }),
+  });
 
   const [billId, setBillId] = useState<string | null>(null);
   const [contactId, setContactId] = useState("");
@@ -199,6 +245,26 @@ function NewBill() {
   const [newItemOpen, setNewItemOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
+  const [newTaxOpen, setNewTaxOpen] = useState(false);
+  const [newDimOpen, setNewDimOpen] = useState<"class" | "location" | "project" | null>(null);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [sidebarState, setSidebarState] = useState<BillSidebarState>(
+    DEFAULT_BILL_WORKSPACE_PREFS.sidebarState,
+  );
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_BILL_WORKSPACE_PREFS.sidebarWidthPx);
+  const [sidebarTab, setSidebarTab] = useState(DEFAULT_BILL_WORKSPACE_PREFS.sidebarTab);
+  const [viewMode, setViewMode] = useState<BillWorkspacePrefs["viewMode"]>("professional");
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
+  const [newAccount, setNewAccount] = useState({
+    code: "",
+    name: "",
+    accountType: "expense" as "expense" | "asset",
+  });
+  const [newTax, setNewTax] = useState({ code: "", name: "", rateBps: "2000" });
+  const [newDimName, setNewDimName] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
 
   const [quickName, setQuickName] = useState("");
   const [fullSupplier, setFullSupplier] = useState({
@@ -328,12 +394,22 @@ function NewBill() {
       is_postable: boolean;
       is_active: boolean;
     }>
-  ).filter(
-    (a) =>
-      a.is_active &&
-      a.is_postable &&
-      (a.account_type === "expense" || a.account_type === "asset" || a.code.startsWith("5") || a.code.startsWith("6")),
-  );
+  )
+    .filter(
+      (a) =>
+        a.is_active &&
+        a.is_postable &&
+        (a.account_type === "expense" ||
+          a.account_type === "asset" ||
+          a.code.startsWith("5") ||
+          a.code.startsWith("6")),
+    )
+    .map((a) => ({
+      id: a.id,
+      code: a.code,
+      name: a.name,
+      account_type: a.account_type,
+    }));
 
   const terms = (termsQ.data ?? []) as Array<{
     id: string;
@@ -378,7 +454,60 @@ function NewBill() {
       .map((o) => ({ id: o.id, name: o.name, categoryId: o.category_id }));
   };
 
-  const customersForLines = useMemo(() => [] as Array<{ id: string; name: string }>, []);
+  const customersForLines = useMemo(
+    () =>
+      ((customersQ.data ?? []) as Array<{ id: string; name: string }>).map((c) => ({
+        id: c.id,
+        name: c.name,
+      })),
+    [customersQ.data],
+  );
+
+  useEffect(() => {
+    if (prefsHydrated || !prefsQ.data) return;
+    setSidebarState(prefsQ.data.sidebarState);
+    setSidebarWidth(prefsQ.data.sidebarWidthPx);
+    setSidebarTab(prefsQ.data.sidebarTab);
+    setViewMode(prefsQ.data.viewMode);
+    setPrefsHydrated(true);
+  }, [prefsQ.data, prefsHydrated]);
+
+  const savePrefsPatch = useCallback(
+    async (patch: Partial<BillWorkspacePrefs>) => {
+      if (!companyId) return;
+      if (patch.sidebarState) setSidebarState(patch.sidebarState);
+      if (patch.sidebarWidthPx) setSidebarWidth(patch.sidebarWidthPx);
+      if (patch.sidebarTab) setSidebarTab(patch.sidebarTab);
+      if (patch.viewMode) setViewMode(patch.viewMode);
+      try {
+        await persistPrefs({ data: { companyId, prefs: patch } });
+      } catch {
+        /* non-blocking preference save */
+      }
+    },
+    [companyId, persistPrefs],
+  );
+
+  const classEnabled = useMemo(() => {
+    const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
+      ?.categories;
+    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "class"));
+  }, [dimsQ.data]);
+  const locationEnabled = useMemo(() => {
+    const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
+      ?.categories;
+    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "location"));
+  }, [dimsQ.data]);
+  const projectEnabled = useMemo(() => {
+    const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
+      ?.categories;
+    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "project"));
+  }, [dimsQ.data]);
+  const showClass = viewMode !== "basic" && classEnabled;
+  const showLocation = viewMode !== "basic" && locationEnabled;
+  const showProject = viewMode === "professional" || viewMode === "custom" ? projectEnabled : false;
+  const showCustomer = viewMode !== "basic";
+  const showBillable = viewMode !== "basic";
 
   const enabledCurrencies = useMemo(() => {
     const list = orgQ.data?.enabledCurrencies ?? [];
@@ -486,7 +615,7 @@ function NewBill() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  const buildSavePayload = () => {
+  const buildSavePayload = (forAuthorise = false) => {
     if (!companyId) throw new Error("No organisation");
     if (!contactId) throw new Error("Choose a supplier");
     if (currencyCode !== baseCurrency && (fxRate == null || !(fxRate > 0))) {
@@ -496,6 +625,16 @@ function NewBill() {
       throw new Error(
         "A bill with this supplier invoice number may already exist. Review it and acknowledge to continue.",
       );
+    }
+    const cleaned = cleanupBlankPurchaseLines(lines);
+    setLines(cleaned.length ? cleaned : [emptyPurchaseLine()]);
+    if (forAuthorise) {
+      const bad = incompletePurchaseLines(cleaned);
+      if (bad.length) {
+        throw new Error(
+          `Line ${bad.map((i) => i + 1).join(", ")}: complete description, account and quantity before authorising`,
+        );
+      }
     }
     return {
       companyId,
@@ -513,7 +652,7 @@ function NewBill() {
       acknowledgeDuplicate,
       fxRateToBase: currencyCode === baseCurrency ? 1 : fxRate,
       supplierAddress: addr,
-      lines: lines.map((l) => ({
+      lines: cleaned.map((l) => ({
         description: l.description,
         accountId: l.accountId,
         quantity: Number(l.quantity),
@@ -531,8 +670,8 @@ function NewBill() {
     };
   };
 
-  const persistDraft = async (): Promise<string> => {
-    const saved = await saveDraft({ data: buildSavePayload() });
+  const persistDraft = async (forAuthorise = false): Promise<string> => {
+    const saved = await saveDraft({ data: buildSavePayload(forAuthorise) });
     const id = saved.id;
     setBillId(id);
     // Flush pending attachments
@@ -568,7 +707,7 @@ function NewBill() {
       savingRef.current = true;
       setFormError(null);
       try {
-        const id = await persistDraft();
+        const id = await persistDraft(mode === "authorise");
         if (mode === "authorise") {
           await authorise({ data: { companyId: companyId!, billId: id } });
         }
@@ -724,27 +863,142 @@ function NewBill() {
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (suppliersQ.isPending || accountsQ.isPending) return <LoadingState />;
 
+  const headerBar: ReactNode = (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <h1 className="text-xl font-semibold tracking-tight">New bill</h1>
+        <p className="text-xs text-muted-foreground">
+          Draft · Status: {billId ? "Saved draft" : "Unsaved"} · View:{" "}
+          <Select
+            value={viewMode}
+            onValueChange={(v) =>
+              void savePrefsPatch({ viewMode: v as BillWorkspacePrefs["viewMode"] })
+            }
+          >
+            <SelectTrigger className="inline-flex h-7 w-auto gap-1 border-0 px-1 text-xs shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="basic">Basic</SelectItem>
+              <SelectItem value="professional">Professional</SelectItem>
+              <SelectItem value="custom">Custom</SelectItem>
+            </SelectContent>
+          </Select>
+        </p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <MoreHorizontal className="size-3.5" />
+            More
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setPrintOpen(true)}>
+            <Printer className="mr-2 size-3.5" /> Print / PDF
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setRecurringOpen(true)}>Make recurring</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setClearOpen(true)}>Clear form</DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/purchases/bills">Back to bills</Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate("draft")}
+      >
+        {mutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        Save draft
+      </Button>
+      <div className="flex">
+        <Button
+          size="sm"
+          className="rounded-r-none"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate("authorise")}
+        >
+          Save &amp; authorise
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="rounded-l-none border-l border-primary-foreground/20 px-2">
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => mutation.mutate("authorise")}>
+              Save &amp; authorise (post)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => mutation.mutate("add_another")}>
+              Save &amp; add another
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={async () => {
+                try {
+                  const id = await persistDraft(false);
+                  setBaseline(snapshot());
+                  toast.success("Draft saved");
+                  navigate({ to: "/purchases/bills/$billId", params: { billId: id } });
+                } catch (e) {
+                  toast.error(friendlyAuthError(e));
+                }
+              }}
+            >
+              Save &amp; close
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <Button size="sm" variant="ghost" onClick={handleCancel}>
+        Cancel
+      </Button>
+    </div>
+  );
+
   return (
     <>
-      <PageHeader
-        title="New bill"
-        description="Drafts do not post. Authorise posts AP + expense/tax through the shared posting engine."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" type="button" onClick={() => setPrintOpen(true)}>
-              <Printer className="size-3.5 mr-1" />
-              Print
-            </Button>
-            <Button variant="outline" size="sm" type="button" onClick={() => setRecurringOpen(true)}>
-              Make recurring
-            </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/purchases/bills">Back</Link>
-            </Button>
-          </div>
-        }
-      />
-
+      <BillWorkspaceLayout
+        companyId={companyId}
+        contactId={contactId || null}
+        currency={currencyCode}
+        sidebarState={sidebarState}
+        sidebarWidthPx={sidebarWidth}
+        sidebarTab={sidebarTab}
+        onSidebarStateChange={(s) => void savePrefsPatch({ sidebarState: s })}
+        onSidebarWidthChange={(w) => {
+          setSidebarWidth(w);
+          void savePrefsPatch({ sidebarWidthPx: w });
+        }}
+        onSidebarTabChange={(t) => void savePrefsPatch({ sidebarTab: t })}
+        attachments={(attachmentsQ.data ?? []).map(
+          (a: { id: string; file_name: string; content_type: string | null }) => ({
+            id: a.id,
+            fileName: a.file_name,
+            contentType: a.content_type,
+          }),
+        )}
+        onDownloadAttachment={async (id) => {
+          try {
+            const file = await doDownload({ data: { companyId, attachmentId: id } });
+            const bin = atob(file.contentBase64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const blob = new Blob([bytes], { type: file.contentType || "application/octet-stream" });
+            const url = URL.createObjectURL(blob);
+            const aEl = document.createElement("a");
+            aEl.href = url;
+            aEl.download = file.fileName;
+            aEl.click();
+          } catch (e) {
+            toast.error(friendlyAuthError(e));
+          }
+        }}
+        header={headerBar}
+      >
       {settingsQ.data?.purchases_require_po ? (
         <Alert className="mb-4">
           <AlertDescription>
@@ -802,66 +1056,73 @@ function NewBill() {
         </Alert>
       ) : null}
 
-      <div className="grid max-w-6xl gap-4">
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <div className="space-y-2">
-            <Label>Supplier</Label>
-            <EntityCombobox
-              options={supplierOptions}
-              value={contactId}
-              onChange={onSupplierChange}
-              placeholder="Search suppliers"
-              allowClear={false}
-            />
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={() => setQuickSupplierOpen(true)}>
-              Quick add supplier
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setFullSupplierOpen(true)}>
-              Add supplier details
-            </Button>
-          </div>
+      <div className="grid gap-3">
+        <div className="space-y-1.5">
+          <Label>Supplier</Label>
+          <EntityCombobox
+            options={supplierOptions}
+            value={contactId}
+            onChange={onSupplierChange}
+            placeholder="Search suppliers"
+            searchPlaceholder="Search suppliers…"
+            allowClear={false}
+            onAddNew={() => setQuickSupplierOpen(true)}
+            addNewLabel="+ Add new supplier…"
+          />
+          <button
+            type="button"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+            onClick={() => setFullSupplierOpen(true)}
+          >
+            Open full supplier details form…
+          </button>
         </div>
 
-        <div className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-3">
-          <div className="space-y-1 sm:col-span-3">
-            <Label>Supplier address (this bill only)</Label>
-            <p className="text-xs text-muted-foreground">
-              Populated from the contact; edits here do not change the master supplier record.
+        <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
+          <CollapsibleTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs">
+              <ChevronDown
+                className={`mr-1 size-3.5 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+              />
+              Additional details (address, currency, FX)
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-3">
+            <p className="sm:col-span-3 text-xs text-muted-foreground">
+              Supplier address on this bill only — does not change the master contact.
             </p>
-          </div>
-          <Input
-            placeholder="Address line 1"
-            value={addr.line1}
-            onChange={(e) => setAddr((a) => ({ ...a, line1: e.target.value }))}
-          />
-          <Input
-            placeholder="Address line 2"
-            value={addr.line2}
-            onChange={(e) => setAddr((a) => ({ ...a, line2: e.target.value }))}
-          />
-          <Input
-            placeholder="City"
-            value={addr.city}
-            onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))}
-          />
-          <Input
-            placeholder="Region / state"
-            value={addr.region}
-            onChange={(e) => setAddr((a) => ({ ...a, region: e.target.value }))}
-          />
-          <Input
-            placeholder="Postal code"
-            value={addr.postal}
-            onChange={(e) => setAddr((a) => ({ ...a, postal: e.target.value }))}
-          />
-          <Input
-            placeholder="Country"
-            value={addr.country}
-            onChange={(e) => setAddr((a) => ({ ...a, country: e.target.value }))}
-          />
-        </div>
+            <Input
+              placeholder="Address line 1"
+              value={addr.line1}
+              onChange={(e) => setAddr((a) => ({ ...a, line1: e.target.value }))}
+            />
+            <Input
+              placeholder="Address line 2"
+              value={addr.line2}
+              onChange={(e) => setAddr((a) => ({ ...a, line2: e.target.value }))}
+            />
+            <Input
+              placeholder="City"
+              value={addr.city}
+              onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))}
+            />
+            <Input
+              placeholder="Region / state"
+              value={addr.region}
+              onChange={(e) => setAddr((a) => ({ ...a, region: e.target.value }))}
+            />
+            <Input
+              placeholder="Postal code"
+              value={addr.postal}
+              onChange={(e) => setAddr((a) => ({ ...a, postal: e.target.value }))}
+            />
+            <Input
+              placeholder="Country"
+              value={addr.country}
+              onChange={(e) => setAddr((a) => ({ ...a, country: e.target.value }))}
+            />
+          </CollapsibleContent>
+        </Collapsible>
 
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
           <div className="space-y-2">
@@ -877,31 +1138,21 @@ function NewBill() {
           </div>
           <div className="space-y-2">
             <Label>Payment terms</Label>
-            <div className="flex gap-1">
-              <Select
-                value={paymentTermId || "__none__"}
-                onValueChange={(v) => {
-                  const id = v === "__none__" ? "" : v;
-                  setPaymentTermId(id);
-                  applyDueFromTerms(billDate, id);
-                }}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select terms" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">—</SelectItem>
-                  {terms.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="outline" size="sm" onClick={() => setNewTermOpen(true)}>
-                New
-              </Button>
-            </div>
+            <EntityCombobox
+              options={terms.map((t) => ({
+                value: t.id,
+                label: t.name,
+                description: `${t.days}d · ${t.calculation_method}`,
+              }))}
+              value={paymentTermId}
+              onChange={(id) => {
+                setPaymentTermId(id);
+                applyDueFromTerms(billDate, id);
+              }}
+              placeholder="Select terms"
+              onAddNew={() => setNewTermOpen(true)}
+              addNewLabel="+ Add new payment terms…"
+            />
           </div>
           <div className="space-y-2">
             <Label>
@@ -998,7 +1249,19 @@ function NewBill() {
           currency={currencyCode}
           taxCalculation={taxCalculation}
           toMinor={(d) => toMinorUnits(d, currencyCode)}
-          onCreateItem={() => setNewItemOpen(true)}
+          onAddNewItem={() => setNewItemOpen(true)}
+          onAddNewAccount={() => setNewAccountOpen(true)}
+          onAddNewTax={() => setNewTaxOpen(true)}
+          onAddNewClass={() => setNewDimOpen("class")}
+          onAddNewLocation={() => setNewDimOpen("location")}
+          onAddNewProject={() => setNewDimOpen("project")}
+          onAddNewCustomer={() => setNewCustomerOpen(true)}
+          showClass={showClass}
+          showLocation={showLocation}
+          showCustomer={showCustomer}
+          showProject={showProject}
+          showBillable={showBillable}
+          showDiscount={viewMode !== "basic"}
           baseCurrencyEquivalent={
             currencyCode !== baseCurrency && baseEquivalent
               ? `${baseEquivalent} ${baseCurrency}`
@@ -1210,36 +1473,11 @@ function NewBill() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate("draft")}
-          >
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Save draft
-          </Button>
-          <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate("authorise")}>
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Save &amp; authorise (post)
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={mutation.isPending}
-            onClick={() => mutation.mutate("add_another")}
-          >
-            Save &amp; add another
-          </Button>
-          <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={handleCancel}>
-            Cancel
-          </Button>
-          <Button size="sm" variant="ghost" disabled={mutation.isPending} onClick={() => setClearOpen(true)}>
-            Clear
-          </Button>
+        <div className="flex flex-wrap gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+          Keyboard: Tab between fields · Save actions also in the header.
         </div>
       </div>
+      </BillWorkspaceLayout>
 
       {/* Cancel three-option dialog */}
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
@@ -1744,6 +1982,263 @@ function NewBill() {
               }}
             >
               Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Inline Add New — account */}
+      <Dialog open={newAccountOpen} onOpenChange={setNewAccountOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add new account</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <div className="space-y-1">
+              <Label>Code</Label>
+              <Input
+                value={newAccount.code}
+                onChange={(e) => setNewAccount((s) => ({ ...s, code: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Name</Label>
+              <Input
+                value={newAccount.name}
+                onChange={(e) => setNewAccount((s) => ({ ...s, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Type</Label>
+              <Select
+                value={newAccount.accountType}
+                onValueChange={(v) =>
+                  setNewAccount((s) => ({ ...s, accountType: v as "expense" | "asset" }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="expense">Expense</SelectItem>
+                  <SelectItem value="asset">Asset</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={async () => {
+                try {
+                  const row = await doCreateAccount({
+                    data: {
+                      companyId: companyId!,
+                      code: newAccount.code,
+                      name: newAccount.name,
+                      accountType: newAccount.accountType,
+                    },
+                  });
+                  await accountsQ.refetch();
+                  setLines((prev) => {
+                    const next = [...prev];
+                    const idx = next.findIndex((l) => !l.accountId);
+                    const target = idx >= 0 ? idx : next.length - 1;
+                    next[target] = { ...next[target]!, accountId: row.id };
+                    return next;
+                  });
+                  setNewAccountOpen(false);
+                  toast.success("Account created and selected");
+                } catch (e) {
+                  toast.error(friendlyAuthError(e));
+                }
+              }}
+            >
+              Create &amp; select
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Inline Add New — tax */}
+      <Dialog open={newTaxOpen} onOpenChange={setNewTaxOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add new tax rate</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <div className="space-y-1">
+              <Label>Code</Label>
+              <Input
+                value={newTax.code}
+                onChange={(e) => setNewTax((s) => ({ ...s, code: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Name</Label>
+              <Input
+                value={newTax.name}
+                onChange={(e) => setNewTax((s) => ({ ...s, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Rate (basis points, 2000 = 20%)</Label>
+              <Input
+                value={newTax.rateBps}
+                onChange={(e) => setNewTax((s) => ({ ...s, rateBps: e.target.value }))}
+                inputMode="numeric"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={async () => {
+                try {
+                  const rate = await doSaveTaxRate({
+                    data: {
+                      companyId: companyId!,
+                      name: newTax.name || newTax.code,
+                      rateBps: Number(newTax.rateBps) || 0,
+                      effectiveFrom: billDate || today,
+                    },
+                  });
+                  const code = await doSaveTaxCode({
+                    data: {
+                      companyId: companyId!,
+                      code: newTax.code || newTax.name.slice(0, 8).toUpperCase(),
+                      name: newTax.name || newTax.code,
+                      taxRateId: rate.id,
+                      appliesTo: "purchases",
+                    },
+                  });
+                  await taxCodesQ.refetch();
+                  setLines((prev) => {
+                    const next = [...prev];
+                    const idx = next.length - 1;
+                    next[idx] = {
+                      ...next[idx]!,
+                      taxCodeId: code.id,
+                      taxRateBps: String(Number(newTax.rateBps) || 0),
+                    };
+                    return next;
+                  });
+                  setNewTaxOpen(false);
+                  toast.success("Tax rate created and selected");
+                } catch (e) {
+                  toast.error(friendlyAuthError(e));
+                }
+              }}
+            >
+              Create &amp; select
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Inline Add New — class / location / project */}
+      <Dialog open={Boolean(newDimOpen)} onOpenChange={(o) => !o && setNewDimOpen(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Add new {newDimOpen === "class" ? "class" : newDimOpen === "location" ? "location" : "project"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label>Name</Label>
+            <Input value={newDimName} onChange={(e) => setNewDimName(e.target.value)} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!newDimOpen || !companyId) return;
+                try {
+                  const kind = newDimOpen;
+                  let cats = (
+                    dimsQ.data as {
+                      categories: Array<{ id: string; dimension_kind: string; is_active: boolean }>;
+                    } | undefined
+                  )?.categories.filter((c) => c.is_active && c.dimension_kind === kind);
+                  let categoryId = cats?.[0]?.id;
+                  if (!categoryId) {
+                    const created = await doUpsertDimCategory({
+                      data: {
+                        companyId,
+                        name: kind === "class" ? "Class" : kind === "location" ? "Location" : "Project",
+                        dimensionKind: kind,
+                      },
+                    });
+                    categoryId = created.id;
+                    await dimsQ.refetch();
+                  }
+                  const opt = await doUpsertDimOption({
+                    data: { companyId, categoryId, name: newDimName.trim() },
+                  });
+                  await dimsQ.refetch();
+                  setLines((prev) => {
+                    const next = [...prev];
+                    const idx = next.length - 1;
+                    const patch =
+                      kind === "class"
+                        ? { classOptionId: opt.id }
+                        : kind === "location"
+                          ? { locationOptionId: opt.id }
+                          : { projectOptionId: opt.id };
+                    next[idx] = { ...next[idx]!, ...patch };
+                    return next;
+                  });
+                  setNewDimName("");
+                  setNewDimOpen(null);
+                  toast.success("Created and selected");
+                } catch (e) {
+                  toast.error(friendlyAuthError(e));
+                }
+              }}
+            >
+              Create &amp; select
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add new customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1">
+            <Label>Name</Label>
+            <Input
+              value={newCustomerName}
+              onChange={(e) => setNewCustomerName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={async () => {
+                try {
+                  const r = await doUpsertCustomer({
+                    data: { companyId: companyId!, name: newCustomerName.trim() },
+                  });
+                  await customersQ.refetch();
+                  setLines((prev) => {
+                    const next = [...prev];
+                    const idx = next.length - 1;
+                    next[idx] = { ...next[idx]!, customerContactId: r.id };
+                    return next;
+                  });
+                  setNewCustomerOpen(false);
+                  setNewCustomerName("");
+                  toast.success("Customer created and selected");
+                } catch (e) {
+                  toast.error(friendlyAuthError(e));
+                }
+              }}
+            >
+              Create &amp; select
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2312,3 +2312,137 @@ export const resolveFxRateForBill = createServerFn({ method: "GET" })
     const r = row as { rate: number; rate_date: string };
     return { rate: Number(r.rate), source: "exchange_rates" as const, rateDate: r.rate_date };
   });
+
+/** Aggregated supplier intelligence for the New Bill right sidebar. */
+export const getSupplierIntelligence = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; contactId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    contactId: assertUuid(input.contactId, "supplier"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const today = new Date().toISOString().slice(0, 10);
+
+    const { data: contact, error: cErr } = await context.supabase
+      .from("contacts" as never)
+      .select(
+        "id, name, email, phone, account_number, default_currency, tax_number, payment_terms_days, billing_address_line1, billing_city, billing_country" as never,
+      )
+      .eq("id" as never, data.contactId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (cErr) throw new Error(cErr.message);
+    if (!contact) throw new Error("Supplier not found");
+
+    const { data: bills, error: bErr } = await context.supabase
+      .from("purchase_bills" as never)
+      .select(
+        "id, bill_number, supplier_invoice_number, bill_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, currency_code" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("contact_id" as never, data.contactId as never)
+      .neq("status" as never, "void" as never)
+      .order("bill_date" as never, { ascending: false } as never)
+      .limit(25);
+    if (bErr) throw new Error(bErr.message);
+
+    const billRows = (bills ?? []) as Array<{
+      id: string;
+      bill_number: string | null;
+      supplier_invoice_number: string | null;
+      bill_date: string;
+      due_date: string;
+      status: string;
+      total_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      currency_code: string;
+    }>;
+
+    let outstandingMinor = 0;
+    let overdueMinor = 0;
+    let openBillCount = 0;
+    const openBills = [];
+    for (const b of billRows) {
+      if (!["authorised", "partly_paid"].includes(b.status)) continue;
+      const o =
+        Number(b.total_minor) - Number(b.amount_paid_minor) - Number(b.amount_credited_minor);
+      if (o <= 0) continue;
+      outstandingMinor += o;
+      openBillCount += 1;
+      if (b.due_date < today) overdueMinor += o;
+      openBills.push({ ...b, outstanding_minor: o });
+    }
+
+    const { data: credits } = await context.supabase
+      .from("purchase_credit_notes" as never)
+      .select(
+        "id, credit_number, credit_date, status, total_minor, amount_allocated_minor, currency_code" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("contact_id" as never, data.contactId as never)
+      .in("status" as never, ["authorised", "partly_paid"] as never)
+      .order("credit_date" as never, { ascending: false } as never)
+      .limit(20);
+
+    const creditRows = ((credits ?? []) as Array<{
+      id: string;
+      credit_number: string | null;
+      credit_date: string;
+      status: string;
+      total_minor: number;
+      amount_allocated_minor: number;
+      currency_code: string;
+    }>).map((c) => ({
+      ...c,
+      available_minor: Math.max(0, Number(c.total_minor) - Number(c.amount_allocated_minor)),
+    }));
+    const availableCreditsMinor = creditRows.reduce((s, c) => s + c.available_minor, 0);
+
+    const { data: payments } = await context.supabase
+      .from("supplier_payments" as never)
+      .select(
+        "id, payment_date, amount_minor, unallocated_minor, reference, status, currency_code" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("contact_id" as never, data.contactId as never)
+      .order("payment_date" as never, { ascending: false } as never)
+      .limit(20);
+
+    const paymentRows = (payments ?? []) as Array<{
+      id: string;
+      payment_date: string;
+      amount_minor: number;
+      unallocated_minor: number;
+      reference: string | null;
+      status: string;
+      currency_code?: string;
+    }>;
+    const unappliedPrepaymentsMinor = paymentRows
+      .filter((p) => p.status === "paid" || p.status === "authorised")
+      .reduce((s, p) => s + Math.max(0, Number(p.unallocated_minor) || 0), 0);
+
+    const { data: orders } = await context.supabase
+      .from("purchase_orders" as never)
+      .select("id, order_number, order_date, status, total_minor, currency_code" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("contact_id" as never, data.contactId as never)
+      .not("status" as never, "in" as never, "(cancelled,billed)" as never)
+      .order("order_date" as never, { ascending: false } as never)
+      .limit(10);
+
+    return {
+      contact,
+      outstandingMinor,
+      overdueMinor,
+      openBillCount,
+      availableCreditsMinor,
+      unappliedPrepaymentsMinor,
+      recentBills: billRows.slice(0, 12),
+      openBills: openBills.slice(0, 12),
+      credits: creditRows.filter((c) => c.available_minor > 0),
+      payments: paymentRows,
+      openOrders: orders ?? [],
+    };
+  });

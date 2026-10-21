@@ -58,7 +58,12 @@ type ProductOption = {
   purchase_tax_rate_bps: number;
 };
 
-type AccountOption = { id: string; code: string; name: string };
+type AccountOption = {
+  id: string;
+  code: string;
+  name: string;
+  account_type?: string;
+};
 
 type TaxCodeOption = {
   id: string;
@@ -70,6 +75,21 @@ type TaxCodeOption = {
 
 type TrackingOption = { id: string; name: string; categoryId: string };
 type CustomerOption = { id: string; name: string };
+
+export type LineColumnKey =
+  | "item"
+  | "description"
+  | "quantity"
+  | "unitPrice"
+  | "discount"
+  | "account"
+  | "tax"
+  | "class"
+  | "location"
+  | "customer"
+  | "project"
+  | "billable"
+  | "amount";
 
 type Props = {
   lines: PurchaseLineFormState[];
@@ -84,9 +104,41 @@ type Props = {
   currency: string;
   taxCalculation: TaxCalculationMode;
   toMinor: (display: string) => bigint | number;
+  /** @deprecated Prefer onAddNewItem inside the item dropdown */
   onCreateItem?: () => void;
+  onAddNewItem?: () => void;
+  onAddNewAccount?: () => void;
+  onAddNewTax?: () => void;
+  onAddNewClass?: () => void;
+  onAddNewLocation?: () => void;
+  onAddNewCustomer?: () => void;
+  onAddNewProject?: () => void;
+  showClass?: boolean;
+  showLocation?: boolean;
+  showCustomer?: boolean;
+  showProject?: boolean;
+  showBillable?: boolean;
+  showDiscount?: boolean;
+  visibleColumns?: LineColumnKey[];
   baseCurrencyEquivalent?: string | null;
 };
+
+function accountGroupLabel(type?: string): string {
+  switch (type) {
+    case "expense":
+      return "EXPENSES";
+    case "income":
+      return "INCOME";
+    case "asset":
+      return "ASSETS";
+    case "liability":
+      return "LIABILITIES";
+    case "equity":
+      return "EQUITY";
+    default:
+      return "ACCOUNTS";
+  }
+}
 
 export function PurchasesDocumentLines({
   lines,
@@ -102,8 +154,33 @@ export function PurchasesDocumentLines({
   taxCalculation,
   toMinor,
   onCreateItem,
+  onAddNewItem,
+  onAddNewAccount,
+  onAddNewTax,
+  onAddNewClass,
+  onAddNewLocation,
+  onAddNewCustomer,
+  onAddNewProject,
+  showClass = true,
+  showLocation = true,
+  showCustomer = false,
+  showProject = false,
+  showBillable = false,
+  showDiscount = true,
+  visibleColumns,
   baseCurrencyEquivalent,
 }: Props) {
+  const col = (key: LineColumnKey) => {
+    if (visibleColumns) return visibleColumns.includes(key);
+    if (key === "class") return showClass;
+    if (key === "location") return showLocation;
+    if (key === "customer") return showCustomer;
+    if (key === "project") return showProject;
+    if (key === "billable") return showBillable;
+    if (key === "discount") return showDiscount;
+    return true;
+  };
+
   const productOptions: EntityOption[] = products.map((p) => ({
     value: p.id,
     label: p.code ? `${p.code} — ${p.name}` : p.name,
@@ -114,11 +191,13 @@ export function PurchasesDocumentLines({
     value: a.id,
     label: `${a.code} — ${a.name}`,
     keywords: a.name,
+    group: accountGroupLabel(a.account_type),
   }));
   const customerOptions: EntityOption[] = customers.map((c) => ({
     value: c.id,
     label: c.name,
   }));
+  const addItem = onAddNewItem ?? onCreateItem;
 
   const update = (idx: number, patch: Partial<PurchaseLineFormState>) => {
     const next = [...lines];
@@ -220,19 +299,27 @@ export function PurchasesDocumentLines({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <Label>Line items</Label>
         <div className="flex flex-wrap gap-1">
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange([...lines, emptyPurchaseLine()])}>
-            Add line
-          </Button>
-          {[5, 10, 15, 20].map((n) => (
-            <Button key={n} type="button" variant="ghost" size="sm" onClick={() => addMultiple(n)}>
-              +{n}
-            </Button>
-          ))}
-          {onCreateItem ? (
-            <Button type="button" variant="secondary" size="sm" onClick={onCreateItem}>
-              Create item / service
-            </Button>
-          ) : null}
+          <Select
+            onValueChange={(v) => {
+              if (v === "1") onChange([...lines, emptyPurchaseLine()]);
+              else if (v === "dup") {
+                const last = lines[lines.length - 1] ?? emptyPurchaseLine();
+                onChange([...lines, { ...last }]);
+              } else addMultiple(Number(v));
+            }}
+          >
+            <SelectTrigger className="h-8 w-[140px]" aria-label="Add lines">
+              <SelectValue placeholder="Add lines" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Add 1</SelectItem>
+              <SelectItem value="5">Add 5</SelectItem>
+              <SelectItem value="10">Add 10</SelectItem>
+              <SelectItem value="15">Add 15</SelectItem>
+              <SelectItem value="20">Add 20</SelectItem>
+              <SelectItem value="dup">Duplicate selected line</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -243,42 +330,66 @@ export function PurchasesDocumentLines({
               <th className="p-2 w-8" scope="col">
                 <span className="sr-only">Reorder</span>
               </th>
-              <th className="p-2" scope="col">
-                Item / service
-              </th>
-              <th className="p-2" scope="col">
-                Description
-              </th>
-              <th className="p-2 w-20" scope="col">
-                Qty
-              </th>
-              <th className="p-2 w-24" scope="col">
-                Unit price
-              </th>
-              <th className="p-2 w-24" scope="col">
-                Discount
-              </th>
-              <th className="p-2" scope="col">
-                Expense / asset account
-              </th>
-              <th className="p-2" scope="col">
-                Tax rate
-              </th>
-              <th className="p-2" scope="col">
-                Class
-              </th>
-              <th className="p-2" scope="col">
-                Location
-              </th>
-              <th className="p-2" scope="col">
-                Customer / project
-              </th>
-              <th className="p-2 w-16" scope="col">
-                Billable
-              </th>
-              <th className="p-2 w-24 text-right" scope="col">
-                Amount
-              </th>
+              {col("item") ? (
+                <th className="p-2" scope="col">
+                  Item / service
+                </th>
+              ) : null}
+              {col("description") ? (
+                <th className="p-2" scope="col">
+                  Description
+                </th>
+              ) : null}
+              {col("quantity") ? (
+                <th className="p-2 w-20" scope="col">
+                  Qty
+                </th>
+              ) : null}
+              {col("unitPrice") ? (
+                <th className="p-2 w-24" scope="col">
+                  Unit price
+                </th>
+              ) : null}
+              {col("discount") ? (
+                <th className="p-2 w-24" scope="col">
+                  Discount
+                </th>
+              ) : null}
+              {col("account") ? (
+                <th className="p-2" scope="col">
+                  Expense / asset account
+                </th>
+              ) : null}
+              {col("tax") ? (
+                <th className="p-2" scope="col">
+                  Tax rate
+                </th>
+              ) : null}
+              {col("class") ? (
+                <th className="p-2" scope="col">
+                  Class
+                </th>
+              ) : null}
+              {col("location") ? (
+                <th className="p-2" scope="col">
+                  Location
+                </th>
+              ) : null}
+              {col("customer") || col("project") ? (
+                <th className="p-2" scope="col">
+                  Customer / project
+                </th>
+              ) : null}
+              {col("billable") ? (
+                <th className="p-2 w-16" scope="col">
+                  Billable
+                </th>
+              ) : null}
+              {col("amount") ? (
+                <th className="p-2 w-24 text-right" scope="col">
+                  Amount
+                </th>
+              ) : null}
               <th className="p-2 w-20" scope="col">
                 <span className="sr-only">Actions</span>
               </th>
@@ -321,165 +432,177 @@ export function PurchasesDocumentLines({
                       <GripVertical className="size-4" />
                     </button>
                   </td>
-                  <td className="p-1 min-w-[140px]">
-                    <EntityCombobox
-                      aria-label={`Line ${idx + 1} product`}
-                      options={productOptions}
-                      value={line.productId}
-                      onChange={(v) => applyProduct(idx, v)}
-                      placeholder="Optional"
-                      emptyText="No catalogue items"
-                    />
-                  </td>
-                  <td className="p-1 min-w-[160px]">
-                    <Input
-                      aria-label={`Line ${idx + 1} description`}
-                      value={line.description}
-                      onChange={(e) => update(idx, { description: e.target.value })}
-                      placeholder="Description"
-                    />
-                  </td>
-                  <td className="p-1">
-                    <Input
-                      aria-label={`Line ${idx + 1} quantity`}
-                      value={line.quantity}
-                      onChange={(e) => update(idx, { quantity: e.target.value })}
-                      inputMode="decimal"
-                    />
-                  </td>
-                  <td className="p-1">
-                    <Input
-                      aria-label={`Line ${idx + 1} unit price`}
-                      value={line.unitPrice}
-                      onChange={(e) => update(idx, { unitPrice: e.target.value })}
-                      inputMode="decimal"
-                    />
-                  </td>
-                  <td className="p-1">
-                    <Input
-                      aria-label={`Line ${idx + 1} discount`}
-                      value={line.discount}
-                      onChange={(e) => update(idx, { discount: e.target.value })}
-                      inputMode="decimal"
-                    />
-                  </td>
-                  <td className="p-1 min-w-[160px]">
-                    <EntityCombobox
-                      aria-label={`Line ${idx + 1} account`}
-                      options={accountOptions}
-                      value={line.accountId}
-                      onChange={(v) => update(idx, { accountId: v })}
-                      placeholder="Account"
-                      allowClear={false}
-                    />
-                  </td>
-                  <td className="p-1 min-w-[130px]">
-                    {purchaseTaxCodes.length > 0 && taxCalculation !== "none" ? (
-                      <Select
-                        value={line.taxCodeId || "__bps__"}
-                        onValueChange={(v) => {
-                          if (v === "__bps__") update(idx, { taxCodeId: "" });
+                  {col("item") ? (
+                    <td className="p-1 min-w-[140px]">
+                      <EntityCombobox
+                        aria-label={`Line ${idx + 1} product`}
+                        options={productOptions}
+                        value={line.productId}
+                        onChange={(v) => applyProduct(idx, v)}
+                        placeholder="Optional"
+                        emptyText="No catalogue items"
+                        onAddNew={addItem}
+                        addNewLabel="+ Add new item or service…"
+                      />
+                    </td>
+                  ) : null}
+                  {col("description") ? (
+                    <td className="p-1 min-w-[160px]">
+                      <Input
+                        aria-label={`Line ${idx + 1} description`}
+                        value={line.description}
+                        onChange={(e) => update(idx, { description: e.target.value })}
+                        placeholder="Description"
+                        className="h-9"
+                      />
+                    </td>
+                  ) : null}
+                  {col("quantity") ? (
+                    <td className="p-1">
+                      <Input
+                        aria-label={`Line ${idx + 1} quantity`}
+                        value={line.quantity}
+                        onChange={(e) => update(idx, { quantity: e.target.value })}
+                        inputMode="decimal"
+                        className="h-9"
+                      />
+                    </td>
+                  ) : null}
+                  {col("unitPrice") ? (
+                    <td className="p-1">
+                      <Input
+                        aria-label={`Line ${idx + 1} unit price`}
+                        value={line.unitPrice}
+                        onChange={(e) => update(idx, { unitPrice: e.target.value })}
+                        inputMode="decimal"
+                        className="h-9"
+                      />
+                    </td>
+                  ) : null}
+                  {col("discount") ? (
+                    <td className="p-1">
+                      <Input
+                        aria-label={`Line ${idx + 1} discount`}
+                        value={line.discount}
+                        onChange={(e) => update(idx, { discount: e.target.value })}
+                        inputMode="decimal"
+                        className="h-9"
+                      />
+                    </td>
+                  ) : null}
+                  {col("account") ? (
+                    <td className="p-1 min-w-[160px]">
+                      <EntityCombobox
+                        aria-label={`Line ${idx + 1} account`}
+                        options={accountOptions}
+                        value={line.accountId}
+                        onChange={(v) => update(idx, { accountId: v })}
+                        placeholder="Account"
+                        allowClear={false}
+                        onAddNew={onAddNewAccount}
+                        addNewLabel="+ Add new account…"
+                      />
+                    </td>
+                  ) : null}
+                  {col("tax") ? (
+                    <td className="p-1 min-w-[130px]">
+                      <EntityCombobox
+                        aria-label={`Line ${idx + 1} tax rate`}
+                        options={
+                          taxCalculation === "none"
+                            ? [{ value: "__none__", label: "No tax" }]
+                            : [
+                                {
+                                  value: "__bps__",
+                                  label: `Manual (${(Number(line.taxRateBps || 0) / 100).toFixed(2)}%)`,
+                                },
+                                ...purchaseTaxCodes.map((t) => ({
+                                  value: t.id,
+                                  label: `${t.code} — ${(t.rateBps / 100).toFixed(2)}%`,
+                                  keywords: t.name,
+                                })),
+                              ]
+                        }
+                        value={
+                          taxCalculation === "none"
+                            ? "__none__"
+                            : line.taxCodeId || "__bps__"
+                        }
+                        onChange={(v) => {
+                          if (v === "__bps__" || v === "__none__") update(idx, { taxCodeId: "" });
                           else applyTaxCode(idx, v);
                         }}
-                      >
-                        <SelectTrigger aria-label={`Line ${idx + 1} tax rate`}>
-                          <SelectValue placeholder="Tax" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__bps__">
-                            Manual ({(Number(line.taxRateBps || 0) / 100).toFixed(2)}%)
-                          </SelectItem>
-                          {purchaseTaxCodes.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>
-                              {t.code} — {(t.rateBps / 100).toFixed(2)}%
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        aria-label={`Line ${idx + 1} tax bps`}
-                        value={taxCalculation === "none" ? "0" : line.taxRateBps}
-                        disabled={taxCalculation === "none"}
-                        onChange={(e) => update(idx, { taxRateBps: e.target.value })}
-                        inputMode="numeric"
-                        title="Basis points — 2000 = 20%"
+                        placeholder="Tax"
+                        allowClear={false}
+                        onAddNew={taxCalculation === "none" ? undefined : onAddNewTax}
+                        addNewLabel="+ Add new tax rate…"
                       />
-                    )}
-                  </td>
-                  <td className="p-1 min-w-[100px]">
-                    <Select
-                      value={line.classOptionId || "__none__"}
-                      onValueChange={(v) => update(idx, { classOptionId: v === "__none__" ? "" : v })}
-                    >
-                      <SelectTrigger aria-label={`Line ${idx + 1} class`}>
-                        <SelectValue placeholder="—" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">—</SelectItem>
-                        {classOptions.map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
-                            {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="p-1 min-w-[100px]">
-                    <Select
-                      value={line.locationOptionId || "__none__"}
-                      onValueChange={(v) =>
-                        update(idx, { locationOptionId: v === "__none__" ? "" : v })
-                      }
-                    >
-                      <SelectTrigger aria-label={`Line ${idx + 1} location`}>
-                        <SelectValue placeholder="—" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">—</SelectItem>
-                        {locationOptions.map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
-                            {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="p-1 min-w-[140px] space-y-1">
-                    <EntityCombobox
-                      aria-label={`Line ${idx + 1} customer`}
-                      options={customerOptions}
-                      value={line.customerContactId}
-                      onChange={(v) => update(idx, { customerContactId: v })}
-                      placeholder="Customer"
-                    />
-                    <Select
-                      value={line.projectOptionId || "__none__"}
-                      onValueChange={(v) =>
-                        update(idx, { projectOptionId: v === "__none__" ? "" : v })
-                      }
-                    >
-                      <SelectTrigger aria-label={`Line ${idx + 1} project`}>
-                        <SelectValue placeholder="Project" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">—</SelectItem>
-                        {projectOptions.map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
-                            {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="p-2">
-                    <Checkbox
-                      checked={line.isBillable}
-                      onCheckedChange={(c) => update(idx, { isBillable: Boolean(c) })}
-                      aria-label={`Line ${idx + 1} billable`}
-                    />
-                  </td>
-                  <td className="p-2 text-right tabular-nums whitespace-nowrap">{lineAmount}</td>
+                    </td>
+                  ) : null}
+                  {col("class") ? (
+                    <td className="p-1 min-w-[100px]">
+                      <EntityCombobox
+                        aria-label={`Line ${idx + 1} class`}
+                        options={classOptions.map((o) => ({ value: o.id, label: o.name }))}
+                        value={line.classOptionId}
+                        onChange={(v) => update(idx, { classOptionId: v })}
+                        placeholder="Class"
+                        onAddNew={onAddNewClass}
+                        addNewLabel="+ Add new class…"
+                      />
+                    </td>
+                  ) : null}
+                  {col("location") ? (
+                    <td className="p-1 min-w-[100px]">
+                      <EntityCombobox
+                        aria-label={`Line ${idx + 1} location`}
+                        options={locationOptions.map((o) => ({ value: o.id, label: o.name }))}
+                        value={line.locationOptionId}
+                        onChange={(v) => update(idx, { locationOptionId: v })}
+                        placeholder="Location"
+                        onAddNew={onAddNewLocation}
+                        addNewLabel="+ Add new location…"
+                      />
+                    </td>
+                  ) : null}
+                  {col("customer") || col("project") ? (
+                    <td className="p-1 min-w-[140px] space-y-1">
+                      {col("customer") ? (
+                        <EntityCombobox
+                          aria-label={`Line ${idx + 1} customer`}
+                          options={customerOptions}
+                          value={line.customerContactId}
+                          onChange={(v) => update(idx, { customerContactId: v })}
+                          placeholder="Customer"
+                          onAddNew={onAddNewCustomer}
+                          addNewLabel="+ Add new customer…"
+                        />
+                      ) : null}
+                      {col("project") ? (
+                        <EntityCombobox
+                          aria-label={`Line ${idx + 1} project`}
+                          options={projectOptions.map((o) => ({ value: o.id, label: o.name }))}
+                          value={line.projectOptionId}
+                          onChange={(v) => update(idx, { projectOptionId: v })}
+                          placeholder="Project"
+                          onAddNew={onAddNewProject}
+                          addNewLabel="+ Add new project…"
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
+                  {col("billable") ? (
+                    <td className="p-2">
+                      <Checkbox
+                        checked={line.isBillable}
+                        onCheckedChange={(c) => update(idx, { isBillable: Boolean(c) })}
+                        aria-label={`Line ${idx + 1} billable`}
+                      />
+                    </td>
+                  ) : null}
+                  {col("amount") ? (
+                    <td className="p-2 text-right tabular-nums whitespace-nowrap">{lineAmount}</td>
+                  ) : null}
                   <td className="p-1">
                     <div className="flex items-center gap-0.5">
                       <Button
