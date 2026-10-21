@@ -407,23 +407,14 @@ function BillsWorkspace() {
   }, [prefs]);
 
   const openBill = (b: BillRow, opts?: { files?: boolean }) => {
-    const editable = b.status === "draft" || b.status === "awaiting_approval";
-    if (editable) {
-      void navigate({
-        to: "/purchases/bills/$billId/edit",
-        params: { billId: b.id },
-        search: opts?.files ? { files: true } : {},
-      });
-    } else {
-      void navigate({
-        to: "/purchases/bills/$billId",
-        params: { billId: b.id },
-        search: {
-          ...(tab !== "all" ? { fromTab: tab } : {}),
-          ...(opts?.files ? { files: true } : {}),
-        },
-      });
-    }
+    void navigate({
+      to: "/purchases/bills/$billId",
+      params: { billId: b.id },
+      search: {
+        ...(tab !== "all" ? { fromTab: tab } : {}),
+        ...(opts?.files ? { files: true } : {}),
+      },
+    });
   };
 
   const pageTotals = useMemo(() => {
@@ -1305,12 +1296,7 @@ function PreviewBody({
       <Button
         className="w-full"
         onClick={() => {
-          const editable = bill.status === "draft" || bill.status === "awaiting_approval";
-          if (editable) {
-            window.location.href = `/purchases/bills/${bill.id}/edit`;
-          } else {
-            window.location.href = `/purchases/bills/${bill.id}${tab !== "all" ? `?fromTab=${tab}` : ""}`;
-          }
+          window.location.href = `/purchases/bills/${bill.id}${tab !== "all" ? `?fromTab=${tab}` : ""}`;
         }}
       >
         {bill.status === "draft" || bill.status === "awaiting_approval"
