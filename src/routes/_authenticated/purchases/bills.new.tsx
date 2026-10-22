@@ -33,6 +33,7 @@ import {
 } from "@/lib/settings/dimensions.functions";
 import { getOrgExtendedSettings } from "@/lib/settings/org-settings.functions";
 import { getWorkflowSettings } from "@/lib/settings/workflow-settings.functions";
+import { listOrganisationFeatures } from "@/lib/settings/settings-centre.functions";
 import {
   getBillWorkspacePrefs,
   saveBillWorkspacePrefs,
@@ -189,6 +190,12 @@ function NewBill() {
     queryKey: ["tracking-dimensions", companyId],
     enabled: Boolean(companyId),
     queryFn: () => fetchDimensions({ data: { companyId: companyId! } }),
+  });
+  const fetchFeatures = useServerFn(listOrganisationFeatures);
+  const featuresQ = useQuery({
+    queryKey: ["organisation-features", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchFeatures({ data: { companyId: companyId! } }),
   });
   const termsQ = useQuery({
     queryKey: ["payment-terms", companyId],
@@ -488,26 +495,35 @@ function NewBill() {
     [companyId, persistPrefs],
   );
 
+  const featureOn = useCallback(
+    (key: string) => {
+      const row = featuresQ.data?.find((f) => f.key === key);
+      // Until features hydrate, keep prior behaviour (dimension kinds drive visibility).
+      if (!featuresQ.data) return true;
+      return row?.state === "enabled_operational" || row?.state === "enabled_needs_config";
+    },
+    [featuresQ.data],
+  );
   const classEnabled = useMemo(() => {
     const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
       ?.categories;
-    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "class"));
-  }, [dimsQ.data]);
+    return featureOn("classes") && Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "class"));
+  }, [dimsQ.data, featureOn]);
   const locationEnabled = useMemo(() => {
     const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
       ?.categories;
-    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "location"));
-  }, [dimsQ.data]);
+    return featureOn("locations") && Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "location"));
+  }, [dimsQ.data, featureOn]);
   const projectEnabled = useMemo(() => {
     const cats = (dimsQ.data as { categories?: Array<{ dimension_kind: string; is_active: boolean }> } | undefined)
       ?.categories;
-    return Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "project"));
-  }, [dimsQ.data]);
+    return featureOn("projects") && Boolean(cats?.some((c) => c.is_active && c.dimension_kind === "project"));
+  }, [dimsQ.data, featureOn]);
   const showClass = viewMode !== "basic" && classEnabled;
   const showLocation = viewMode !== "basic" && locationEnabled;
   const showProject = viewMode === "professional" || viewMode === "custom" ? projectEnabled : false;
   const showCustomer = viewMode !== "basic";
-  const showBillable = viewMode !== "basic";
+  const showBillable = viewMode !== "basic" && featureOn("billable_expenses");
 
   const enabledCurrencies = useMemo(() => {
     const list = orgQ.data?.enabledCurrencies ?? [];

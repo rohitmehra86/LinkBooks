@@ -20,6 +20,14 @@ import {
   postBankTransfer,
 } from "./posting";
 
+function mockSupabase() {
+  const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+  const eq = vi.fn().mockReturnValue({ maybeSingle });
+  const select = vi.fn().mockReturnValue({ eq });
+  const from = vi.fn().mockReturnValue({ select });
+  return { from } as never;
+}
+
 describe("sales posting", () => {
   beforeEach(() => {
     postJournal.mockReset();
@@ -33,7 +41,7 @@ describe("sales posting", () => {
   });
 
   it("posts invoice as DR AR / CR revenue / CR tax", async () => {
-    await postInvoiceAuthorisation({} as never, {
+    await postInvoiceAuthorisation(mockSupabase(), {
       company_id: "c1",
       invoice_id: "inv1",
       invoice_date: "2026-01-15",
@@ -65,7 +73,7 @@ describe("sales posting", () => {
   });
 
   it("posts credit note DR revenue CR AR", async () => {
-    await postSalesCreditAuthorisation({} as never, {
+    await postSalesCreditAuthorisation(mockSupabase(), {
       company_id: "c1",
       credit_note_id: "cn1",
       credit_date: "2026-01-17",

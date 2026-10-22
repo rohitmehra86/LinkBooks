@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany, companyContextKey } from "@/hooks/use-active-company";
 import {
@@ -33,6 +33,7 @@ import {
   type CompanyRole,
 } from "@/lib/company-constants";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { categoryMeta, type SettingsCategory } from "@/lib/settings/registry";
 import { ErrorState, LoadingState, PageHeader } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -62,22 +63,68 @@ import {
   SettingsIntegrationsPanel,
   SettingsInvitationsPanel,
 } from "@/components/settings/SettingsGovernanceExtras";
+import { SettingsNav } from "@/components/settings/SettingsNav";
+import { SettingsOverviewPanel } from "@/components/settings/SettingsOverviewPanel";
+import { SettingsFeatureManager } from "@/components/settings/SettingsFeatureManager";
+import { SettingsAccountingLocksPanel } from "@/components/settings/SettingsAccountingLocksPanel";
+import { SettingsCategoryConfigPanel } from "@/components/settings/SettingsCategoryConfigPanel";
+import { SettingsUnavailablePanel } from "@/components/settings/SettingsUnavailablePanel";
+import { SettingsCommandPalette } from "@/components/settings/SettingsCommandPalette";
 import { maxFiscalYearEndDay, formatDocumentNumberPreview } from "@/lib/settings/dimension-helpers";
 
+const LEGACY_TAB_BY_SECTION: Partial<Record<SettingsCategory, string>> = {
+  organisation: "organisation",
+  accounting: "financial",
+  dimensions: "dimensions",
+  documents: "documents",
+  currencies: "currencies",
+  users: "users",
+  automation: "automation",
+  integrations: "integrations",
+  audit: "audit",
+  demo: "demo",
+};
+
+const CONFIG_SECTIONS: SettingsCategory[] = [
+  "sales",
+  "purchases",
+  "banking",
+  "tax",
+  "products",
+  "reports",
+  "contacts",
+  "expenses",
+  "notifications",
+  "import_migration",
+  "accountant",
+];
+
+const UNAVAILABLE_SECTIONS: SettingsCategory[] = [
+  "subscription",
+  "portals",
+  "fixed_assets",
+];
+
 export const Route = createFileRoute("/_authenticated/settings")({
+  validateSearch: (search: Record<string, unknown>): { section: string } => {
+    const raw = search["section"];
+    return {
+      section: typeof raw === "string" && raw.length > 0 ? raw : "overview",
+    };
+  },
   head: () => ({
     meta: [
       { title: "Settings — LinkBooks" },
       {
         name: "description",
         content:
-          "Organisation governance: localisation, financial controls, dimensions, documents, FX, users and audit.",
+          "Settings Centre: organisation governance, feature manager, lock dates, dimensions, documents, FX, users and audit.",
       },
       { property: "og:title", content: "Settings — LinkBooks" },
       {
         property: "og:description",
         content:
-          "Organisation governance: localisation, financial controls, dimensions, documents, FX, users and audit.",
+          "Settings Centre: organisation governance, feature manager, lock dates, dimensions, documents, FX, users and audit.",
       },
     ],
   }),
@@ -110,6 +157,27 @@ function SettingsPage() {
 }
 
 function SettingsForCompany({ companyId }: { companyId: string }) {
+  const navigate = useNavigate({ from: "/settings" });
+  const { section: sectionRaw } = Route.useSearch();
+  const section = (sectionRaw || "overview") as SettingsCategory;
+  const [navFilter, setNavFilter] = useState("");
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const selectSection = (id: string) => {
+    void navigate({ search: { section: id } });
+  };
+
   const fetchDetails = useServerFn(getCompanyDetails);
   const saveCompany = useServerFn(updateCompany);
   const fetchMembers = useServerFn(listCompanyMembers);
@@ -325,26 +393,94 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
     );
   }
 
+  const legacyTab = LEGACY_TAB_BY_SECTION[section];
+  const sectionMeta = categoryMeta.find((c) => c.id === section);
+  const showLegacy = Boolean(legacyTab);
+
   return (
     <>
       <PageHeader
-        title="Settings"
-        description="Organisation governance — localisation, financial controls, dimensions, documents, FX, users, automation and audit."
+        title="Settings Centre"
+        description="Organisation configuration — search with Ctrl/Cmd+K. Preferences never override posting, period locks or journal immutability."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setCmdOpen(true)}>
+            <Search className="mr-1.5 size-3.5" />
+            Search
+            <kbd className="ml-2 hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
+          </Button>
+        }
       />
 
-      <Tabs defaultValue="organisation">
-        <TabsList className="flex h-auto flex-wrap gap-1">
-          <TabsTrigger value="organisation">Organisation</TabsTrigger>
-          <TabsTrigger value="financial">Financial</TabsTrigger>
-          <TabsTrigger value="dimensions">Dimensions</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="currencies">Currencies</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="automation">Automation</TabsTrigger>
-          <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="audit">Audit</TabsTrigger>
-          {isDemo ? <TabsTrigger value="demo">Demo</TabsTrigger> : null}
-        </TabsList>
+      <SettingsCommandPalette
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        onSelectSection={selectSection}
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+          <Input
+            value={navFilter}
+            onChange={(e) => setNavFilter(e.target.value)}
+            placeholder="Filter categories…"
+            aria-label="Filter settings categories"
+          />
+          <SettingsNav
+            section={section}
+            onSelect={selectSection}
+            showDemo={isDemo}
+            filter={navFilter}
+          />
+        </aside>
+
+        <div className="min-w-0 space-y-4">
+          {section === "overview" ? (
+            <SettingsOverviewPanel companyId={companyId} onNavigate={selectSection} />
+          ) : null}
+          {section === "features" ? (
+            <SettingsFeatureManager companyId={companyId} canEdit={canEdit} />
+          ) : null}
+          {UNAVAILABLE_SECTIONS.includes(section) && sectionMeta ? (
+            <SettingsUnavailablePanel meta={sectionMeta} />
+          ) : null}
+          {CONFIG_SECTIONS.includes(section) ? (
+            <SettingsCategoryConfigPanel
+              companyId={companyId}
+              category={section}
+              canEdit={canEdit}
+            />
+          ) : null}
+
+          {showLegacy ? (
+            <Tabs
+              value={legacyTab}
+              onValueChange={(v) => {
+                const entry = Object.entries(LEGACY_TAB_BY_SECTION).find(([, tab]) => tab === v);
+                if (entry) selectSection(entry[0]);
+              }}
+            >
+              <TabsList className="flex h-auto flex-wrap gap-1">
+                <TabsTrigger value="organisation">Organisation</TabsTrigger>
+                <TabsTrigger value="financial">Financial</TabsTrigger>
+                <TabsTrigger value="dimensions">Dimensions</TabsTrigger>
+                <TabsTrigger value="documents">Documents</TabsTrigger>
+                <TabsTrigger value="currencies">Currencies</TabsTrigger>
+                <TabsTrigger value="users">Users</TabsTrigger>
+                <TabsTrigger value="automation">Automation</TabsTrigger>
+                <TabsTrigger value="integrations">Integrations</TabsTrigger>
+                <TabsTrigger value="audit">Audit</TabsTrigger>
+                {isDemo ? <TabsTrigger value="demo">Demo</TabsTrigger> : null}
+              </TabsList>
+
+              {section === "accounting" ? (
+                <div className="mt-4">
+                  <SettingsAccountingLocksPanel
+                    companyId={companyId}
+                    canEdit={canEdit}
+                    canLock={canEdit}
+                  />
+                </div>
+              ) : null}
 
         <TabsContent value="organisation" className="mt-4 space-y-4">
           <Card>
@@ -1014,6 +1150,9 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
           </TabsContent>
         ) : null}
       </Tabs>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }

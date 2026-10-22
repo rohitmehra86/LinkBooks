@@ -494,7 +494,9 @@ export function FinancialReportsWorkspace({
                     Regime: {taxQuery.data.regime}
                     {taxQuery.data.jurisdictionCode ? ` (${taxQuery.data.jurisdictionCode})` : ""}.{" "}
                     {taxQuery.data.complianceNote}{" "}
-                    <Link className="underline" to="/settings">Tax settings</Link>
+                    <Link className="underline" to="/settings" search={{ section: "tax" }}>
+                      Tax settings
+                    </Link>
                   </AlertDescription>
                 </Alert>
                 <div className="mb-4 grid gap-3 sm:grid-cols-3">

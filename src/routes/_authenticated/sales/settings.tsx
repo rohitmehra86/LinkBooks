@@ -36,7 +36,9 @@ function SalesSettingsPage() {
         description="Defaults for payment terms, quotes and invoice notes. Document sequences are managed in Settings → Documents."
         actions={
           <Button variant="outline" size="sm" asChild>
-            <Link to="/settings">Organisation settings</Link>
+            <Link to="/settings" search={{ section: "overview" }}>
+              Organisation settings
+            </Link>
           </Button>
         }
       />

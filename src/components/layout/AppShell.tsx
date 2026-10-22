@@ -87,6 +87,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
         <Link
           key={item.to}
           to={item.to}
+          {...(item.to === "/settings" ? { search: { section: "overview" } } : {})}
           onClick={onNavigate}
           activeOptions={{ exact: item.to === "/" }}
           className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

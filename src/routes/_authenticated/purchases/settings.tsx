@@ -36,7 +36,9 @@ function PurchasesSettingsPage() {
         description="Defaults for supplier terms and bill policies. Sequences live under Settings → Documents."
         actions={
           <Button variant="outline" size="sm" asChild>
-            <Link to="/settings">Organisation settings</Link>
+            <Link to="/settings" search={{ section: "overview" }}>
+              Organisation settings
+            </Link>
           </Button>
         }
       />
