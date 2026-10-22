@@ -19,7 +19,6 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ChartAccountsPanel } from "@/components/accounting/ChartAccountsPanel";
 import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
 
 export const Route = createFileRoute("/_authenticated/accounting")({
@@ -69,7 +69,13 @@ function Accounting() {
   return <AccountingWorkspace companyId={company.id} currency={company.base_currency} />;
 }
 
-export function AccountingWorkspace({ companyId, currency }: { companyId: string; currency: string }) {
+export function AccountingWorkspace({
+  companyId,
+  currency,
+}: {
+  companyId: string;
+  currency: string;
+}) {
   const queryClient = useQueryClient();
   const fetchAccounts = useServerFn(listAccounts);
   const fetchJournals = useServerFn(listJournals);
@@ -184,57 +190,7 @@ export function AccountingWorkspace({ companyId, currency }: { companyId: string
         </TabsList>
 
         <TabsContent value="coa" className="mt-4">
-          {accountsQuery.isPending ? (
-            <LoadingState />
-          ) : accountsQuery.isError ? (
-            <ErrorState
-              title="Could not load accounts"
-              description={friendlyAuthError(accountsQuery.error)}
-              onRetry={() => accountsQuery.refetch()}
-            />
-          ) : accounts.length === 0 ? (
-            <EmptyState
-              title="No chart of accounts"
-              description="Seed the default chart for this organisation, then post journals."
-              actionLabel="Ensure CoA & periods"
-            />
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Section</TableHead>
-                      <TableHead>Normal</TableHead>
-                      <TableHead>Flags</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {accounts.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-mono text-xs">{a.code}</TableCell>
-                        <TableCell>{a.name}</TableCell>
-                        <TableCell className="capitalize">{a.account_type}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatAccountSection(a.subtype, a.account_type)}
-                        </TableCell>
-                        <TableCell className="capitalize">{a.normal_balance}</TableCell>
-                        <TableCell className="space-x-1">
-                          {a.is_control ? <Badge variant="outline">Control</Badge> : null}
-                          {a.is_system ? <Badge variant="secondary">System</Badge> : null}
-                          {!a.is_active ? <Badge variant="destructive">Inactive</Badge> : null}
-                          {!a.is_postable ? <Badge variant="outline">Non-postable</Badge> : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+          <ChartAccountsPanel companyId={companyId} currency={currency} />
         </TabsContent>
 
         <TabsContent value="industry" className="mt-4">
@@ -361,7 +317,10 @@ export function AccountingWorkspace({ companyId, currency }: { companyId: string
               <Button
                 size="sm"
                 disabled={
-                  postMutation.isPending || !debitAccount || !creditAccount || debitAccount === creditAccount
+                  postMutation.isPending ||
+                  !debitAccount ||
+                  !creditAccount ||
+                  debitAccount === creditAccount
                 }
                 onClick={() => postMutation.mutate()}
               >
@@ -445,19 +404,4 @@ export function AccountingWorkspace({ companyId, currency }: { companyId: string
       </Tabs>
     </>
   );
-}
-
-function formatAccountSection(subtype: string | null | undefined, accountType: string): string {
-  const s = (subtype ?? "").toLowerCase();
-  if (s.includes("non_current") && accountType === "asset") return "Non-current assets";
-  if (s.includes("current") && accountType === "asset") return "Current assets";
-  if (s.includes("non_current") && accountType === "liability") return "Non-current liabilities";
-  if ((s.includes("current") || s.includes("payable") || s.includes("tax")) && accountType === "liability") {
-    return "Current liabilities";
-  }
-  if (accountType === "equity") return "Equity";
-  if (accountType === "income") return "Income";
-  if (s === "cogs") return "Cost of sales";
-  if (accountType === "expense") return "Expenses";
-  return accountType;
 }

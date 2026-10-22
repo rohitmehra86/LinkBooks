@@ -1,5 +1,4 @@
 import type { ComponentType } from "react";
-import { useActiveCompany } from "@/hooks/use-active-company";
 
 export async function loadCreatePanel(id: string): Promise<ComponentType> {
   switch (id) {
@@ -114,12 +113,8 @@ export async function loadCreatePanel(id: string): Promise<ComponentType> {
       return m.ProductsPage;
     }
     case "account": {
-      const m = await import("@/components/accounting/IndustryCoaPanel");
-      return function AccountPanel() {
-        const { company } = useActiveCompany();
-        if (!company) return null;
-        return <m.IndustryCoaPanel companyId={company.id} />;
-      };
+      const m = await import("@/components/create-new/NewAccountPanel");
+      return m.NewAccountPanel;
     }
     default:
       throw new Error("This action has no form");

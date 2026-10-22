@@ -10,6 +10,8 @@ import {
 } from "@/lib/accounting/coa-library/catalog";
 import { previewIndustryApply, trackingDefaultsFor } from "@/lib/accounting/coa-library/apply";
 import type { DetailLevel, ExistingAccount } from "@/lib/accounting/coa-library/types";
+import { accountKindForPlacement } from "@/lib/accounting/account-kinds";
+import { accountPlacementById } from "@/lib/accounting/account-placement";
 
 function companyIdInput(input: { companyId: string }) {
   return { companyId: assertUuid(input?.companyId) };
@@ -85,10 +87,31 @@ export const getCompanyCoaSettings = createServerFn({ method: "GET" })
     };
   });
 
+type AccountsReader = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (
+        column: string,
+        value: string,
+      ) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+    };
+  };
+};
+
+function isAccountsReader(value: unknown): value is AccountsReader {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "from" in value &&
+    typeof value.from === "function"
+  );
+}
+
 async function loadExistingAccounts(
-  supabase: { from: Function },
+  supabase: unknown,
   companyId: string,
 ): Promise<ExistingAccount[]> {
+  if (!isAccountsReader(supabase)) throw new Error("Accounts could not be loaded.");
   const { data: rows, error } = await supabase
     .from("accounts")
     .select("id, code, name, account_type, catalog_key, is_control, is_system")
@@ -123,19 +146,21 @@ export const previewCoaIndustryApply = createServerFn({ method: "POST" })
 
 export const applyCoaIndustryTemplate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: {
-    companyId: string;
-    industryCodes: string[];
-    level: DetailLevel;
-    confirmConflicts?: boolean;
-  }) => ({
-    companyId: assertUuid(input?.companyId),
-    industryCodes: [...new Set((input?.industryCodes ?? []).filter(Boolean))],
-    level: (["simple", "standard", "detailed"].includes(input?.level)
-      ? input.level
-      : "standard") as DetailLevel,
-    confirmConflicts: Boolean(input?.confirmConflicts),
-  }))
+  .inputValidator(
+    (input: {
+      companyId: string;
+      industryCodes: string[];
+      level: DetailLevel;
+      confirmConflicts?: boolean;
+    }) => ({
+      companyId: assertUuid(input?.companyId),
+      industryCodes: [...new Set((input?.industryCodes ?? []).filter(Boolean))],
+      level: (["simple", "standard", "detailed"].includes(input?.level)
+        ? input.level
+        : "standard") as DetailLevel,
+      confirmConflicts: Boolean(input?.confirmConflicts),
+    }),
+  )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "accounts.manage");
     if (data.industryCodes.length === 0) {
@@ -218,17 +243,19 @@ export const applyCoaIndustryTemplate = createServerFn({ method: "POST" })
       }
     }
 
-    const { error: settingsErr } = await context.supabase.from("company_coa_settings" as never).upsert(
-      {
-        company_id: data.companyId,
-        detail_level: data.level,
-        industry_codes: data.industryCodes,
-        catalog_version: CATALOG_VERSION,
-        updated_at: new Date().toISOString(),
-        updated_by: context.userId,
-      } as never,
-      { onConflict: "company_id" } as never,
-    );
+    const { error: settingsErr } = await context.supabase
+      .from("company_coa_settings" as never)
+      .upsert(
+        {
+          company_id: data.companyId,
+          detail_level: data.level,
+          industry_codes: data.industryCodes,
+          catalog_version: CATALOG_VERSION,
+          updated_at: new Date().toISOString(),
+          updated_by: context.userId,
+        } as never,
+        { onConflict: "company_id" } as never,
+      );
     if (settingsErr) throw new Error(settingsErr.message);
 
     const { error: logErr } = await context.supabase.from("coa_apply_events" as never).insert({
@@ -261,33 +288,51 @@ export const applyCoaIndustryTemplate = createServerFn({ method: "POST" })
 
 export const createManualAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: {
-    companyId: string;
-    code: string;
-    name: string;
-    accountType: "asset" | "liability" | "equity" | "income" | "expense";
-    subtype?: string;
-    normalBalance?: "debit" | "credit";
-  }) => {
-    const code = (input?.code ?? "").trim();
-    const name = (input?.name ?? "").trim();
-    if (!code || !name) throw new Error("Code and name are required.");
-    const accountType = input.accountType;
-    if (!["asset", "liability", "equity", "income", "expense"].includes(accountType)) {
-      throw new Error("Invalid account type.");
-    }
-    const normalBalance =
-      input.normalBalance ??
-      (accountType === "asset" || accountType === "expense" ? "debit" : "credit");
-    return {
-      companyId: assertUuid(input.companyId),
-      code,
-      name,
-      accountType,
-      subtype: (input.subtype ?? "").trim() || null,
-      normalBalance,
-    };
-  })
+  .inputValidator(
+    (input: {
+      companyId: string;
+      code: string;
+      name: string;
+      accountType?: "asset" | "liability" | "equity" | "income" | "expense";
+      subtype?: string;
+      normalBalance?: "debit" | "credit";
+      placementId?: string;
+    }) => {
+      const code = (input?.code ?? "").trim();
+      const name = (input?.name ?? "").trim();
+      if (!code || code.length > 10)
+        throw new Error("Enter an account code of up to 10 characters.");
+      if (!name || name.length > 150)
+        throw new Error("Enter an account name of up to 150 characters.");
+      const placement = input.placementId ? accountPlacementById(input.placementId) : undefined;
+      if (input.placementId && !placement)
+        throw new Error("Choose where this account appears in the reports.");
+      const accountType = placement?.accountType ?? input.accountType;
+      if (
+        !accountType ||
+        !["asset", "liability", "equity", "income", "expense"].includes(accountType)
+      ) {
+        throw new Error("Invalid account type.");
+      }
+      const normalBalance =
+        placement?.normalBalance ??
+        input.normalBalance ??
+        (accountType === "asset" || accountType === "expense" ? "debit" : "credit");
+      return {
+        companyId: assertUuid(input.companyId),
+        code,
+        name,
+        accountType,
+        subtype: placement?.subtype ?? ((input.subtype ?? "").trim() || null),
+        normalBalance,
+        fsLine: placement?.fsLine ?? null,
+        cashFlowClass: placement?.cashFlowClass ?? null,
+        accountKind: input.placementId
+          ? (accountKindForPlacement(input.placementId) ?? null)
+          : null,
+      };
+    },
+  )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "accounts.manage");
     const { data: row, error } = await context.supabase
@@ -299,6 +344,8 @@ export const createManualAccount = createServerFn({ method: "POST" })
         account_type: data.accountType,
         normal_balance: data.normalBalance,
         subtype: data.subtype,
+        ...(data.accountKind ? { account_kind: data.accountKind } : {}),
+        ...(data.fsLine ? { fs_line: data.fsLine, cash_flow_class: data.cashFlowClass } : {}),
         source: "manual",
         is_system: false,
         is_postable: true,
@@ -307,7 +354,13 @@ export const createManualAccount = createServerFn({ method: "POST" })
       } as never)
       .select("id, code, name" as never)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === "23505" && error.message.includes("accounts_company_name_lower")) {
+        throw new Error("An account with this name already exists.");
+      }
+      if (error.code === "23505") throw new Error("An account with this code already exists.");
+      throw new Error(error.message);
+    }
     return row as { id: string; code: string; name: string };
   });
 
