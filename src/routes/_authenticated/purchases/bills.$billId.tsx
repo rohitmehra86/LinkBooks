@@ -37,6 +37,10 @@ import {
   BillRelatedFilesOverlay,
 } from "@/components/purchases/BillRelatedFilesOverlay";
 import {
+  BillMakePaymentPanel,
+  type BillPaymentAllocation,
+} from "@/components/purchases/BillMakePaymentPanel";
+import {
   PurchasesDocumentLines,
   emptyPurchaseLine,
   type PurchaseLineFormState,
@@ -138,26 +142,7 @@ type BillPayload = {
     size_bytes: number | null;
     created_at: string;
   }>;
-  payment_allocations: Array<{
-    id: string;
-    amount_minor: number;
-    supplier_payments:
-      | {
-          id: string;
-          payment_date: string;
-          reference: string | null;
-          total_minor: number;
-          status: string;
-        }
-      | Array<{
-          id: string;
-          payment_date: string;
-          reference: string | null;
-          total_minor: number;
-          status: string;
-        }>
-      | null;
-  }>;
+  payment_allocations: BillPaymentAllocation[];
 };
 
 function BillDocumentWorkspace() {
@@ -609,9 +594,18 @@ function BillDocumentWorkspace() {
               </>
             ) : (
               <>
-                {["authorised", "partly_paid"].includes(bill.status) ? (
-                  <Button size="sm" variant="outline" asChild>
-                    <Link to="/purchases/payments/new">Record payment</Link>
+                {["authorised", "partly_paid"].includes(bill.status) && outstanding > 0 ? (
+                  <Button
+                    size="sm"
+                    className="bg-emerald-700 text-white hover:bg-emerald-800"
+                    onClick={() => {
+                      document.getElementById("make-payment")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    Make a payment
                   </Button>
                 ) : null}
                 {bill.status !== "void" ? (
@@ -635,7 +629,11 @@ function BillDocumentWorkspace() {
 
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
           <Badge variant="outline" className="capitalize">
-            {bill.status.replace(/_/g, " ")}
+            {bill.status === "authorised"
+              ? "Awaiting payment"
+              : bill.status === "partly_paid"
+                ? "Partially paid"
+                : bill.status.replace(/_/g, " ")}
           </Badge>
           <span>
             Document total{" "}
@@ -835,39 +833,17 @@ function BillDocumentWorkspace() {
             </section>
           )}
 
-          <section className="rounded-lg border border-border bg-background p-4">
-            <h2 className="mb-3 text-sm font-semibold">Payments & credits</h2>
-            {(bill.payment_allocations ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No payment allocations on this bill.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Allocated</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {bill.payment_allocations.map((a) => {
-                    const payRaw = a.supplier_payments;
-                    const pay = Array.isArray(payRaw) ? payRaw[0] : payRaw;
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell>{pay?.payment_date ?? "—"}</TableCell>
-                        <TableCell>{pay?.reference ?? "—"}</TableCell>
-                        <TableCell className="capitalize">{pay?.status ?? "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fromMinorUnits(BigInt(a.amount_minor), currency)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </section>
+          <div id="make-payment">
+            <BillMakePaymentPanel
+              companyId={companyId}
+              billId={billId}
+              contactId={bill.contact_id}
+              currency={currency}
+              billStatus={bill.status}
+              outstandingMinor={outstanding}
+              allocations={bill.payment_allocations ?? []}
+            />
+          </div>
 
           <section className="rounded-lg border border-border bg-background p-4">
             <div className="mb-3 flex items-center justify-between gap-2">
