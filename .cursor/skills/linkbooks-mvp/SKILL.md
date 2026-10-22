@@ -17,6 +17,7 @@ description: >-
 
 ## Git remotes (this machine)
 
+- **Workspace:** `/Users/m5/Projects/LinkBooks`
 - **Work / push here:** `origin` → https://github.com/rohitmehra86/LinkBooks
 - **Friend’s upstream (read/PR):** `upstream` → https://github.com/linkbusinessadvisory/LinkBooks
 - Do not push to `upstream` until write access is granted; open PRs from the fork instead.
@@ -32,6 +33,8 @@ description: >-
 - Supabase how-to: `docs/EASY_SUPABASE.md`
 - Cursor MCP: `.cursor/mcp.json` (project `ipxflpzfcqwtenodbxwc`, user rohitmehra86)
 - Dashboard: https://supabase.com/dashboard/project/ipxflpzfcqwtenodbxwc
+- Vercel: team **paxaris**, project **linkbooks**, prod **https://linkbooks-navy.vercel.app**
+- Deploy: `cd /Users/m5/Projects/LinkBooks && vercel --prod --yes` (CLI OAuth login; do not set invalid `VERCEL_TOKEN`)
 
 ## Rules from AGENTS.md
 

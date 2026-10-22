@@ -239,7 +239,7 @@ type BillLineIn = {
   isBillable?: boolean;
 };
 
-function validateBillLines(lines: BillLineIn[], taxCalculation: TaxCalculationMode = "exclusive") {
+export function validateBillLines(lines: BillLineIn[], taxCalculation: TaxCalculationMode = "exclusive") {
   if (!Array.isArray(lines) || lines.length < 1) throw new Error("Add at least one bill line");
   return lines.map((l, i) => {
     const description = (l.description ?? "").trim();
@@ -1143,7 +1143,7 @@ export const saveBillDraft = createServerFn({ method: "POST" })
     return { id: billId };
   });
 
-async function authoriseBillInternal(
+export async function authoriseBillInternal(
   supabase: Parameters<typeof assertCompanyPermission>[0],
   userId: string,
   companyId: string,
@@ -2382,7 +2382,10 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    return { id: (row as { id: string }).id };
+    const id = (row as { id: string }).id;
+    const { ensureV2ForLegacyRecurringBill } = await import("@/lib/recurring/v2-sync");
+    await ensureV2ForLegacyRecurringBill(supabase, id);
+    return { id };
   });
 
 export const generateRecurringBill = createServerFn({ method: "POST" })
@@ -2394,103 +2397,13 @@ export const generateRecurringBill = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
-    const { data: rb, error } = await supabase
-      .from("recurring_bills" as never)
-      .select("*" as never)
-      .eq("id" as never, data.recurringId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!rb) throw new Error("Recurring bill not found");
-    const r = rb as {
-      is_active: boolean;
-      next_due_date: string;
-      last_generated_on: string | null;
-      contact_id: string;
-      currency_code: string;
-      auto_authorise: boolean;
-      frequency: string;
-      template: {
-        lines: BillLineIn[];
-        subtotal_minor: number;
-        tax_minor: number;
-        total_minor: number;
-      };
-    };
-    if (!r.is_active) throw new Error("Recurring bill is inactive");
-    if (r.last_generated_on === r.next_due_date) {
-      throw new Error("A bill was already generated for this due date");
-    }
-
-    try {
-      const lines = validateBillLines(r.template.lines);
-      const totals = sumLines(lines);
-      const due = r.next_due_date;
-      const { data: bill, error: bErr } = await supabase
-        .from("purchase_bills" as never)
-        .insert({
-          company_id: data.companyId,
-          contact_id: r.contact_id,
-          bill_date: due,
-          due_date: due,
-          currency_code: r.currency_code,
-          status: "draft",
-          subtotal_minor: Number(totals.subtotal_minor),
-          tax_minor: Number(totals.tax_minor),
-          total_minor: Number(totals.total_minor),
-          memo: `Generated from recurring bill`,
-          created_by: userId,
-        } as never)
-        .select("id")
-        .single();
-      if (bErr) throw new Error(bErr.message);
-      const billId = (bill as { id: string }).id;
-      await supabase.from("purchase_bill_lines" as never).insert(
-        lines.map((l, i) => ({
-          company_id: data.companyId,
-          bill_id: billId,
-          line_no: i + 1,
-          description: l.description,
-          account_id: l.accountId,
-          quantity: l.quantity,
-          unit_price_minor: l.unitPriceMinor,
-          discount_minor: l.discountMinor,
-          tax_rate_bps: l.taxRateBps,
-          net_minor: Number(l.net_minor),
-          tax_minor: Number(l.tax_minor),
-        })) as never,
-      );
-
-      // Default policy: do NOT auto-post unless auto_authorise explicitly true
-      if (r.auto_authorise) {
-        await authoriseBillInternal(supabase, userId, data.companyId, billId);
-      }
-
-      const next = new Date(due + "T00:00:00Z");
-      if (r.frequency === "weekly") next.setUTCDate(next.getUTCDate() + 7);
-      else if (r.frequency === "monthly") next.setUTCMonth(next.getUTCMonth() + 1);
-      else if (r.frequency === "quarterly") next.setUTCMonth(next.getUTCMonth() + 3);
-      else next.setUTCFullYear(next.getUTCFullYear() + 1);
-
-      await supabase
-        .from("recurring_bills" as never)
-        .update({
-          last_generated_on: due,
-          next_due_date: next.toISOString().slice(0, 10),
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id" as never, data.recurringId as never);
-
-      return { billId, authorised: r.auto_authorise };
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Generation failed";
-      await supabase
-        .from("recurring_bills" as never)
-        .update({ last_error: message, updated_at: new Date().toISOString() } as never)
-        .eq("id" as never, data.recurringId as never);
-      throw new Error(message);
-    }
+    const { generatePurchaseBillFromRecurring } = await import(
+      "@/lib/recurring/generate-purchase-bill"
+    );
+    return generatePurchaseBillFromRecurring(supabase, userId, data.companyId, data.recurringId, {
+      validateBillLines,
+      authoriseBill: authoriseBillInternal,
+    });
   });
 
 // ---- Employee expenses ----
