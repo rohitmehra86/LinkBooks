@@ -74,7 +74,7 @@ function lineInsertRows(
   });
 }
 
-async function loadTaxTreatment(
+export async function loadTaxTreatment(
   supabase: Parameters<typeof assertCompanyMember>[0],
   companyId: string,
 ): Promise<"exclusive" | "inclusive"> {
@@ -1289,6 +1289,8 @@ export const saveRecurringInvoice = createServerFn({ method: "POST" })
         tax_rate_bps: l.taxRateBps,
       })) as never,
     );
+    const { ensureV2ForLegacySalesRecurring } = await import("@/lib/recurring/v2-sync-sales");
+    await ensureV2ForLegacySalesRecurring(supabase, id);
     return { id };
   });
 
@@ -1301,141 +1303,10 @@ export const generateRecurringInvoice = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "sales.draft");
-    const { data: rec, error } = await supabase
-      .from("sales_recurring_invoices" as never)
-      .select("*, sales_recurring_invoice_lines(*)" as never)
-      .eq("id" as never, data.recurringId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!rec) throw new Error("Recurring invoice not found");
-    const r = rec as {
-      is_active: boolean;
-      contact_id: string;
-      next_due_date: string;
-      currency_code: string;
-      memo: string | null;
-      frequency: string;
-      auto_authorise: boolean;
-      last_generated_on: string | null;
-      sales_recurring_invoice_lines: Array<{
-        description: string;
-        account_id: string;
-        quantity: number;
-        unit_price_minor: number;
-        discount_minor: number;
-        tax_rate_bps: number;
-      }>;
-    };
-    if (!r.is_active) throw new Error("Recurring invoice is inactive");
-    if (r.last_generated_on === r.next_due_date) {
-      throw new Error("Already generated for this due date (idempotent guard)");
-    }
-
-    const treatment = await loadTaxTreatment(supabase, data.companyId);
-    const validated = validateSalesLines(
-      r.sales_recurring_invoice_lines.map((l) => ({
-        description: l.description,
-        accountId: l.account_id,
-        quantity: Number(l.quantity),
-        unitPriceMinor: l.unit_price_minor,
-        discountMinor: l.discount_minor,
-        taxRateBps: l.tax_rate_bps,
-      })),
-      { treatment },
+    const { generateSalesInvoiceFromRecurring } = await import(
+      "@/lib/recurring/generate-sales-invoice"
     );
-    const totals = sumLines(validated);
-    const due = (() => {
-      const d = new Date(`${r.next_due_date}T00:00:00Z`);
-      d.setUTCDate(d.getUTCDate() + 30);
-      return d.toISOString().slice(0, 10);
-    })();
-
-    const { data: inserted, error: insErr } = await supabase
-      .from("sales_invoices" as never)
-      .insert({
-        company_id: data.companyId,
-        contact_id: r.contact_id,
-        invoice_date: r.next_due_date,
-        due_date: due,
-        memo: r.memo,
-        currency_code: r.currency_code,
-        status: "draft",
-        subtotal_minor: Number(totals.subtotal_minor),
-        tax_minor: Number(totals.tax_minor),
-        total_minor: Number(totals.total_minor),
-        created_by: userId,
-      } as never)
-      .select("id")
-      .single();
-    if (insErr) throw new Error(insErr.message);
-    const invoiceId = (inserted as { id: string }).id;
-    await supabase.from("sales_invoice_lines" as never).insert(
-      validated.map((l, i) => ({
-        company_id: data.companyId,
-        invoice_id: invoiceId,
-        line_order: i + 1,
-        description: l.description,
-        account_id: l.accountId,
-        quantity: l.quantity,
-        unit_price_minor: l.unitPriceMinor,
-        discount_minor: l.discountMinor,
-        tax_rate_bps: l.taxRateBps,
-        net_minor: Number(l.net_minor),
-        tax_minor: Number(l.tax_minor),
-        gross_minor: Number(l.gross_minor),
-      })) as never,
-    );
-
-    let journalId: string | null = null;
-    if (r.auto_authorise) {
-      try {
-        await assertCompanyPermission(supabase, data.companyId, "sales.authorise");
-        journalId = await postInvoiceAuthorisation(supabase, {
-          company_id: data.companyId,
-          invoice_id: invoiceId,
-          invoice_date: r.next_due_date,
-          currency_code: r.currency_code,
-          ...(r.memo ? { memo: r.memo } : {}),
-          lines: validated.map((l) => ({
-            account_id: l.accountId,
-            description: l.description,
-            net_minor: l.net_minor,
-            tax_minor: l.tax_minor,
-          })),
-        });
-        await supabase
-          .from("sales_invoices" as never)
-          .update({
-            status: "authorised",
-            posted_journal_id: journalId,
-            authorised_at: new Date().toISOString(),
-            authorised_by: userId,
-          } as never)
-          .eq("id" as never, invoiceId as never);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Authorise failed";
-        await supabase
-          .from("sales_recurring_invoices" as never)
-          .update({ last_error: msg } as never)
-          .eq("id" as never, data.recurringId as never);
-        throw e;
-      }
-    }
-
-    const next = nextDate(r.next_due_date, r.frequency);
-    await supabase
-      .from("sales_recurring_invoices" as never)
-      .update({
-        last_generated_on: r.next_due_date,
-        last_invoice_id: invoiceId,
-        next_due_date: next,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("id" as never, data.recurringId as never);
-
-    return { invoiceId, journalId, nextDueDate: next };
+    return generateSalesInvoiceFromRecurring(supabase, userId, data.companyId, data.recurringId);
   });
 
 export const setRecurringActive = createServerFn({ method: "POST" })

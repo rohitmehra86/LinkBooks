@@ -4,6 +4,7 @@ import { buildOccurrenceIdempotencyKey } from "@/lib/recurring/occurrence-key";
 import { ensureV2ForLegacyRecurringBill } from "@/lib/recurring/v2-sync";
 import { sumLines } from "@/lib/purchases/line-math";
 import type { LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
+import { assertCompanyPermission } from "@/lib/assert-company-access";
 
 export type BillLineIn = {
   description: string;
@@ -150,6 +151,7 @@ export async function generatePurchaseBillFromRecurring(
     const autoAuthorise = schedule.auto_authorise ?? r.auto_authorise;
     let authorised = false;
     if (autoAuthorise) {
+      await assertCompanyPermission(supabase, companyId, "recurring.auto_authorise");
       await deps.authoriseBill(supabase, userId, companyId, billId);
       authorised = true;
     }

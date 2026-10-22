@@ -1,33 +1,12 @@
-import { useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
+import { z } from "zod";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { listAccounts } from "@/lib/accounting/accounting.functions";
-import {
-  generateRecurringBill,
-  listRecurringBills,
-  listSuppliers,
-  saveRecurringBill,
-  setRecurringBillActive,
-} from "@/lib/purchases/purchases.functions";
-import { toMinorUnits } from "@/lib/accounting/money";
-import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -36,256 +15,330 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RecurringBillOverlay } from "@/components/recurring/RecurringBillOverlay";
+import {
+  duplicateRecurringBill,
+  getRecurringForecast,
+  listRecurringExceptions,
+  listRecurringWorkspace,
+} from "@/lib/recurring/recurring-api.functions";
+import { friendlyAuthError } from "@/lib/auth-helpers";
+import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_authenticated/purchases/recurring")({
-  component: RecurringPage,
+const searchSchema = z.object({
+  id: z.string().uuid().optional(),
+  tab: z.string().optional(),
+  view: z.enum(["schedules", "exceptions", "forecast"]).optional(),
+  q: z.string().optional(),
+  page: z.coerce.number().optional(),
 });
 
-function RecurringPage() {
+export const Route = createFileRoute("/_authenticated/purchases/recurring")({
+  validateSearch: (s) => searchSchema.parse(s),
+  component: RecurringTransactionsPage,
+});
+
+function RecurringTransactionsPage() {
   const { company } = useActiveCompany();
-  const queryClient = useQueryClient();
-  const fetchList = useServerFn(listRecurringBills);
-  const fetchSuppliers = useServerFn(listSuppliers);
-  const fetchAccounts = useServerFn(listAccounts);
-  const save = useServerFn(saveRecurringBill);
-  const generate = useServerFn(generateRecurringBill);
-  const setActive = useServerFn(setRecurringBillActive);
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
-  const today = new Date().toISOString().slice(0, 10);
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const qc = useQueryClient();
 
-  const listQ = useQuery({
-    queryKey: ["recurring", companyId],
-    enabled: Boolean(companyId),
-    queryFn: () => fetchList({ data: { companyId: companyId! } }),
-  });
-  const suppliersQ = useQuery({
-    queryKey: ["suppliers", companyId],
-    enabled: Boolean(companyId),
-    queryFn: () => fetchSuppliers({ data: { companyId: companyId! } }),
-  });
-  const accountsQ = useQuery({
-    queryKey: ["accounts", companyId],
-    enabled: Boolean(companyId),
-    queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
-  });
+  const [qDraft, setQDraft] = useState(search.q ?? "");
+  const view = search.view ?? "schedules";
+  const page = search.page ?? 0;
 
-  const [name, setName] = useState("");
-  const [contactId, setContactId] = useState("");
-  const [nextDue, setNextDue] = useState(today);
-  const [frequency, setFrequency] = useState<"monthly" | "weekly" | "quarterly" | "yearly">("monthly");
-  const [autoAuthorise, setAutoAuthorise] = useState(false);
-  const [description, setDescription] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [price, setPrice] = useState("0.00");
+  const fetchWorkspace = useServerFn(listRecurringWorkspace);
+  const fetchExceptions = useServerFn(listRecurringExceptions);
+  const fetchForecast = useServerFn(getRecurringForecast);
+  const dup = useServerFn(duplicateRecurringBill);
 
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      save({
+  const workspaceQ = useQuery({
+    queryKey: ["recurring-workspace", companyId, qDraft, page],
+    enabled: Boolean(companyId) && view === "schedules",
+    queryFn: () =>
+      fetchWorkspace({
         data: {
           companyId: companyId!,
-          contactId,
-          name,
-          frequency,
-          nextDueDate: nextDue,
-          currencyCode: currency,
-          autoAuthorise,
-          templateLines: [
-            {
-              description,
-              accountId,
-              quantity: 1,
-              unitPriceMinor: Number(toMinorUnits(price || "0", currency)),
-              taxRateBps: 0,
-            },
-          ],
+          documentType: "purchase_bill",
+          q: qDraft,
+          page,
+          pageSize: 25,
         },
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["recurring", companyId] });
-      toast.success("Recurring bill schedule saved");
-      setName("");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
-  const genMutation = useMutation({
-    mutationFn: (recurringId: string) =>
-      generate({ data: { companyId: companyId!, recurringId } }),
+  const exceptionsQ = useQuery({
+    queryKey: ["recurring-exceptions", companyId],
+    enabled: Boolean(companyId) && view === "exceptions",
+    queryFn: () => fetchExceptions({ data: { companyId: companyId! } }),
+  });
+
+  const forecastQ = useQuery({
+    queryKey: ["recurring-forecast", companyId],
+    enabled: Boolean(companyId) && view === "forecast",
+    queryFn: () => fetchForecast({ data: { companyId: companyId!, days: 90 } }),
+  });
+
+  const dupM = useMutation({
+    mutationFn: (recurringBillId: string) =>
+      dup({ data: { companyId: companyId!, recurringBillId } }),
     onSuccess: async (r) => {
-      await queryClient.invalidateQueries({ queryKey: ["recurring", companyId] });
-      await queryClient.invalidateQueries({ queryKey: ["bills", companyId] });
-      toast.success(
-        r.authorised
-          ? "Bill generated and authorised"
-          : "Draft bill generated (not posted — policy default)",
-      );
+      toast.success("Duplicated");
+      await qc.invalidateQueries({ queryKey: ["recurring-workspace", companyId] });
+      navigate({ search: (prev) => ({ ...prev, id: r.id, tab: "details" }) });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
-  const activeMutation = useMutation({
-    mutationFn: (args: { recurringId: string; isActive: boolean }) =>
-      setActive({ data: { companyId: companyId!, ...args } }),
-    onSuccess: async (r) => {
-      await queryClient.invalidateQueries({ queryKey: ["recurring", companyId] });
-      toast.success(r.is_active ? "Schedule resumed" : "Schedule paused");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (qDraft !== (search.q ?? "")) {
+        navigate({ search: (prev) => ({ ...prev, q: qDraft || undefined, page: 0 }) });
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [qDraft, navigate, search.q]);
 
-  if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
+  const openId = search.id;
+  const overlayOpen = Boolean(openId);
 
-  const accounts = ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; is_postable: boolean; is_active: boolean }>).filter(
-    (a) => a.is_active && a.is_postable,
-  );
+  const closeOverlay = () => {
+    navigate({ search: (prev) => ({ ...prev, id: undefined, tab: undefined }) });
+  };
+
+  if (!companyId) {
+    return <EmptyState title="No organisation" description="Select a company." />;
+  }
 
   return (
     <>
       <PageHeader
-        title="Recurring bills"
-        description="Schedules generate bills on demand. Default policy creates drafts only; enable auto-authorise to post."
+        title="Recurring transactions"
+        description="Supplier bill schedules — premium overlay, idempotent generation, exceptions and forecast."
       />
-      <Alert className="mb-4">
-        <AlertTitle>No silent auto-post</AlertTitle>
-        <AlertDescription>
-          Generation fails clearly if a bill was already created for the same due date. Errors are stored on the schedule.
-        </AlertDescription>
-      </Alert>
 
-      <div className="mb-6 grid max-w-xl gap-3 rounded-md border border-border p-4">
-        <div className="space-y-2">
-          <Label>Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Supplier</Label>
-          <Select value={contactId} onValueChange={setContactId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label>Next due</Label>
-            <Input type="date" value={nextDue} onChange={(e) => setNextDue(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Frequency</Label>
-            <Select value={frequency} onValueChange={(v) => setFrequency(v as typeof frequency)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="quarterly">Quarterly</SelectItem>
-                <SelectItem value="yearly">Yearly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label>Line description</Label>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Account</Label>
-          <Select value={accountId} onValueChange={setAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Amount ({currency})</Label>
-          <Input value={price} onChange={(e) => setPrice(e.target.value)} />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <Label className="font-normal">Auto-authorise generated bills</Label>
-          <Switch checked={autoAuthorise} onCheckedChange={setAutoAuthorise} />
-        </div>
-        <Button size="sm" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-          {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Save schedule
-        </Button>
-      </div>
+      <Tabs
+        value={view}
+        onValueChange={(v) =>
+          navigate({ search: (prev) => ({ ...prev, view: v as typeof view, page: 0 }) })
+        }
+        className="mb-4"
+      >
+        <TabsList>
+          <TabsTrigger value="schedules">Schedules</TabsTrigger>
+          <TabsTrigger value="exceptions">Exception centre</TabsTrigger>
+          <TabsTrigger value="forecast">Forecast (90d)</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {listQ.isPending ? (
-        <LoadingState />
-      ) : listQ.isError ? (
-        <ErrorState title="Could not load schedules" description={friendlyAuthError(listQ.error)} />
-      ) : (listQ.data ?? []).length === 0 ? (
-        <EmptyState title="No recurring bills" description="Create a schedule above." />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Next due</TableHead>
-              <TableHead>Last error</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              listQ.data as Array<{
-                id: string;
-                name: string;
-                next_due_date: string;
-                last_error: string | null;
-                is_active: boolean;
-                contacts: { name: string } | null;
-              }>
-            ).map((r) => (
-              <TableRow key={r.id}>
-                <TableCell>{r.name}</TableCell>
-                <TableCell>{r.contacts?.name ?? "—"}</TableCell>
-                <TableCell>{r.next_due_date}</TableCell>
-                <TableCell className="max-w-[200px] truncate text-destructive">
-                  {r.last_error ?? "—"}
-                </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={activeMutation.isPending}
-                    onClick={() =>
-                      activeMutation.mutate({ recurringId: r.id, isActive: !r.is_active })
-                    }
-                  >
-                    {r.is_active ? "Pause" : "Resume"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={genMutation.isPending || !r.is_active}
-                    onClick={() => genMutation.mutate(r.id)}
-                  >
-                    Generate now
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {view === "schedules" && (
+        <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Input
+              className="max-w-sm"
+              placeholder="Search schedules…"
+              value={qDraft}
+              onChange={(e) => setQDraft(e.target.value)}
+            />
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/purchases/bills/new">New bill → Make recurring</Link>
+            </Button>
+          </div>
+
+          {workspaceQ.isPending ? (
+            <LoadingState />
+          ) : workspaceQ.isError ? (
+            <ErrorState
+              title="Could not load"
+              description={friendlyAuthError(workspaceQ.error)}
+            />
+          ) : (workspaceQ.data?.rows ?? []).length === 0 ? (
+            <EmptyState
+              title="No recurring bill templates"
+              description="Create one from New bill → Make recurring."
+            />
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Next</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(workspaceQ.data?.rows ?? []).map(
+                    (row: {
+                      id: string;
+                      name: string;
+                      is_active: boolean;
+                      legacy_recurring_bill_id: string | null;
+                      contacts: { name: string } | null;
+                      recurring_schedules:
+                        | {
+                            next_occurrence_date: string;
+                            last_error: string | null;
+                            is_paused: boolean;
+                          }
+                        | Array<{
+                            next_occurrence_date: string;
+                            last_error: string | null;
+                            is_paused: boolean;
+                          }>
+                        | null;
+                    }) => {
+                      const sched = Array.isArray(row.recurring_schedules)
+                        ? row.recurring_schedules[0]
+                        : row.recurring_schedules;
+                      const legacyId = row.legacy_recurring_bill_id;
+                      if (!legacyId) return null;
+                      return (
+                        <TableRow
+                          key={row.id}
+                          className="cursor-pointer"
+                          onClick={() =>
+                            navigate({
+                              search: (prev) => ({ ...prev, id: legacyId, tab: "details" }),
+                            })
+                          }
+                        >
+                          <TableCell>{row.name}</TableCell>
+                          <TableCell>{row.contacts?.name ?? "—"}</TableCell>
+                          <TableCell>{sched?.next_occurrence_date ?? "—"}</TableCell>
+                          <TableCell className="max-w-[180px] truncate text-destructive">
+                            {sched?.last_error ??
+                              (sched?.is_paused || !row.is_active ? "Paused" : "Active")}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                dupM.mutate(legacyId);
+                              }}
+                            >
+                              Duplicate
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    },
+                  )}
+                </TableBody>
+              </Table>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page <= 0}
+                  onClick={() =>
+                    navigate({ search: (prev) => ({ ...prev, page: Math.max(0, page - 1) }) })
+                  }
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={(workspaceQ.data?.rows?.length ?? 0) < 25}
+                  onClick={() => navigate({ search: (prev) => ({ ...prev, page: page + 1 }) })}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
+          )}
+        </>
       )}
+
+      {view === "exceptions" && (
+        <>
+          {exceptionsQ.isPending ? (
+            <LoadingState />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Template</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(exceptionsQ.data?.rows ?? []).map(
+                  (r: {
+                    id: string;
+                    scheduled_date: string;
+                    status: string;
+                    error_message: string | null;
+                  }) => (
+                    <TableRow key={r.id}>
+                      <TableCell>{r.scheduled_date}</TableCell>
+                      <TableCell>—</TableCell>
+                      <TableCell>{r.status}</TableCell>
+                      <TableCell>{r.error_message ?? "—"}</TableCell>
+                    </TableRow>
+                  ),
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      )}
+
+      {view === "forecast" && (
+        <>
+          {forecastQ.isPending ? (
+            <LoadingState />
+          ) : (
+            <>
+              <p className="mb-2 text-sm text-muted-foreground">
+                Estimates only — not posted actuals. Variable amounts and FX may differ.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(forecastQ.data?.items ?? []).map(
+                    (i: { date: string; name: string; documentType: string; scheduleId: string }) => (
+                      <TableRow key={`${i.scheduleId}-${i.date}`}>
+                        <TableCell>{i.date}</TableCell>
+                        <TableCell>{i.name}</TableCell>
+                        <TableCell>{i.documentType}</TableCell>
+                      </TableRow>
+                    ),
+                  )}
+                </TableBody>
+              </Table>
+            </>
+          )}
+        </>
+      )}
+
+      {openId ? (
+        <RecurringBillOverlay
+          companyId={companyId}
+          recurringBillId={openId}
+          open={overlayOpen}
+          onOpenChange={(o) => !o && closeOverlay()}
+          initialTab={search.tab ?? "details"}
+        />
+      ) : null}
     </>
   );
 }
