@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   createAndPostPayment,
-  reverseSupplierPayment,
 } from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
@@ -18,15 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 
 export type BillPaymentAllocation = {
   id: string;
@@ -63,18 +53,10 @@ type Props = {
   currency: string;
   billStatus: string;
   outstandingMinor: number;
-  allocations: BillPaymentAllocation[];
 };
 
-function paymentLabel(status: string) {
-  if (status === "void") return "Voided";
-  if (status === "paid") return "Posted";
-  return status.replace(/_/g, " ");
-}
-
 /**
- * Fully functional Make a payment panel for authorised / partly paid bills.
- * Posts through createAndPostPayment → shared ledger (DR AP / CR bank).
+ * Record a payment against an authorised bill. Posted payments appear in History and notes.
  */
 export function BillMakePaymentPanel({
   companyId,
@@ -83,12 +65,10 @@ export function BillMakePaymentPanel({
   currency,
   billStatus,
   outstandingMinor,
-  allocations,
 }: Props) {
   const qc = useQueryClient();
   const fetchAccounts = useServerFn(listAccounts);
   const postPayment = useServerFn(createAndPostPayment);
-  const reversePayment = useServerFn(reverseSupplierPayment);
 
   const today = new Date().toISOString().slice(0, 10);
   const canPay =
@@ -132,6 +112,7 @@ export function BillMakePaymentPanel({
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ["bill", companyId, billId] });
+    await qc.invalidateQueries({ queryKey: ["bill-activity", companyId, billId] });
     await qc.invalidateQueries({ queryKey: ["bills", companyId] });
     await qc.invalidateQueries({ queryKey: ["bills-workspace-summary", companyId] });
     await qc.invalidateQueries({ queryKey: ["payments", companyId] });
@@ -180,110 +161,18 @@ export function BillMakePaymentPanel({
     },
   });
 
-  const reverseM = useMutation({
-    mutationFn: (paymentId: string) =>
-      reversePayment({
-        data: {
-          companyId,
-          paymentId,
-          reason: "Reversed from bill payment history",
-        },
-      }),
-    onSuccess: async () => {
-      await invalidate();
-      toast.success("Payment reversed — journal voided and balance restored");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
-
-  const history = allocations
-    .map((a) => {
-      const payRaw = a.supplier_payments;
-      const pay = Array.isArray(payRaw) ? payRaw[0] : payRaw;
-      return { allocId: a.id, amount_minor: a.amount_minor, pay };
-    })
-    .filter((r) => r.pay);
-
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-border bg-background p-4">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">Payment history</h2>
-          <p className="text-xs text-muted-foreground">
-            Outstanding{" "}
-            <strong className="tabular-nums text-foreground">
-              {fromMinorUnits(BigInt(Math.max(0, outstandingMinor)), currency)}
-            </strong>
-          </p>
-        </div>
-        {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No payments recorded on this bill yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Notes</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Allocated</TableHead>
-                <TableHead className="w-[1%]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {history.map(({ allocId, amount_minor, pay }) => (
-                <TableRow key={allocId}>
-                  <TableCell>{pay!.payment_date}</TableCell>
-                  <TableCell>{pay!.reference ?? "—"}</TableCell>
-                  <TableCell className="max-w-[12rem] truncate text-muted-foreground">
-                    {pay!.memo ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {paymentLabel(pay!.status)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fromMinorUnits(BigInt(amount_minor), currency)}
-                  </TableCell>
-                  <TableCell>
-                    {pay!.status !== "void" && pay!.posted_journal_id ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive"
-                        disabled={reverseM.isPending}
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "Reverse this payment? The bank/AP journal will be voided and the bill balance restored.",
-                            )
-                          ) {
-                            reverseM.mutate(pay!.id);
-                          }
-                        }}
-                      >
-                        Reverse
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">
-          Recording a payment updates Accounts Payable and the bank account via the shared ledger.
-          This does not transmit funds to a bank — it records the payment in LinkBooks.
-        </p>
-      </section>
-
       {canPay ? (
         <section className="rounded-lg border border-emerald-600/30 bg-emerald-50/40 p-4 dark:bg-emerald-950/20">
           <h2 className="mb-1 text-base font-semibold tracking-tight">Make a payment</h2>
           <p className="mb-4 text-sm text-muted-foreground">
-            Record a full or partial payment against this bill. Multiple payments are allowed until
-            the balance is cleared.
+            Outstanding{" "}
+            <strong className="tabular-nums text-foreground">
+              {fromMinorUnits(BigInt(Math.max(0, outstandingMinor)), currency)}
+            </strong>
+            . Recorded payments are listed in History and notes. This updates Accounts Payable and
+            the bank account in LinkBooks. It does not transmit funds to a bank.
           </p>
 
           {formError ? (

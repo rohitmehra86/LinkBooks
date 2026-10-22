@@ -65,6 +65,7 @@ import { Route as AuthenticatedPurchasesExpensesNewRouteImport } from './routes/
 import { Route as AuthenticatedPurchasesOrdersIndexRouteImport } from './routes/_authenticated/purchases/orders.index'
 import { Route as AuthenticatedPurchasesOrdersNewRouteImport } from './routes/_authenticated/purchases/orders.new'
 import { Route as AuthenticatedPurchasesPaymentsIndexRouteImport } from './routes/_authenticated/purchases/payments.index'
+import { Route as AuthenticatedPurchasesPaymentsPaymentIdRouteImport } from './routes/_authenticated/purchases/payments.$paymentId'
 import { Route as AuthenticatedPurchasesPaymentsNewRouteImport } from './routes/_authenticated/purchases/payments.new'
 import { Route as AuthenticatedSalesCreditNotesIndexRouteImport } from './routes/_authenticated/sales/credit-notes.index'
 import { Route as AuthenticatedSalesCreditNotesCreditNoteIdRouteImport } from './routes/_authenticated/sales/credit-notes.$creditNoteId'
@@ -400,6 +401,12 @@ const AuthenticatedPurchasesPaymentsIndexRoute =
     path: '/payments/',
     getParentRoute: () => AuthenticatedPurchasesRouteRoute,
   } as any)
+const AuthenticatedPurchasesPaymentsPaymentIdRoute =
+  AuthenticatedPurchasesPaymentsPaymentIdRouteImport.update({
+    id: '/payments/$paymentId',
+    path: '/payments/$paymentId',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
 const AuthenticatedPurchasesPaymentsNewRoute =
   AuthenticatedPurchasesPaymentsNewRouteImport.update({
     id: '/payments/new',
@@ -536,6 +543,7 @@ export interface FileRoutesByFullPath {
   '/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRoute
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -604,6 +612,7 @@ export interface FileRoutesByTo {
   '/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRoute
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -677,6 +686,7 @@ export interface FileRoutesById {
   '/_authenticated/purchases/expenses/$expenseId': typeof AuthenticatedPurchasesExpensesExpenseIdRoute
   '/_authenticated/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/_authenticated/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
+  '/_authenticated/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
   '/_authenticated/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/_authenticated/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRoute
   '/_authenticated/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -750,6 +760,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/$expenseId'
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
+    | '/purchases/payments/$paymentId'
     | '/purchases/payments/new'
     | '/sales/credit-notes/$creditNoteId'
     | '/sales/credit-notes/new'
@@ -818,6 +829,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/$expenseId'
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
+    | '/purchases/payments/$paymentId'
     | '/purchases/payments/new'
     | '/sales/credit-notes/$creditNoteId'
     | '/sales/credit-notes/new'
@@ -890,6 +902,7 @@ export interface FileRouteTypes {
     | '/_authenticated/purchases/expenses/$expenseId'
     | '/_authenticated/purchases/expenses/new'
     | '/_authenticated/purchases/orders/new'
+    | '/_authenticated/purchases/payments/$paymentId'
     | '/_authenticated/purchases/payments/new'
     | '/_authenticated/sales/credit-notes/$creditNoteId'
     | '/_authenticated/sales/credit-notes/new'
@@ -1312,6 +1325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPurchasesPaymentsIndexRouteImport
       parentRoute: typeof AuthenticatedPurchasesRouteRoute
     }
+    '/_authenticated/purchases/payments/$paymentId': {
+      id: '/_authenticated/purchases/payments/$paymentId'
+      path: '/payments/$paymentId'
+      fullPath: '/purchases/payments/$paymentId'
+      preLoaderRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
     '/_authenticated/purchases/payments/new': {
       id: '/_authenticated/purchases/payments/new'
       path: '/payments/new'
@@ -1471,6 +1491,7 @@ interface AuthenticatedPurchasesRouteRouteChildren {
   AuthenticatedPurchasesExpensesExpenseIdRoute: typeof AuthenticatedPurchasesExpensesExpenseIdRoute
   AuthenticatedPurchasesExpensesNewRoute: typeof AuthenticatedPurchasesExpensesNewRoute
   AuthenticatedPurchasesOrdersNewRoute: typeof AuthenticatedPurchasesOrdersNewRoute
+  AuthenticatedPurchasesPaymentsPaymentIdRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
   AuthenticatedPurchasesPaymentsNewRoute: typeof AuthenticatedPurchasesPaymentsNewRoute
   AuthenticatedPurchasesBillsIndexRoute: typeof AuthenticatedPurchasesBillsIndexRoute
   AuthenticatedPurchasesCreditNotesIndexRoute: typeof AuthenticatedPurchasesCreditNotesIndexRoute
@@ -1501,6 +1522,8 @@ const AuthenticatedPurchasesRouteRouteChildren: AuthenticatedPurchasesRouteRoute
     AuthenticatedPurchasesExpensesNewRoute:
       AuthenticatedPurchasesExpensesNewRoute,
     AuthenticatedPurchasesOrdersNewRoute: AuthenticatedPurchasesOrdersNewRoute,
+    AuthenticatedPurchasesPaymentsPaymentIdRoute:
+      AuthenticatedPurchasesPaymentsPaymentIdRoute,
     AuthenticatedPurchasesPaymentsNewRoute:
       AuthenticatedPurchasesPaymentsNewRoute,
     AuthenticatedPurchasesBillsIndexRoute:

@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import { deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
+import { describeBillEdits, type BillEditSnapshot } from "@/lib/purchases/bill-history";
 import {
   computeBillLine,
   MAX_ATTACHMENT_BYTES,
@@ -25,16 +26,71 @@ async function recordBillAudit(
   billId: string | null,
   details: Record<string, unknown>,
 ) {
-  await (supabase as { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> }).rpc(
-    "record_audit_event",
-    {
-      _company_id: companyId,
-      _action: action,
-      _entity_type: "purchase_bill",
-      _entity_id: billId,
-      _details: details,
-    },
-  );
+  const client = supabase as Parameters<typeof assertCompanyPermission>[0];
+  let actorName = "";
+  try {
+    const { data: authData } = await client.auth.getUser();
+    const id = authData.user?.id;
+    if (id) {
+      const names = await lookupActorNames(client, [id]);
+      actorName = names.get(id) ?? authData.user?.email ?? "";
+    }
+  } catch {
+    actorName = "";
+  }
+  await (
+    supabase as { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> }
+  ).rpc("record_audit_event", {
+    _company_id: companyId,
+    _action: action,
+    _entity_type: "purchase_bill",
+    _entity_id: billId,
+    _details: actorName ? { ...details, actor_name: actorName } : details,
+  });
+}
+
+type AuditEventRow = {
+  id: string;
+  action: string;
+  details: Record<string, unknown> | null;
+  actor_user_id: string | null;
+  created_at: string;
+};
+
+type AuditDetails = Record<string, string | number | boolean | null | string[]>;
+
+function plainAuditDetails(
+  details: Record<string, unknown> | null | undefined,
+): AuditDetails {
+  const out: AuditDetails = {};
+  for (const [key, value] of Object.entries(details ?? {})) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      out[key] = value;
+    } else if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+async function lookupActorNames(
+  supabase: Parameters<typeof assertCompanyPermission>[0],
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const names = new Map<string, string>();
+  if (!unique.length) return names;
+  const { data } = await supabase.from("profiles").select("id, full_name, email").in("id", unique);
+  for (const profile of data ?? []) {
+    const name = profile.full_name.trim() || profile.email.trim();
+    if (name) names.set(profile.id, name);
+  }
+  return names;
 }
 
 function companyIdOf(input: { companyId: string }) {
@@ -943,16 +999,76 @@ export const saveBillDraft = createServerFn({ method: "POST" })
     if (data.billId) {
       const { data: existing, error: exErr } = await supabase
         .from("purchase_bills" as never)
-        .select("id, status" as never)
+        .select(
+          "id, status, contact_id, bill_date, due_date, supplier_invoice_number, memo, total_minor, tax_minor, currency_code" as never,
+        )
         .eq("id" as never, data.billId as never)
         .eq("company_id" as never, data.companyId as never)
         .maybeSingle();
       if (exErr) throw new Error(exErr.message);
       if (!existing) throw new Error("Bill not found");
-      const existingStatus = (existing as { status: string }).status;
-      if (existingStatus !== "draft" && existingStatus !== "awaiting_approval") {
+      const prior = existing as {
+        status: string;
+        contact_id: string;
+        bill_date: string;
+        due_date: string;
+        supplier_invoice_number: string | null;
+        memo: string | null;
+        total_minor: number;
+        tax_minor: number;
+        currency_code: string;
+      };
+      if (prior.status !== "draft" && prior.status !== "awaiting_approval") {
         throw new Error("Only draft or awaiting-approval bills can be edited");
       }
+      const { data: priorLines } = await supabase
+        .from("purchase_bill_lines" as never)
+        .select("description, quantity, unit_price_minor, net_minor" as never)
+        .eq("bill_id" as never, data.billId as never);
+      const contactIds = [...new Set([prior.contact_id, data.contactId])];
+      const { data: contactRows } = await supabase
+        .from("contacts" as never)
+        .select("id, name" as never)
+        .in("id" as never, contactIds as never);
+      const contactNames = new Map(
+        ((contactRows ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
+      );
+      const before: BillEditSnapshot = {
+        totalMinor: Number(prior.total_minor),
+        taxMinor: Number(prior.tax_minor),
+        billDate: prior.bill_date,
+        dueDate: prior.due_date,
+        supplierInvoiceNumber: prior.supplier_invoice_number,
+        memo: prior.memo,
+        supplierName: contactNames.get(prior.contact_id) ?? null,
+      };
+      const after: BillEditSnapshot = {
+        totalMinor: Number(totals.total_minor),
+        taxMinor: Number(totals.tax_minor),
+        billDate: data.billDate,
+        dueDate: data.dueDate,
+        supplierInvoiceNumber: data.supplierInvoiceNumber,
+        memo: data.memo,
+        supplierName: contactNames.get(data.contactId) ?? null,
+      };
+      const oldLineKey = ((priorLines ?? []) as Array<{
+        description: string;
+        quantity: number;
+        unit_price_minor: number;
+        net_minor: number;
+      }>)
+        .map((line) =>
+          [line.description, line.quantity, line.unit_price_minor, line.net_minor].join("|"),
+        )
+        .sort()
+        .join("\n");
+      const newLineKey = data.lines
+        .map((line) =>
+          [line.description, line.quantity, line.unitPriceMinor, Number(line.net_minor)].join("|"),
+        )
+        .sort()
+        .join("\n");
+      const changes = describeBillEdits(before, after, data.currencyCode, oldLineKey !== newLineKey);
       const { error: upErr } = await supabase
         .from("purchase_bills" as never)
         .update(headerFields as never)
@@ -975,7 +1091,9 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       if (lineErr) throw new Error(lineErr.message);
       await recordBillAudit(supabase, data.companyId, "bill.draft.update", data.billId, {
         total_minor: Number(totals.total_minor),
+        previous_total_minor: before.totalMinor,
         line_count: data.lines.length,
+        changes,
       });
       return { id: data.billId };
     }
@@ -1011,10 +1129,16 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       .from("purchase_bill_lines" as never)
       .insert(lineRows(billId) as never);
     if (lineErr) throw new Error(lineErr.message);
+    const { data: supplier } = await supabase
+      .from("contacts" as never)
+      .select("name" as never)
+      .eq("id" as never, data.contactId as never)
+      .maybeSingle();
     await recordBillAudit(supabase, data.companyId, "bill.draft.create", billId, {
       bill_number: billNumber,
       total_minor: Number(totals.total_minor),
       line_count: data.lines.length,
+      supplier_name: (supplier as { name?: string } | null)?.name ?? "",
     });
     return { id: billId };
   });
@@ -1142,6 +1266,9 @@ export const voidBill = createServerFn({ method: "POST" })
       } as never)
       .eq("id" as never, data.billId as never);
     if (upErr) throw new Error(upErr.message);
+    await recordBillAudit(supabase, data.companyId, "bill.void", data.billId, {
+      void_journal_id: voidJournalId,
+    });
     return { voidJournalId };
   });
 
@@ -1295,6 +1422,113 @@ export const listPayments = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+export const getSupplierPayment = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; paymentId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    paymentId: assertUuid(input.paymentId, "payment"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: payment, error } = await context.supabase
+      .from("supplier_payments" as never)
+      .select(
+        "id, payment_date, amount_minor, unallocated_minor, status, reference, memo, currency_code, contact_id, bank_account_id, posted_journal_id, created_at, created_by" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.paymentId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!payment) throw new Error("Payment not found");
+    const row = payment as {
+      id: string;
+      payment_date: string;
+      amount_minor: number;
+      unallocated_minor: number;
+      status: string;
+      reference: string | null;
+      memo: string | null;
+      currency_code: string;
+      contact_id: string;
+      bank_account_id: string;
+      posted_journal_id: string | null;
+      created_at: string;
+      created_by: string | null;
+    };
+    const [{ data: contact }, { data: account }, { data: allocs, error: allocErr }] =
+      await Promise.all([
+        context.supabase
+          .from("contacts" as never)
+          .select("id, name, email" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("id" as never, row.contact_id as never)
+          .maybeSingle(),
+        context.supabase
+          .from("accounts" as never)
+          .select("id, code, name" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("id" as never, row.bank_account_id as never)
+          .maybeSingle(),
+        context.supabase
+          .from("supplier_payment_allocations" as never)
+          .select("id, amount_minor, bill_id" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("payment_id" as never, data.paymentId as never),
+      ]);
+    if (allocErr) throw new Error(allocErr.message);
+    const allocationRows = (allocs ?? []) as Array<{
+      id: string;
+      amount_minor: number;
+      bill_id: string;
+    }>;
+    const billIds = allocationRows.map((allocation) => allocation.bill_id);
+    const { data: bills, error: billErr } = billIds.length
+      ? await context.supabase
+          .from("purchase_bills" as never)
+          .select(
+            "id, bill_number, supplier_invoice_number, bill_date, total_minor, status" as never,
+          )
+          .eq("company_id" as never, data.companyId as never)
+          .in("id" as never, billIds as never)
+      : { data: [] as unknown[], error: null };
+    if (billErr) throw new Error(billErr.message);
+    const billsById = new Map(
+      (
+        (bills ?? []) as Array<{
+          id: string;
+          bill_number: string | null;
+          supplier_invoice_number: string | null;
+          bill_date: string;
+          total_minor: number;
+          status: string;
+        }>
+      ).map((bill) => [bill.id, bill]),
+    );
+    const names = await lookupActorNames(context.supabase, [row.created_by]);
+    const supplier = contact as { name: string; email: string | null } | null;
+    const bank = account as { code: string; name: string } | null;
+    return {
+      ...row,
+      supplier_name: supplier?.name ?? null,
+      supplier_email: supplier?.email ?? null,
+      bank_label: bank ? `${bank.code} — ${bank.name}` : null,
+      recorded_by: row.created_by ? (names.get(row.created_by) ?? null) : null,
+      allocations: allocationRows.map((allocation) => {
+        const bill = billsById.get(allocation.bill_id);
+        return {
+          id: allocation.id,
+          amount_minor: allocation.amount_minor,
+          bill_id: allocation.bill_id,
+          bill_number: bill?.bill_number ?? null,
+          supplier_invoice_number: bill?.supplier_invoice_number ?? null,
+          bill_date: bill?.bill_date ?? null,
+          bill_total_minor: bill?.total_minor ?? null,
+          bill_status: bill?.status ?? null,
+        };
+      }),
+    };
+  });
+
 export const createAndPostPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -1421,6 +1655,7 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
         : {}),
     });
 
+    const fullyPaidBillIds: string[] = [];
     for (const alloc of data.allocations) {
       const { data: bill, error: billErr } = await supabase
         .from("purchase_bills" as never)
@@ -1442,6 +1677,7 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
         amount_paid_minor: amountPaid,
         amount_credited_minor: b.amount_credited_minor,
       });
+      if (nextStatus === "paid") fullyPaidBillIds.push(alloc.billId);
       await supabase
         .from("purchase_bills" as never)
         .update({
@@ -1461,11 +1697,21 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
       } as never)
       .eq("id" as never, paymentId as never);
 
+    const { data: supplier } = await supabase
+      .from("contacts" as never)
+      .select("name" as never)
+      .eq("id" as never, data.contactId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+
     await recordBillAudit(supabase, data.companyId, "supplier_payment.post", null, {
       payment_id: paymentId,
       journal_id: journalId,
       amount_minor: data.amountMinor,
+      payment_date: data.paymentDate,
+      supplier_name: (supplier as { name?: string } | null)?.name ?? "",
       bill_ids: data.allocations.map((a) => a.billId),
+      fully_paid_bill_ids: fullyPaidBillIds,
     });
 
     return { id: paymentId, journalId, unallocatedMinor: data.unallocatedMinor };
@@ -2848,7 +3094,20 @@ export const listBillNotes = createServerFn({ method: "GET" })
       .eq("bill_id" as never, data.billId as never)
       .order("created_at" as never, { ascending: false } as never);
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    const notes = (rows ?? []) as Array<{
+      id: string;
+      body: string;
+      created_by: string | null;
+      created_at: string;
+    }>;
+    const names = await lookupActorNames(
+      context.supabase,
+      notes.map((note) => note.created_by),
+    );
+    return notes.map((note) => ({
+      ...note,
+      created_by_name: note.created_by ? (names.get(note.created_by) ?? null) : null,
+    }));
   });
 
 export const addBillNote = createServerFn({ method: "POST" })
@@ -2877,6 +3136,7 @@ export const addBillNote = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await recordBillAudit(context.supabase, data.companyId, "bill.note.add", data.billId, {
       note_id: (row as { id: string }).id,
+      body: data.body,
     });
     return { id: (row as { id: string }).id };
   });
@@ -2887,18 +3147,143 @@ export const listBillActivity = createServerFn({ method: "GET" })
     companyId: assertUuid(input.companyId),
     billId: assertUuid(input.billId, "bill"),
   }))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<
+    Array<{
+      id: string;
+      action: string;
+      created_at: string;
+      actor_user_id: string | null;
+      actor_name: string | null;
+      details: AuditDetails;
+    }>
+  > => {
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const eventSelect = "id, action, details, actor_user_id, created_at" as never;
     const { data: rows, error } = await context.supabase
       .from("audit_events" as never)
-      .select("id, action, details, actor_user_id, created_at" as never)
+      .select(eventSelect)
       .eq("company_id" as never, data.companyId as never)
       .eq("entity_type" as never, "purchase_bill" as never)
       .eq("entity_id" as never, data.billId as never)
       .order("created_at" as never, { ascending: false } as never)
       .limit(100);
     if (error) throw new Error(error.message);
-    return rows ?? [];
+
+    // Payments are stored once, with the bill ids in details, so they still belong in this bill's history.
+    const { data: paymentRows, error: paymentError } = await context.supabase
+      .from("audit_events" as never)
+      .select(eventSelect)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("entity_type" as never, "purchase_bill" as never)
+      .in("action" as never, ["supplier_payment.post", "supplier_payment.reverse"] as never)
+      .contains("details" as never, { bill_ids: [data.billId] } as never)
+      .order("created_at" as never, { ascending: false } as never)
+      .limit(50);
+    const linkedPayments = paymentError ? [] : ((paymentRows ?? []) as AuditEventRow[]);
+
+    const { data: allocations, error: allocationError } = await context.supabase
+      .from("supplier_payment_allocations" as never)
+      .select(
+        "payment_id, amount_minor, supplier_payments(id, payment_date, created_at, created_by, status, reference)" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("bill_id" as never, data.billId as never);
+    if (allocationError) throw new Error(allocationError.message);
+    const allocationRows = (allocations ?? []) as Array<{
+      payment_id: string;
+      amount_minor: number;
+      supplier_payments:
+        | {
+            payment_date: string;
+            created_at: string;
+            created_by: string | null;
+            status: string;
+            reference: string | null;
+          }
+        | Array<{
+            payment_date: string;
+            created_at: string;
+            created_by: string | null;
+            status: string;
+            reference: string | null;
+          }>
+        | null;
+    }>;
+    const allocated = new Map(allocationRows.map((row) => [row.payment_id, row.amount_minor]));
+    const paymentDates = new Map<string, string>();
+    for (const allocation of allocationRows) {
+      const payment = Array.isArray(allocation.supplier_payments)
+        ? allocation.supplier_payments[0]
+        : allocation.supplier_payments;
+      if (payment?.payment_date) paymentDates.set(allocation.payment_id, payment.payment_date);
+    }
+
+    const merged = new Map<string, AuditEventRow>();
+    for (const row of [...((rows ?? []) as AuditEventRow[]), ...linkedPayments]) {
+      merged.set(row.id, row);
+    }
+    const events = [...merged.values()].map((row) => {
+      const paymentId =
+        typeof row.details?.["payment_id"] === "string" ? row.details["payment_id"] : "";
+      const allocation = paymentId ? allocated.get(paymentId) : undefined;
+      const paymentDate = paymentId ? paymentDates.get(paymentId) : undefined;
+      const fullyPaidIds = Array.isArray(row.details?.["fully_paid_bill_ids"])
+        ? row.details["fully_paid_bill_ids"].filter((id): id is string => typeof id === "string")
+        : null;
+      return {
+        id: row.id,
+        action: row.action,
+        created_at: row.created_at,
+        actor_user_id: row.actor_user_id,
+        details: plainAuditDetails({
+          ...(row.details ?? {}),
+          ...(allocation == null ? {} : { allocation_minor: allocation }),
+          ...(paymentDate ? { payment_date: paymentDate } : {}),
+          ...(fullyPaidIds ? { fully_paid: fullyPaidIds.includes(data.billId) } : {}),
+        }),
+      };
+    });
+    const seenPaymentIds = new Set(
+      events
+        .map((event) =>
+          typeof event.details["payment_id"] === "string" ? event.details["payment_id"] : "",
+        )
+        .filter(Boolean),
+    );
+    for (const allocation of allocationRows) {
+      if (seenPaymentIds.has(allocation.payment_id)) continue;
+      const payment = Array.isArray(allocation.supplier_payments)
+        ? allocation.supplier_payments[0]
+        : allocation.supplier_payments;
+      if (!payment || payment.status === "draft") continue;
+      seenPaymentIds.add(allocation.payment_id);
+      events.push({
+        id: `payment:${allocation.payment_id}`,
+        action: payment.status === "void" ? "supplier_payment.reverse" : "supplier_payment.post",
+        created_at: payment.created_at || `${payment.payment_date}T00:00:00.000Z`,
+        actor_user_id: payment.created_by,
+        details: {
+          payment_id: allocation.payment_id,
+          allocation_minor: allocation.amount_minor,
+          ...(payment.payment_date ? { payment_date: payment.payment_date } : {}),
+          ...(payment.reference ? { reference: payment.reference } : {}),
+        },
+      });
+    }
+    const names = await lookupActorNames(
+      context.supabase,
+      events.map((event) => event.actor_user_id),
+    );
+    return events
+      .map((event) => {
+        const storedName =
+          typeof event.details["actor_name"] === "string" ? event.details["actor_name"].trim() : "";
+        return {
+          ...event,
+          actor_name: (event.actor_user_id ? names.get(event.actor_user_id) : null) || storedName || null,
+        };
+      })
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
   });
 
 export const resolveFxRateForBill = createServerFn({ method: "GET" })

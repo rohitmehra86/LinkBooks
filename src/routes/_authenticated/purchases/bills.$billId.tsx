@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -29,6 +30,11 @@ import {
 } from "@/lib/purchases/purchases.functions";
 import { listProducts } from "@/lib/products/products.functions";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
+import {
+  formatHistoryTimestamp,
+  historyTimeZoneLabel,
+  presentBillHistory,
+} from "@/lib/purchases/bill-history";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
@@ -169,6 +175,7 @@ function BillDocumentWorkspace() {
   const baseCurrency = company?.base_currency ?? "GBP";
 
   const [supplierOpen, setSupplierOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [noteDraft, setNoteDraft] = useState("");
   const [approvalComment, setApprovalComment] = useState("");
   const [filesOpen, setFilesOpen] = useState(Boolean(search.files));
@@ -391,6 +398,7 @@ function BillDocumentWorkspace() {
     onSuccess: async () => {
       setNoteDraft("");
       await queryClient.invalidateQueries({ queryKey: ["bill-notes", companyId, billId] });
+      await queryClient.invalidateQueries({ queryKey: ["bill-activity", companyId, billId] });
       toast.success("Note added");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
@@ -441,6 +449,28 @@ function BillDocumentWorkspace() {
   }
 
   const currency = bill.currency_code || baseCurrency;
+  const historyRows = presentBillHistory(
+    (activityQ.data ?? []) as Array<{
+      id: string;
+      created_at: string;
+      actor_name?: string | null;
+      action: string;
+      details?: Record<string, unknown> | null;
+    }>,
+    (notesQ.data ?? []) as Array<{
+      id: string;
+      body: string;
+      created_at: string;
+      created_by_name?: string | null;
+    }>,
+    {
+      currency,
+      supplierName: bill.contacts?.name ?? null,
+      totalMinor: bill.total_minor,
+      creditedMinor: bill.amount_credited_minor,
+    },
+  );
+  const historyZone = historyTimeZoneLabel(company?.timezone || "UTC");
   const outstanding =
     bill.status === "draft" || bill.status === "awaiting_approval"
       ? 0
@@ -841,7 +871,6 @@ function BillDocumentWorkspace() {
               currency={currency}
               billStatus={bill.status}
               outstandingMinor={outstanding}
-              allocations={bill.payment_allocations ?? []}
             />
           </div>
 
@@ -887,59 +916,98 @@ function BillDocumentWorkspace() {
             )}
           </section>
 
-          <section className="rounded-lg border border-border bg-background p-4">
-            <h2 className="mb-3 text-sm font-semibold">Internal notes</h2>
-            <div className="mb-3 flex gap-2">
-              <Textarea
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                placeholder="Add an internal note…"
-                rows={2}
-              />
-              <Button
-                size="sm"
-                disabled={!noteDraft.trim() || noteMutation.isPending}
-                onClick={() => noteMutation.mutate()}
-              >
-                Add
-              </Button>
-            </div>
-            <ul className="space-y-2 text-sm">
-              {((notesQ.data ?? []) as Array<{ id: string; body: string; created_at: string }>).map(
-                (n) => (
-                  <li key={n.id} className="rounded-md bg-muted/40 px-3 py-2">
-                    <p>{n.body}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {new Date(n.created_at).toLocaleString()}
-                    </p>
-                  </li>
-                ),
-              )}
-            </ul>
-          </section>
-
-          <section className="rounded-lg border border-border bg-background p-4">
-            <h2 className="mb-3 text-sm font-semibold">Audit history</h2>
-            <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
-              {(
-                (activityQ.data ?? []) as Array<{
-                  id: string;
-                  action: string;
-                  created_at: string;
-                }>
-              ).map((ev) => (
-                <li key={ev.id} className="flex justify-between gap-2 border-b border-border/50 pb-2">
-                  <span className="font-mono text-xs">{ev.action}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {new Date(ev.created_at).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-              {!activityQ.isPending && !(activityQ.data as unknown[] | undefined)?.length ? (
-                <li className="text-muted-foreground">No audit events yet.</li>
-              ) : null}
-            </ul>
-          </section>
+          <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+            <section className="overflow-hidden rounded-lg border border-border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-left text-sm font-semibold"
+                  >
+                    <ChevronDown
+                      className={`size-4 text-muted-foreground transition-transform ${historyOpen ? "" : "-rotate-90"}`}
+                    />
+                    History and notes
+                  </button>
+                </CollapsibleTrigger>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!noteDraft.trim() || noteMutation.isPending}
+                  onClick={() => noteMutation.mutate()}
+                >
+                  Add note
+                </Button>
+              </div>
+              <CollapsibleContent>
+                <div className="border-b border-border bg-muted/20 px-4 py-3">
+                  <Textarea
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="Add an internal note…"
+                    rows={2}
+                    className="min-h-16 bg-background"
+                  />
+                </div>
+                {activityQ.isPending ? (
+                  <p className="px-4 py-6 text-sm text-muted-foreground">Loading history…</p>
+                ) : activityQ.isError ? (
+                  <p className="px-4 py-6 text-sm text-destructive">History could not be loaded.</p>
+                ) : historyRows.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-muted-foreground">No history yet.</p>
+                ) : (
+                  <div className="max-h-[32rem] overflow-auto">
+                    <Table className="min-w-[44rem]">
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-[13rem] text-xs font-medium tracking-wide text-muted-foreground">
+                            Date ({historyZone})
+                          </TableHead>
+                          <TableHead className="w-[11rem] text-xs font-medium tracking-wide text-muted-foreground">
+                            User
+                          </TableHead>
+                          <TableHead className="w-[9rem] text-xs font-medium tracking-wide text-muted-foreground">
+                            Action
+                          </TableHead>
+                          <TableHead className="text-xs font-medium tracking-wide text-muted-foreground">
+                            Detail
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {historyRows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="whitespace-nowrap align-top text-sm text-muted-foreground">
+                              {formatHistoryTimestamp(row.at, company?.timezone || "UTC")}
+                            </TableCell>
+                            <TableCell className="align-top text-sm font-medium">{row.user}</TableCell>
+                            <TableCell className="align-top text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                              {row.action}
+                            </TableCell>
+                            <TableCell className="align-top text-sm leading-relaxed">
+                              {row.paymentId ? (
+                                <Link
+                                  to="/purchases/payments/$paymentId"
+                                  params={{ paymentId: row.paymentId }}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary underline-offset-2 hover:underline"
+                                >
+                                  {row.detail || "Open payment"}
+                                </Link>
+                              ) : (
+                                row.detail || "—"
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </section>
+          </Collapsible>
         </div>
 
         <aside className="space-y-3">
