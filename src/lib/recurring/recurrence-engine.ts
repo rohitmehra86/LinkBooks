@@ -1,4 +1,4 @@
-import { RRule } from "rrule";
+import { RRule } from "@/lib/recurring/rrule-shim";
 import { formatUtcDate, parseUtcDate } from "@/lib/recurring/dates";
 import {
   legacyFrequencyToRrule,

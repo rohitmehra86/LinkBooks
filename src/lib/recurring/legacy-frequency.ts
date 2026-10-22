@@ -1,4 +1,4 @@
-import { RRule, type Options } from "rrule";
+import { RRule, type Options } from "@/lib/recurring/rrule-shim";
 
 export type LegacyRecurrenceFrequency = "weekly" | "monthly" | "quarterly" | "yearly";
 
