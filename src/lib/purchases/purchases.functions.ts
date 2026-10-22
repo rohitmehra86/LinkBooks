@@ -4,6 +4,7 @@ import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-compa
 import { assertUuid } from "@/lib/company-validation";
 import { deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
 import { describeBillEdits, type BillEditSnapshot } from "@/lib/purchases/bill-history";
+import { type RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 import {
   computeBillLine,
   MAX_ATTACHMENT_BYTES,
@@ -26,6 +27,7 @@ async function recordBillAudit(
   action: string,
   billId: string | null,
   details: Record<string, unknown>,
+  entityType = "purchase_bill",
 ) {
   const client = supabase as Parameters<typeof assertCompanyPermission>[0];
   let actorName = "";
@@ -44,7 +46,7 @@ async function recordBillAudit(
   ).rpc("record_audit_event", {
     _company_id: companyId,
     _action: action,
-    _entity_type: "purchase_bill",
+    _entity_type: entityType,
     _entity_id: billId,
     _details: actorName ? { ...details, actor_name: actorName } : details,
   });
@@ -1512,7 +1514,7 @@ export const getSupplierPayment = createServerFn({ method: "GET" })
       ...row,
       supplier_name: supplier?.name ?? null,
       supplier_email: supplier?.email ?? null,
-      bank_label: bank ? `${bank.code} — ${bank.name}` : null,
+      bank_label: bank ? `${bank.code} â€” ${bank.name}` : null,
       recorded_by: row.created_by ? (names.get(row.created_by) ?? null) : null,
       allocations: allocationRows.map((allocation) => {
         const bill = billsById.get(allocation.bill_id);
@@ -1608,7 +1610,7 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
         b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
       if (outstanding <= 0) throw new Error("Bill has no outstanding balance");
       if (alloc.amountMinor > outstanding) {
-        throw new Error("Allocation exceeds bill outstanding balance — overpayment blocked");
+        throw new Error("Allocation exceeds bill outstanding balance â€” overpayment blocked");
       }
     }
 
@@ -1810,7 +1812,7 @@ export const reverseSupplierPayment = createServerFn({ method: "POST" })
       `by ${userId.slice(0, 8)}`,
     ]
       .filter(Boolean)
-      .join(" · ")
+      .join(" Â· ")
       .slice(0, 500);
 
     await supabase
@@ -2300,7 +2302,7 @@ export const convertPurchaseOrderToBill = createServerFn({ method: "POST" })
         updated_at: new Date().toISOString(),
       } as never)
       .eq("id" as never, data.orderId as never);
-    // No ledger posting — draft bill only
+    // No ledger posting â€” draft bill only
     return { billId };
   });
 
@@ -2323,6 +2325,72 @@ export const listRecurringBills = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+export const getRecurringBill = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; recurringId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    recurringId: assertUuid(input.recurringId, "recurring"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
+    const { data: row, error } = await context.supabase
+      .from("recurring_bills" as never)
+      .select(
+        "id, name, frequency, next_due_date, is_active, auto_authorise, contact_id, currency_code, template" as never,
+      )
+      .eq("id" as never, data.recurringId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Recurring bill not found");
+    return row as {
+      id: string;
+      name: string;
+      frequency: "weekly" | "monthly" | "quarterly" | "yearly";
+      next_due_date: string;
+      is_active: boolean;
+      auto_authorise: boolean;
+      contact_id: string;
+      currency_code: string;
+      template: {
+        lines?: BillLineIn[];
+        document?: RecurringTemplateDocument | null;
+        notify_on_generation?: boolean;
+      };
+    };
+  });
+
+function recurringDocument(input: RecurringTemplateDocument | undefined, taxCalculation: TaxCalculationMode): RecurringTemplateDocument {
+  const address = input?.supplierAddress ?? {};
+  const notes = (input?.notes ?? [])
+    .map((note) => String(note ?? "").trim())
+    .filter((note) => note.length > 0 && note.length <= 4000)
+    .slice(0, 50);
+  const tax = input?.taxCalculation === "inclusive" || input?.taxCalculation === "none" || input?.taxCalculation === "exclusive"
+    ? input.taxCalculation
+    : taxCalculation;
+  return {
+    billDate: input?.billDate && /^\d{4}-\d{2}-\d{2}$/.test(input.billDate) ? input.billDate : undefined,
+    dueDate: input?.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) ? input.dueDate : undefined,
+    supplierInvoiceNumber: (input?.supplierInvoiceNumber ?? "").trim().slice(0, 80) || null,
+    memo: (input?.memo ?? "").trim().slice(0, 2000) || null,
+    taxCalculation: tax,
+    paymentTermId: input?.paymentTermId || null,
+    paymentTermsDays: input?.paymentTermsDays == null ? null : Math.floor(Number(input.paymentTermsDays)),
+    dueDateManualOverride: Boolean(input?.dueDateManualOverride),
+    fxRateToBase: input?.fxRateToBase == null ? null : Number(input.fxRateToBase),
+    supplierAddress: {
+      line1: (address.line1 ?? "").slice(0, 200),
+      line2: (address.line2 ?? "").slice(0, 200),
+      city: (address.city ?? "").slice(0, 120),
+      region: (address.region ?? "").slice(0, 120),
+      postal: (address.postal ?? "").slice(0, 40),
+      country: (address.country ?? "").slice(0, 80),
+    },
+    notes,
+  };
+}
+
 export const saveRecurringBill = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -2334,8 +2402,13 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       nextDueDate: string;
       currencyCode: string;
       autoAuthorise?: boolean;
+      activate?: boolean;
+      notifyOnGeneration?: boolean;
+      recurringId?: string | null;
       templateLines: BillLineIn[];
       scheduleOptions?: Record<string, unknown>;
+      document?: RecurringTemplateDocument;
+      taxCalculation?: TaxCalculationMode;
     }) => {
       const name = (input.name ?? "").trim();
       if (!name) throw new Error("Name is required");
@@ -2347,15 +2420,24 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       ) {
         throw new Error("End date must be on or after the first bill date");
       }
+      const frequency = input.frequency;
+      if (!["weekly", "monthly", "quarterly", "yearly"].includes(frequency)) {
+        throw new Error("Frequency is required");
+      }
+      const taxCalculation = input.document?.taxCalculation || input.taxCalculation || "exclusive";
       return {
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
         name,
-        frequency: input.frequency,
+        frequency,
         nextDueDate: input.nextDueDate,
         currencyCode: input.currencyCode.toUpperCase(),
         autoAuthorise: Boolean(input.autoAuthorise),
-        templateLines: validateBillLines(input.templateLines),
+        activate: input.activate == null ? true : Boolean(input.activate),
+        notifyOnGeneration: Boolean(input.notifyOnGeneration),
+        recurringId: input.recurringId ? assertUuid(input.recurringId, "recurring") : null,
+        templateLines: validateBillLines(input.templateLines, taxCalculation),
+        document: recurringDocument(input.document, taxCalculation),
         scheduleOptions,
       };
     },
@@ -2367,30 +2449,63 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       await assertCompanyPermission(supabase, data.companyId, "recurring.auto_authorise");
     }
     const totals = sumLines(data.templateLines);
+    const template = {
+      lines: data.templateLines,
+      document: data.document,
+      notify_on_generation: data.notifyOnGeneration,
+      scheduleOptions: data.scheduleOptions,
+      subtotal_minor: Number(totals.subtotal_minor),
+      tax_minor: Number(totals.tax_minor),
+      total_minor: Number(totals.total_minor),
+    };
+    const rowFields = {
+      contact_id: data.contactId,
+      name: data.name,
+      frequency: data.frequency,
+      next_due_date: data.nextDueDate,
+      currency_code: data.currencyCode,
+      auto_authorise: data.autoAuthorise,
+      is_active: data.activate,
+      template,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.recurringId) {
+      const { data: existing, error: exErr } = await supabase
+        .from("recurring_bills" as never)
+        .select("id, is_active" as never)
+        .eq("id" as never, data.recurringId as never)
+        .eq("company_id" as never, data.companyId as never)
+        .maybeSingle();
+      if (exErr) throw new Error(exErr.message);
+      if (!existing) throw new Error("Recurring bill not found");
+      const wasActive = Boolean((existing as { is_active: boolean }).is_active);
+      const { error } = await supabase
+        .from("recurring_bills" as never)
+        .update(rowFields as never)
+        .eq("id" as never, data.recurringId as never)
+        .eq("company_id" as never, data.companyId as never);
+      if (error) throw new Error(error.message);
+      await recordBillAudit(supabase, data.companyId, "recurring_bill.update", data.recurringId, {
+        name: data.name,
+        total_minor: Number(totals.total_minor),
+      }, "recurring_bill");
+      if (data.activate && !wasActive) {
+        await recordBillAudit(supabase, data.companyId, "recurring_bill.activate", data.recurringId, {
+          name: data.name,
+        }, "recurring_bill");
+      }
+      if (!data.activate && wasActive) {
+        await recordBillAudit(supabase, data.companyId, "recurring_bill.pause", data.recurringId, {
+          name: data.name,
+        }, "recurring_bill");
+      }
+      return { id: data.recurringId, notes: data.document.notes ?? [] };
+    }
     const { data: row, error } = await supabase
       .from("recurring_bills" as never)
       .insert({
+        ...rowFields,
         company_id: data.companyId,
-        contact_id: data.contactId,
-        name: data.name,
-        frequency: data.frequency,
-        next_due_date: data.nextDueDate,
-        currency_code: data.currencyCode,
-        auto_authorise: data.autoAuthorise,
-        template: {
-          lines: data.templateLines.map((l) => ({
-            description: l.description,
-            accountId: l.accountId,
-            quantity: l.quantity,
-            unitPriceMinor: l.unitPriceMinor,
-            discountMinor: l.discountMinor,
-            taxRateBps: l.taxRateBps,
-          })),
-          subtotal_minor: Number(totals.subtotal_minor),
-          tax_minor: Number(totals.tax_minor),
-          total_minor: Number(totals.total_minor),
-          scheduleOptions: data.scheduleOptions,
-        },
         created_by: userId,
       } as never)
       .select("id")
@@ -2402,7 +2517,16 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
     );
     await ensureV2ForLegacyRecurringBill(supabase, id);
     await patchV2ScheduleFromRecurringBill(supabase, id);
-    return { id };
+    await recordBillAudit(supabase, data.companyId, "recurring_bill.create", id, {
+      name: data.name,
+      total_minor: Number(totals.total_minor),
+    }, "recurring_bill");
+    if (data.activate) {
+      await recordBillAudit(supabase, data.companyId, "recurring_bill.activate", id, {
+        name: data.name,
+      }, "recurring_bill");
+    }
+    return { id, notes: data.document.notes ?? [] };
   });
 
 export const generateRecurringBill = createServerFn({ method: "POST" })
@@ -2572,7 +2696,43 @@ export const setRecurringBillActive = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Recurring bill not found");
+    await recordBillAudit(
+      context.supabase,
+      data.companyId,
+      data.isActive ? "recurring_bill.resume" : "recurring_bill.pause",
+      data.recurringId,
+      { is_active: data.isActive },
+      "recurring_bill",
+    );
     return row as { id: string; is_active: boolean };
+  });
+
+export const deleteRecurringBill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; recurringId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    recurringId: assertUuid(input.recurringId, "recurring"),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.draft");
+    const { data: existing, error: exErr } = await context.supabase
+      .from("recurring_bills" as never)
+      .select("id, name" as never)
+      .eq("id" as never, data.recurringId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (exErr) throw new Error(exErr.message);
+    if (!existing) throw new Error("Recurring bill not found");
+    await recordBillAudit(context.supabase, data.companyId, "recurring_bill.delete", data.recurringId, {
+      name: (existing as { name: string }).name,
+    }, "recurring_bill");
+    const { error } = await context.supabase
+      .from("recurring_bills" as never)
+      .delete()
+      .eq("id" as never, data.recurringId as never)
+      .eq("company_id" as never, data.companyId as never);
+    if (error) throw new Error(error.message);
+    return { id: data.recurringId };
   });
 
 export const rejectEmployeeClaim = createServerFn({ method: "POST" })
@@ -2837,9 +2997,10 @@ export const createPaymentTerm = createServerFn({ method: "POST" })
 
 export const listBillAttachments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; billId: string }) => ({
+  .inputValidator((input: { companyId: string; billId: string; entityType?: string }) => ({
     companyId: assertUuid(input.companyId),
-    billId: assertUuid(input.billId, "bill"),
+    billId: assertUuid(input.billId, "document"),
+    entityType: input.entityType === "recurring_bill" ? "recurring_bill" : "purchase_bill",
   }))
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
@@ -2847,7 +3008,7 @@ export const listBillAttachments = createServerFn({ method: "GET" })
       .from("document_attachments" as never)
       .select("id, file_name, content_type, size_bytes, created_at, uploaded_by, storage_path" as never)
       .eq("company_id" as never, data.companyId as never)
-      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_type" as never, data.entityType as never)
       .eq("entity_id" as never, data.billId as never)
       .order("created_at" as never, { ascending: false } as never);
     if (error) throw new Error(error.message);
@@ -2880,6 +3041,7 @@ export const uploadBillAttachment = createServerFn({ method: "POST" })
       contentType?: string;
       contentBase64: string;
       sizeBytes: number;
+      entityType?: string;
     }) => {
       const fileName = (input.fileName ?? "").trim().slice(0, 255);
       const sizeBytes = Math.floor(Number(input.sizeBytes) || 0);
@@ -2896,30 +3058,32 @@ export const uploadBillAttachment = createServerFn({ method: "POST" })
       if (approxBytes > MAX_ATTACHMENT_BYTES) throw new Error("Max file size: 20 MB");
       return {
         companyId: assertUuid(input.companyId),
-        billId: assertUuid(input.billId, "bill"),
+        billId: assertUuid(input.billId, "document"),
         fileName,
         contentType: (input.contentType ?? "").trim().slice(0, 120) || null,
         contentBase64,
         sizeBytes,
+        entityType: input.entityType === "recurring_bill" ? "recurring_bill" : "purchase_bill",
       };
     },
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    const ownerTable = data.entityType === "recurring_bill" ? "recurring_bills" : "purchase_bills";
     const { data: bill } = await supabase
-      .from("purchase_bills" as never)
+      .from(ownerTable as never)
       .select("id" as never)
       .eq("id" as never, data.billId as never)
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
-    if (!bill) throw new Error("Bill not found");
+    if (!bill) throw new Error(data.entityType === "recurring_bill" ? "Recurring bill not found" : "Bill not found");
 
     const { data: row, error } = await supabase
       .from("document_attachments" as never)
       .insert({
         company_id: data.companyId,
-        entity_type: "purchase_bill",
+        entity_type: data.entityType,
         entity_id: data.billId,
         file_name: data.fileName,
         storage_path: `inline:${data.billId}`,
@@ -2936,11 +3100,18 @@ export const uploadBillAttachment = createServerFn({ method: "POST" })
       .from("document_attachments" as never)
       .update({ storage_path: `inline:${id}` } as never)
       .eq("id" as never, id as never);
-    await recordBillAudit(supabase, data.companyId, "bill.attachment.upload", data.billId, {
-      attachment_id: id,
-      file_name: data.fileName,
-      size_bytes: data.sizeBytes,
-    });
+    await recordBillAudit(
+      supabase,
+      data.companyId,
+      data.entityType === "recurring_bill" ? "recurring_bill.attachment.upload" : "bill.attachment.upload",
+      data.billId,
+      {
+        attachment_id: id,
+        file_name: data.fileName,
+        size_bytes: data.sizeBytes,
+      },
+      data.entityType,
+    );
     return { id };
   });
 
@@ -2967,7 +3138,9 @@ export const downloadBillAttachment = createServerFn({ method: "GET" })
       content_base64: string | null;
       entity_type: string;
     };
-    if (r.entity_type !== "purchase_bill") throw new Error("Attachment not found");
+    if (r.entity_type !== "purchase_bill" && r.entity_type !== "recurring_bill") {
+      throw new Error("Attachment not found");
+    }
     if (!r.content_base64) throw new Error("Attachment content unavailable");
     return {
       fileName: r.file_name,
@@ -2993,17 +3166,26 @@ export const deleteBillAttachment = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!row) throw new Error("Attachment not found");
     const r = row as { entity_id: string; file_name: string; entity_type: string };
-    if (r.entity_type !== "purchase_bill") throw new Error("Attachment not found");
+    if (r.entity_type !== "purchase_bill" && r.entity_type !== "recurring_bill") {
+      throw new Error("Attachment not found");
+    }
     const { error } = await context.supabase
       .from("document_attachments" as never)
       .delete()
       .eq("id" as never, data.attachmentId as never)
       .eq("company_id" as never, data.companyId as never);
     if (error) throw new Error(error.message);
-    await recordBillAudit(context.supabase, data.companyId, "bill.attachment.delete", r.entity_id, {
-      attachment_id: data.attachmentId,
-      file_name: r.file_name,
-    });
+    await recordBillAudit(
+      context.supabase,
+      data.companyId,
+      r.entity_type === "recurring_bill" ? "recurring_bill.attachment.delete" : "bill.attachment.delete",
+      r.entity_id,
+      {
+        attachment_id: data.attachmentId,
+        file_name: r.file_name,
+      },
+      r.entity_type,
+    );
     return { ok: true };
   });
 
@@ -3073,9 +3255,10 @@ export const addBillNote = createServerFn({ method: "POST" })
 
 export const listBillActivity = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; billId: string }) => ({
+  .inputValidator((input: { companyId: string; billId: string; entityType?: string }) => ({
     companyId: assertUuid(input.companyId),
-    billId: assertUuid(input.billId, "bill"),
+    billId: assertUuid(input.billId, "document"),
+    entityType: input.entityType === "recurring_bill" ? "recurring_bill" : "purchase_bill",
   }))
   .handler(async ({ data, context }): Promise<
     Array<{
@@ -3093,14 +3276,15 @@ export const listBillActivity = createServerFn({ method: "GET" })
       .from("audit_events" as never)
       .select(eventSelect)
       .eq("company_id" as never, data.companyId as never)
-      .eq("entity_type" as never, "purchase_bill" as never)
+      .eq("entity_type" as never, data.entityType as never)
       .eq("entity_id" as never, data.billId as never)
       .order("created_at" as never, { ascending: false } as never)
       .limit(100);
     if (error) throw new Error(error.message);
 
     // Payments are stored once, with the bill ids in details, so they still belong in this bill's history.
-    const { data: paymentRows, error: paymentError } = await context.supabase
+    const paymentQuery = data.entityType === "purchase_bill"
+      ? await context.supabase
       .from("audit_events" as never)
       .select(eventSelect)
       .eq("company_id" as never, data.companyId as never)
@@ -3108,16 +3292,23 @@ export const listBillActivity = createServerFn({ method: "GET" })
       .in("action" as never, ["supplier_payment.post", "supplier_payment.reverse"] as never)
       .contains("details" as never, { bill_ids: [data.billId] } as never)
       .order("created_at" as never, { ascending: false } as never)
-      .limit(50);
+      .limit(50)
+      : { data: null, error: null };
+    const paymentRows = paymentQuery.data;
+    const paymentError = paymentQuery.error;
     const linkedPayments = paymentError ? [] : ((paymentRows ?? []) as AuditEventRow[]);
 
-    const { data: allocations, error: allocationError } = await context.supabase
+    const allocationQuery = data.entityType === "purchase_bill"
+      ? await context.supabase
       .from("supplier_payment_allocations" as never)
       .select(
         "payment_id, amount_minor, supplier_payments(id, payment_date, created_at, created_by, status, reference)" as never,
       )
       .eq("company_id" as never, data.companyId as never)
-      .eq("bill_id" as never, data.billId as never);
+      .eq("bill_id" as never, data.billId as never)
+      : { data: null, error: null };
+    const allocations = allocationQuery.data;
+    const allocationError = allocationQuery.error;
     if (allocationError) throw new Error(allocationError.message);
     const allocationRows = (allocations ?? []) as Array<{
       payment_id: string;

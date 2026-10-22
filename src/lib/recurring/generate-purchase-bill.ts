@@ -6,6 +6,7 @@ import { sumLines } from "@/lib/purchases/line-math";
 import type { LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
 import { assertCompanyPermission } from "@/lib/assert-company-access";
 import { addCalendarDays, parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
+import { generatedDraftHeader, type RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 
 export type BillLineIn = {
   description: string;
@@ -51,6 +52,7 @@ export async function generatePurchaseBillFromRecurring(
     template: {
       lines: BillLineIn[];
       scheduleOptions?: unknown;
+      document?: RecurringTemplateDocument | null;
     };
   };
 
@@ -115,23 +117,29 @@ export async function generatePurchaseBillFromRecurring(
     const lines = deps.validateBillLines(r.template.lines);
     const totals = sumLines(lines);
     const scheduleOpts = parseScheduleOptions(r.template.scheduleOptions ?? {});
-    const dueDate = addCalendarDays(scheduledDate, scheduleOpts.dueDaysAfterBillDate);
-    const memo =
-      scheduleOpts.memo?.trim() ||
-      "Generated from recurring bill";
+    const doc = r.template.document ?? null;
+    const header = generatedDraftHeader({
+      contactId: r.contact_id,
+      currencyCode: r.currency_code,
+      nextDueDate: scheduledDate,
+      document: doc,
+    });
+    const dueDate = doc?.dueDateManualOverride && doc.dueDate
+      ? doc.dueDate
+      : addCalendarDays(scheduledDate, scheduleOpts.dueDaysAfterBillDate || 0);
+    const memo = doc?.memo?.trim() || scheduleOpts.memo?.trim() || "Generated from recurring bill";
     const { data: bill, error: bErr } = await supabase
       .from("purchase_bills" as never)
       .insert({
         company_id: companyId,
-        contact_id: r.contact_id,
+        ...header,
         bill_date: scheduledDate,
         due_date: dueDate,
-        currency_code: r.currency_code,
         status: "draft",
+        memo,
         subtotal_minor: Number(totals.subtotal_minor),
         tax_minor: Number(totals.tax_minor),
         total_minor: Number(totals.total_minor),
-        memo,
         created_by: userId,
       } as never)
       .select("id")
@@ -152,8 +160,26 @@ export async function generatePurchaseBillFromRecurring(
         tax_rate_bps: l.taxRateBps,
         net_minor: Number(l.net_minor),
         tax_minor: Number(l.tax_minor),
+        product_id: "productId" in l ? (l as { productId?: string | null }).productId ?? null : null,
+        tax_code_id: "taxCodeId" in l ? (l as { taxCodeId?: string | null }).taxCodeId ?? null : null,
+        class_option_id: "classOptionId" in l ? (l as { classOptionId?: string | null }).classOptionId ?? null : null,
+        location_option_id: "locationOptionId" in l ? (l as { locationOptionId?: string | null }).locationOptionId ?? null : null,
+        project_option_id: "projectOptionId" in l ? (l as { projectOptionId?: string | null }).projectOptionId ?? null : null,
+        customer_contact_id: "customerContactId" in l ? (l as { customerContactId?: string | null }).customerContactId ?? null : null,
+        is_billable: "isBillable" in l ? Boolean((l as { isBillable?: boolean }).isBillable) : false,
       })) as never,
     );
+    const notes = doc?.notes ?? [];
+    if (notes.length) {
+      await supabase.from("bill_internal_notes" as never).insert(
+        notes.map((body) => ({
+          company_id: companyId,
+          bill_id: billId,
+          body,
+          created_by: userId,
+        })) as never,
+      );
+    }
 
     const autoAuthorise = schedule.auto_authorise ?? r.auto_authorise;
     let authorised = false;

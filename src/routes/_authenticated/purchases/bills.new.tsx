@@ -46,6 +46,7 @@ import { listCustomers, upsertCustomer } from "@/lib/sales/sales.functions";
 import { toMinorUnits, fromMinorUnits } from "@/lib/accounting/money";
 import { convertMinorToBase } from "@/lib/accounting/fx";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import type { RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 import {
   calculateDueDate,
   CANCEL_UNSAVED_MESSAGE,
@@ -114,7 +115,44 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/new")({
   component: NewBill,
 });
 
-function NewBill() {
+export type RecurringBillSeed = {
+  id: string;
+  name: string;
+  frequency: "weekly" | "monthly" | "quarterly" | "yearly";
+  next_due_date: string;
+  is_active: boolean;
+  auto_authorise: boolean;
+  contact_id: string;
+  currency_code: string;
+  template: {
+    lines?: Array<{
+      description: string;
+      accountId: string;
+      quantity: number;
+      unitPriceMinor: number;
+      discountMinor?: number;
+      taxRateBps?: number;
+      productId?: string | null;
+      taxCodeId?: string | null;
+      classOptionId?: string | null;
+      locationOptionId?: string | null;
+      projectOptionId?: string | null;
+      customerContactId?: string | null;
+      isBillable?: boolean;
+    }>;
+    document?: RecurringTemplateDocument | null;
+    notify_on_generation?: boolean;
+  };
+};
+
+export function NewBill({
+  mode = "bill",
+  seed = null,
+}: {
+  mode?: "bill" | "template";
+  seed?: RecurringBillSeed | null;
+} = {}) {
+  const isTemplate = mode === "template";
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -214,6 +252,10 @@ function NewBill() {
   });
 
   const [billId, setBillId] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [templateNotes, setTemplateNotes] = useState<string[]>([]);
+  const [scheduleActive, setScheduleActive] = useState(false);
+  const documentId = isTemplate ? templateId : billId;
   const [contactId, setContactId] = useState("");
   const [billDate, setBillDate] = useState(today);
   const [dueDate, setDueDate] = useState(today);
@@ -235,6 +277,61 @@ function NewBill() {
     country: "",
   });
   const [lines, setLines] = useState<PurchaseLineFormState[]>([emptyPurchaseLine()]);
+
+  useEffect(() => {
+    if (!isTemplate || !seed) return;
+    const doc = seed.template.document ?? {};
+    const address = doc.supplierAddress ?? {};
+    setTemplateId(seed.id);
+    setScheduleActive(seed.is_active);
+    setTemplateNotes(doc.notes ?? []);
+    setRecurring({
+      name: seed.name,
+      frequency: seed.frequency,
+      nextDueDate: seed.next_due_date,
+      autoAuthorise: seed.auto_authorise,
+      notify: Boolean(seed.template.notify_on_generation),
+    });
+    setContactId(seed.contact_id);
+    setCurrencyCode(seed.currency_code);
+    if (doc.billDate) setBillDate(doc.billDate);
+    if (doc.dueDate) setDueDate(doc.dueDate);
+    setDueDateManualOverride(Boolean(doc.dueDateManualOverride));
+    setPaymentTermId(doc.paymentTermId ?? "");
+    setSupplierInvoiceNumber(doc.supplierInvoiceNumber ?? "");
+    setMemo(doc.memo ?? "");
+    if (doc.taxCalculation) setTaxCalculation(doc.taxCalculation);
+    if (doc.fxRateToBase != null) setFxRate(doc.fxRateToBase);
+    setAddr({
+      line1: address.line1 ?? "",
+      line2: address.line2 ?? "",
+      city: address.city ?? "",
+      region: address.region ?? "",
+      postal: address.postal ?? "",
+      country: address.country ?? "",
+    });
+    const seeded = seed.template.lines ?? [];
+    if (seeded.length) {
+      setLines(
+        seeded.map((l) => ({
+          ...emptyPurchaseLine(),
+          description: l.description,
+          accountId: l.accountId,
+          quantity: String(l.quantity),
+          unitPrice: fromMinorUnits(l.unitPriceMinor, seed.currency_code),
+          discount: fromMinorUnits(l.discountMinor ?? 0, seed.currency_code),
+          taxRateBps: String(l.taxRateBps ?? 0),
+          productId: l.productId ?? "",
+          taxCodeId: l.taxCodeId ?? "",
+          classOptionId: l.classOptionId ?? "",
+          locationOptionId: l.locationOptionId ?? "",
+          projectOptionId: l.projectOptionId ?? "",
+          customerContactId: l.customerContactId ?? "",
+          isBillable: Boolean(l.isBillable),
+        })),
+      );
+    }
+  }, [isTemplate, seed]);
   const [formError, setFormError] = useState<string | null>(null);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [baseline, setBaseline] = useState<BillFormSnapshot | null>(null);
@@ -303,27 +400,42 @@ function NewBill() {
   });
   const [recurring, setRecurring] = useState({
     name: "",
-    frequency: "monthly",
+    frequency: "monthly" as "weekly" | "monthly" | "quarterly" | "yearly",
     nextDueDate: today,
     autoAuthorise: false,
+    notify: false,
   });
 
   const savingRef = useRef(false);
 
   const attachmentsQ = useQuery({
-    queryKey: ["bill-attachments", companyId, billId],
-    enabled: Boolean(companyId && billId),
-    queryFn: () => doListAttachments({ data: { companyId: companyId!, billId: billId! } }),
+    queryKey: ["bill-attachments", companyId, documentId, isTemplate],
+    enabled: Boolean(companyId && documentId),
+    queryFn: () =>
+      doListAttachments({
+        data: {
+          companyId: companyId!,
+          billId: documentId!,
+          ...(isTemplate ? { entityType: "recurring_bill" as const } : {}),
+        },
+      }),
   });
   const notesQ = useQuery({
     queryKey: ["bill-notes", companyId, billId],
-    enabled: Boolean(companyId && billId),
+    enabled: Boolean(companyId && billId && !isTemplate),
     queryFn: () => doListNotes({ data: { companyId: companyId!, billId: billId! } }),
   });
   const activityQ = useQuery({
-    queryKey: ["bill-activity", companyId, billId],
-    enabled: Boolean(companyId && billId),
-    queryFn: () => doListActivity({ data: { companyId: companyId!, billId: billId! } }),
+    queryKey: ["bill-activity", companyId, documentId, isTemplate],
+    enabled: Boolean(companyId && documentId),
+    queryFn: () =>
+      doListActivity({
+        data: {
+          companyId: companyId!,
+          billId: documentId!,
+          ...(isTemplate ? { entityType: "recurring_bill" as const } : {}),
+        },
+      }),
   });
 
   const dupQ = useQuery({
@@ -686,6 +798,76 @@ function NewBill() {
     };
   };
 
+  const persistTemplate = async (activate: boolean): Promise<string> => {
+    const payload = buildSavePayload(activate);
+    const notes = [
+      ...templateNotes,
+      ...(internalNoteDraft.trim() ? [internalNoteDraft.trim()] : []),
+    ];
+    const saved = await doCreateRecurring({
+      data: {
+        companyId: companyId!,
+        recurringId: templateId,
+        contactId: payload.contactId,
+        name: recurring.name.trim() || "Recurring bill",
+        frequency: recurring.frequency,
+        nextDueDate: recurring.nextDueDate,
+        currencyCode: payload.currencyCode,
+        autoAuthorise: recurring.autoAuthorise,
+        notifyOnGeneration: recurring.notify,
+        activate,
+        taxCalculation: payload.taxCalculation,
+        scheduleOptions: {
+          mode: "scheduled",
+          generateDaysInAdvance: 0,
+          endDate: null,
+          maxOccurrences: null,
+          catchUpPolicy: "latest_only",
+          dueDaysAfterBillDate: payload.paymentTermsDays ?? 0,
+          memo: payload.memo || undefined,
+        },
+        templateLines: payload.lines,
+        document: {
+          billDate: payload.billDate,
+          dueDate: payload.dueDate,
+          supplierInvoiceNumber: payload.supplierInvoiceNumber || null,
+          memo: payload.memo || null,
+          taxCalculation: payload.taxCalculation,
+          paymentTermId: payload.paymentTermId,
+          paymentTermsDays: payload.paymentTermsDays,
+          dueDateManualOverride: payload.dueDateManualOverride,
+          fxRateToBase: payload.fxRateToBase,
+          supplierAddress: payload.supplierAddress,
+          notes,
+        },
+      },
+    });
+    setTemplateId(saved.id);
+    setScheduleActive(activate);
+    setTemplateNotes(saved.notes ?? notes);
+    setInternalNoteDraft("");
+    for (const file of pendingAttachments) {
+      await doUpload({
+        data: {
+          companyId: companyId!,
+          billId: saved.id,
+          entityType: "recurring_bill",
+          fileName: file.fileName,
+          contentType: file.contentType,
+          contentBase64: file.contentBase64,
+          sizeBytes: file.sizeBytes,
+        },
+      });
+    }
+    setPendingAttachments([]);
+    await queryClient.invalidateQueries({ queryKey: ["recurring", companyId] });
+    await queryClient.invalidateQueries({ queryKey: ["recurring-workspace", companyId] });
+    await queryClient.invalidateQueries({ queryKey: ["recurring-template", companyId] });
+    await queryClient.invalidateQueries({ queryKey: ["bill-attachments", companyId, saved.id] });
+    await queryClient.invalidateQueries({ queryKey: ["bill-activity", companyId, saved.id] });
+    return saved.id;
+  };
+
   const persistDraft = async (forAuthorise = false): Promise<string> => {
     const saved = await saveDraft({ data: buildSavePayload(forAuthorise) });
     const id = saved.id;
@@ -723,6 +905,10 @@ function NewBill() {
       savingRef.current = true;
       setFormError(null);
       try {
+        if (isTemplate) {
+          const id = await persistTemplate(mode === "authorise");
+          return { id, mode };
+        }
         const id = await persistDraft(mode === "authorise");
         if (mode === "authorise") {
           await authorise({ data: { companyId: companyId!, billId: id } });
@@ -733,6 +919,21 @@ function NewBill() {
       }
     },
     onSuccess: async (result) => {
+      if (isTemplate) {
+        toast.success(
+          result.mode === "authorise"
+            ? "Template activated. No bill was posted."
+            : result.mode === "add_another"
+              ? "Template saved — starting another. No bill was posted."
+              : "Recurring template saved. No bill was posted.",
+        );
+        if (result.mode === "add_another") {
+          resetForm();
+          return;
+        }
+        setBaseline(snapshot());
+        return;
+      }
       toast.success(
         result.mode === "authorise"
           ? "Bill authorised and posted"
@@ -756,6 +957,9 @@ function NewBill() {
 
   function resetForm() {
     setBillId(null);
+    setTemplateId(null);
+    setTemplateNotes([]);
+    setScheduleActive(false);
     setContactId("");
     setBillDate(today);
     setDueDateManualOverride(false);
@@ -777,7 +981,7 @@ function NewBill() {
 
   const handleCancel = () => {
     if (!isDirty) {
-      navigate({ to: "/purchases/bills" });
+      navigate({ to: isTemplate ? "/purchases/recurring" : "/purchases/bills" });
       return;
     }
     setCancelOpen(true);
@@ -786,6 +990,13 @@ function NewBill() {
   const saveAndExit = async () => {
     try {
       setFormError(null);
+      if (isTemplate) {
+        await persistTemplate(scheduleActive);
+        setBaseline(snapshot());
+        setCancelOpen(false);
+        toast.success("Recurring template saved. No bill was posted.");
+        return;
+      }
       const id = await persistDraft();
       setBaseline(snapshot());
       setCancelOpen(false);
@@ -818,12 +1029,13 @@ function NewBill() {
       let binary = "";
       for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
       const contentBase64 = btoa(binary);
-      if (billId) {
+      if (documentId) {
         try {
           await doUpload({
             data: {
               companyId: companyId!,
-              billId,
+              billId: documentId,
+              ...(isTemplate ? { entityType: "recurring_bill" as const } : {}),
               fileName: file.name,
               contentType: file.type || "application/octet-stream",
               contentBase64,
@@ -844,7 +1056,7 @@ function NewBill() {
         });
       }
     }
-    if (!billId) setPendingAttachments(next);
+    if (!documentId) setPendingAttachments(next);
   };
 
   const totalsPreview = (() => {
@@ -884,7 +1096,9 @@ function NewBill() {
       <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold tracking-tight">New bill</h1>
         <p className="text-xs text-muted-foreground">
-          Draft · Status: {billId ? "Saved draft" : "Unsaved"} · View:{" "}
+          {isTemplate
+            ? `Template · Status: ${templateId ? (scheduleActive ? "Active schedule" : "Saved template") : "Unsaved"} · Not posted · View: `
+            : `Draft · Status: ${billId ? "Saved draft" : "Unsaved"} · View: `}
           <Select
             value={viewMode}
             onValueChange={(v) =>
@@ -928,7 +1142,7 @@ function NewBill() {
         onClick={() => mutation.mutate("draft")}
       >
         {mutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : null}
-        Save draft
+        {isTemplate ? "Save template" : "Save draft"}
       </Button>
       <div className="flex">
         <Button
@@ -937,7 +1151,7 @@ function NewBill() {
           disabled={mutation.isPending}
           onClick={() => mutation.mutate("authorise")}
         >
-          Save &amp; authorise
+          {isTemplate ? "Save & activate" : "Save & authorise"}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -947,7 +1161,7 @@ function NewBill() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => mutation.mutate("authorise")}>
-              Save &amp; authorise (post)
+              {isTemplate ? "Save & activate" : "Save & authorise (post)"}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => mutation.mutate("add_another")}>
               Save &amp; add another
@@ -955,6 +1169,12 @@ function NewBill() {
             <DropdownMenuItem
               onClick={async () => {
                 try {
+                  if (isTemplate) {
+                    await persistTemplate(scheduleActive);
+                    setBaseline(snapshot());
+                    toast.success("Recurring template saved. No bill was posted.");
+                    return;
+                  }
                   const id = await persistDraft(false);
                   setBaseline(snapshot());
                   toast.success("Draft saved");
@@ -1070,6 +1290,75 @@ function NewBill() {
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{formError}</AlertDescription>
         </Alert>
+      ) : null}
+
+      {isTemplate ? (
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          <section className="space-y-3 rounded-md border border-border p-4">
+            <h2 className="text-sm font-semibold">Schedule</h2>
+            <div className="space-y-1.5">
+              <Label>Template name</Label>
+              <Input
+                value={recurring.name}
+                onChange={(e) => setRecurring((r) => ({ ...r, name: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Frequency</Label>
+                <Select
+                  value={recurring.frequency}
+                  onValueChange={(v) =>
+                    setRecurring((r) => ({ ...r, frequency: v as typeof r.frequency }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Next due</Label>
+                <Input
+                  type="date"
+                  value={recurring.nextDueDate}
+                  onChange={(e) => setRecurring((r) => ({ ...r, nextDueDate: e.target.value }))}
+                />
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3 rounded-md border border-border p-4">
+            <h2 className="text-sm font-semibold">Automation</h2>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={recurring.autoAuthorise}
+                onChange={(e) => setRecurring((r) => ({ ...r, autoAuthorise: e.target.checked }))}
+              />
+              Auto-authorise generated bills
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={recurring.notify}
+                onChange={(e) => setRecurring((r) => ({ ...r, notify: e.target.checked }))}
+              />
+              Record a notification flag when a bill is generated
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Save template stores this bill form as a schedule. It does not create a bill or an
+              Accounts Payable balance. Save &amp; activate turns the schedule on. A generated bill
+              is a normal draft unless auto-authorise is on, in which case it uses the same posting
+              path as Save &amp; authorise on a bill.
+            </p>
+          </section>
+        </div>
       ) : null}
 
       <div className="grid gap-3">
@@ -1428,7 +1717,15 @@ function NewBill() {
               onChange={(e) => setInternalNoteDraft(e.target.value)}
               rows={3}
             />
-            {(notesQ.data ?? []).length > 0 ? (
+            {isTemplate && templateNotes.length > 0 ? (
+              <ul className="space-y-2 text-sm">
+                {templateNotes.map((body, i) => (
+                  <li key={`${i}-${body.slice(0, 12)}`} className="rounded border border-border p-2">
+                    <p className="whitespace-pre-wrap">{body}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (notesQ.data ?? []).length > 0 ? (
               <ul className="space-y-2 text-sm">
                 {(notesQ.data as Array<{ id: string; body: string; created_at: string; created_by: string | null }>).map(
                   (n) => (
@@ -1443,12 +1740,12 @@ function NewBill() {
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                {billId ? "No notes yet." : "Notes are saved with the bill draft."}
+                {documentId ? "No notes yet." : isTemplate ? "Notes are saved with the template." : "Notes are saved with the bill draft."}
               </p>
             )}
           </TabsContent>
           <TabsContent value="activity">
-            {!billId ? (
+            {!documentId ? (
               <p className="text-sm text-muted-foreground">Activity appears after the first save.</p>
             ) : activityQ.isPending ? (
               <LoadingState />
@@ -1514,7 +1811,7 @@ function NewBill() {
             <AlertDialogCancel
               onClick={() => {
                 setCancelOpen(false);
-                navigate({ to: "/purchases/bills" });
+                navigate({ to: isTemplate ? "/purchases/recurring" : "/purchases/bills" });
               }}
             >
               Discard Changes
@@ -1829,7 +2126,9 @@ function NewBill() {
               <Label>Frequency</Label>
               <Select
                 value={recurring.frequency}
-                onValueChange={(v) => setRecurring((r) => ({ ...r, frequency: v }))}
+                onValueChange={(v) =>
+                  setRecurring((r) => ({ ...r, frequency: v as typeof r.frequency }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1878,6 +2177,8 @@ function NewBill() {
                       nextDueDate: recurring.nextDueDate,
                       currencyCode,
                       autoAuthorise: recurring.autoAuthorise,
+                      activate: false,
+                      taxCalculation,
                       templateLines: lines.map((l) => ({
                         description: l.description,
                         accountId: l.accountId,
@@ -1885,7 +2186,27 @@ function NewBill() {
                         unitPriceMinor: Number(toMinorUnits(l.unitPrice || "0", currencyCode)),
                         discountMinor: Number(toMinorUnits(l.discount || "0", currencyCode)),
                         taxRateBps: Number(l.taxRateBps || 0),
+                        productId: l.productId || null,
+                        taxCodeId: l.taxCodeId || null,
+                        classOptionId: l.classOptionId || null,
+                        locationOptionId: l.locationOptionId || null,
+                        projectOptionId: l.projectOptionId || null,
+                        customerContactId: l.customerContactId || null,
+                        isBillable: l.isBillable,
                       })),
+                      document: {
+                        billDate,
+                        dueDate,
+                        supplierInvoiceNumber: supplierInvoiceNumber || null,
+                        memo: memo || null,
+                        taxCalculation,
+                        paymentTermId: paymentTermId || null,
+                        paymentTermsDays: selectedTerm?.days ?? null,
+                        dueDateManualOverride,
+                        fxRateToBase: currencyCode === baseCurrency ? 1 : fxRate,
+                        supplierAddress: addr,
+                        notes: internalNoteDraft.trim() ? [internalNoteDraft.trim()] : [],
+                      },
                     },
                   });
                   setRecurringOpen(false);

@@ -34,8 +34,10 @@ import {
 } from "@/lib/recurring/recurring-api.functions";
 import {
   generateRecurringBill,
+  getRecurringBill,
   setRecurringBillActive,
 } from "@/lib/purchases/purchases.functions";
+import { NewBill, type RecurringBillSeed } from "@/routes/_authenticated/purchases/bills.new";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 
 type Props = {
@@ -61,6 +63,13 @@ export function RecurringBillOverlay({
   const skipNext = useServerFn(skipNextRecurringBillOccurrence);
   const generate = useServerFn(generateRecurringBill);
   const setActive = useServerFn(setRecurringBillActive);
+
+  const fetchTemplate = useServerFn(getRecurringBill);
+  const templateQ = useQuery({
+    queryKey: ["recurring-template", companyId, recurringBillId],
+    enabled: open && Boolean(companyId),
+    queryFn: () => fetchTemplate({ data: { companyId, recurringId: recurringBillId } }),
+  });
 
   const detailQ = useQuery({
     queryKey: ["recurring-detail", companyId, recurringBillId],
@@ -205,31 +214,15 @@ export function RecurringBillOverlay({
             ) : (
               <>
                 <TabsContent value="details" className="mt-0 space-y-4">
-                  <div className="space-y-2">
-                    <Label>Schedule name</Label>
-                    <Input
-                      value={name}
-                      onChange={(e) => {
-                        setName(e.target.value);
-                        setDirty(true);
-                      }}
+                  {templateQ.data ? (
+                    <NewBill
+                      key={recurringBillId}
+                      mode="template"
+                      seed={templateQ.data as RecurringBillSeed}
                     />
-                  </div>
-                  <Alert>
-                    <AlertTitle>Template lines</AlertTitle>
-                    <AlertDescription>
-                      {(bill?.template?.lines ?? []).map((l, i) => (
-                        <span key={i} className="block">
-                          {l.description || `Line ${i + 1}`}
-                        </span>
-                      )) || "No lines stored"}
-                      {" — "}
-                      <Link to="/purchases/bills/new" className="underline">
-                        Full New Bill editor
-                      </Link>{" "}
-                      parity expands in ongoing releases; edit lines via Make recurring on New Bill.
-                    </AlertDescription>
-                  </Alert>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Loading the bill template…</p>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="schedule" className="mt-0 space-y-4">
