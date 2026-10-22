@@ -28,11 +28,13 @@ export function EmptyState({
   title,
   description,
   actionLabel,
+  onActionClick,
   icon: Icon = Inbox,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
+  onActionClick?: () => void;
   icon?: typeof Inbox;
 }) {
   return (
@@ -43,7 +45,7 @@ export function EmptyState({
       <h3 className="mt-4 text-sm font-semibold">{title}</h3>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       {actionLabel ? (
-        <Button className="mt-5" size="sm">
+        <Button className="mt-5" size="sm" type="button" onClick={onActionClick}>
           {actionLabel}
         </Button>
       ) : null}

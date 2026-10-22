@@ -18,6 +18,7 @@ import {
   postSupplierPayment,
   voidPostedDocument,
 } from "@/lib/purchases/posting";
+import { parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
 
 async function recordBillAudit(
   supabase: unknown,
@@ -2334,10 +2335,18 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       currencyCode: string;
       autoAuthorise?: boolean;
       templateLines: BillLineIn[];
+      scheduleOptions?: Record<string, unknown>;
     }) => {
       const name = (input.name ?? "").trim();
       if (!name) throw new Error("Name is required");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.nextDueDate)) throw new Error("Next due date required");
+      const scheduleOptions = parseScheduleOptions(input.scheduleOptions ?? {});
+      if (
+        scheduleOptions.endDate &&
+        scheduleOptions.endDate < input.nextDueDate
+      ) {
+        throw new Error("End date must be on or after the first bill date");
+      }
       return {
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
@@ -2347,12 +2356,16 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
         currencyCode: input.currencyCode.toUpperCase(),
         autoAuthorise: Boolean(input.autoAuthorise),
         templateLines: validateBillLines(input.templateLines),
+        scheduleOptions,
       };
     },
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    if (data.autoAuthorise) {
+      await assertCompanyPermission(supabase, data.companyId, "recurring.auto_authorise");
+    }
     const totals = sumLines(data.templateLines);
     const { data: row, error } = await supabase
       .from("recurring_bills" as never)
@@ -2376,6 +2389,7 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
           subtotal_minor: Number(totals.subtotal_minor),
           tax_minor: Number(totals.tax_minor),
           total_minor: Number(totals.total_minor),
+          scheduleOptions: data.scheduleOptions,
         },
         created_by: userId,
       } as never)
@@ -2383,8 +2397,11 @@ export const saveRecurringBill = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const id = (row as { id: string }).id;
-    const { ensureV2ForLegacyRecurringBill } = await import("@/lib/recurring/v2-sync");
+    const { ensureV2ForLegacyRecurringBill, patchV2ScheduleFromRecurringBill } = await import(
+      "@/lib/recurring/v2-sync"
+    );
     await ensureV2ForLegacyRecurringBill(supabase, id);
+    await patchV2ScheduleFromRecurringBill(supabase, id);
     return { id };
   });
 

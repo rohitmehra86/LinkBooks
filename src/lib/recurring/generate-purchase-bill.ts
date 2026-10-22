@@ -5,6 +5,7 @@ import { ensureV2ForLegacyRecurringBill } from "@/lib/recurring/v2-sync";
 import { sumLines } from "@/lib/purchases/line-math";
 import type { LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
 import { assertCompanyPermission } from "@/lib/assert-company-access";
+import { addCalendarDays, parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
 
 export type BillLineIn = {
   description: string;
@@ -49,6 +50,7 @@ export async function generatePurchaseBillFromRecurring(
     frequency: LegacyRecurrenceFrequency;
     template: {
       lines: BillLineIn[];
+      scheduleOptions?: unknown;
     };
   };
 
@@ -112,19 +114,24 @@ export async function generatePurchaseBillFromRecurring(
   try {
     const lines = deps.validateBillLines(r.template.lines);
     const totals = sumLines(lines);
+    const scheduleOpts = parseScheduleOptions(r.template.scheduleOptions ?? {});
+    const dueDate = addCalendarDays(scheduledDate, scheduleOpts.dueDaysAfterBillDate);
+    const memo =
+      scheduleOpts.memo?.trim() ||
+      "Generated from recurring bill";
     const { data: bill, error: bErr } = await supabase
       .from("purchase_bills" as never)
       .insert({
         company_id: companyId,
         contact_id: r.contact_id,
         bill_date: scheduledDate,
-        due_date: scheduledDate,
+        due_date: dueDate,
         currency_code: r.currency_code,
         status: "draft",
         subtotal_minor: Number(totals.subtotal_minor),
         tax_minor: Number(totals.tax_minor),
         total_minor: Number(totals.total_minor),
-        memo: `Generated from recurring bill`,
+        memo,
         created_by: userId,
       } as never)
       .select("id")

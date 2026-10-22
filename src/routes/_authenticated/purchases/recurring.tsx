@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RecurringBillOverlay } from "@/components/recurring/RecurringBillOverlay";
+import { NewRecurringBillDialog } from "@/components/recurring/NewRecurringBillDialog";
 import {
   duplicateRecurringBill,
   getRecurringForecast,
@@ -26,7 +27,6 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 
 const searchSchema = z.object({
   id: z.string().uuid().optional(),
@@ -49,6 +49,7 @@ function RecurringTransactionsPage() {
   const qc = useQueryClient();
 
   const [qDraft, setQDraft] = useState(search.q ?? "");
+  const [createOpen, setCreateOpen] = useState(false);
   const view = search.view ?? "schedules";
   const page = search.page ?? 0;
 
@@ -145,8 +146,8 @@ function RecurringTransactionsPage() {
               value={qDraft}
               onChange={(e) => setQDraft(e.target.value)}
             />
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/purchases/bills/new">New bill → Make recurring</Link>
+            <Button variant="default" size="sm" onClick={() => setCreateOpen(true)}>
+              New recurring bill
             </Button>
           </div>
 
@@ -160,7 +161,9 @@ function RecurringTransactionsPage() {
           ) : (workspaceQ.data?.rows ?? []).length === 0 ? (
             <EmptyState
               title="No recurring bill templates"
-              description="Create one from New bill → Make recurring."
+              description="Use New recurring bill above to add a supplier template with schedule and automation."
+              actionLabel="New recurring bill"
+              onActionClick={() => setCreateOpen(true)}
             />
           ) : (
             <>
@@ -339,6 +342,16 @@ function RecurringTransactionsPage() {
           initialTab={search.tab ?? "details"}
         />
       ) : null}
+
+      <NewRecurringBillDialog
+        companyId={companyId}
+        currencyCode={company?.base_currency ?? "GBP"}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(id) => {
+          navigate({ search: (prev) => ({ ...prev, id, tab: "details" }) });
+        }}
+      />
     </>
   );
 }

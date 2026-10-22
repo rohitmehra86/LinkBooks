@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { legacyFrequencyToRrule, type LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
+import { parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
 
 type RpcClient = {
   from: SupabaseClient["from"];
@@ -117,5 +118,50 @@ export async function ensureV2ForLegacyRecurringBill(
     .single();
   if (sErr) throw new Error(sErr.message);
 
+  await patchV2ScheduleFromRecurringBill(supabase, recurringBillId);
   return { scheduleId: (schedule as { id: string }).id, templateVersionId: versionId };
+}
+
+/** Apply template.scheduleOptions onto the v2 schedule row (after legacy insert/update). */
+export async function patchV2ScheduleFromRecurringBill(
+  supabase: RpcClient,
+  recurringBillId: string,
+): Promise<void> {
+  const { data: rb, error: rbErr } = await supabase
+    .from("recurring_bills" as never)
+    .select("template, auto_authorise, is_active" as never)
+    .eq("id" as never, recurringBillId as never)
+    .maybeSingle();
+  if (rbErr) throw new Error(rbErr.message);
+  if (!rb) return;
+
+  const template = (rb as { template: { scheduleOptions?: unknown } }).template ?? {};
+  let scheduleOptions;
+  try {
+    scheduleOptions = parseScheduleOptions(template.scheduleOptions ?? {});
+  } catch {
+    scheduleOptions = parseScheduleOptions({});
+  }
+
+  const { data: tpl } = await supabase
+    .from("recurring_templates" as never)
+    .select("id" as never)
+    .eq("legacy_recurring_bill_id" as never, recurringBillId as never)
+    .maybeSingle();
+  if (!tpl) return;
+
+  const bill = rb as { auto_authorise: boolean; is_active: boolean };
+  await supabase
+    .from("recurring_schedules" as never)
+    .update({
+      mode: scheduleOptions.mode,
+      generate_days_in_advance: scheduleOptions.generateDaysInAdvance,
+      end_date: scheduleOptions.endDate,
+      max_occurrences: scheduleOptions.maxOccurrences,
+      catch_up_policy: scheduleOptions.catchUpPolicy,
+      auto_authorise: bill.auto_authorise,
+      is_paused: !bill.is_active,
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq("template_id" as never, (tpl as { id: string }).id as never);
 }
