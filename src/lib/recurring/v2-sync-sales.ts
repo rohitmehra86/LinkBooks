@@ -22,7 +22,7 @@ export async function ensureV2ForLegacySalesRecurring(
       .maybeSingle();
     if (sched) {
       return {
-        scheduleId: (sched as { id: string }).id,
+        scheduleId: (sched as unknown as { id: string }).id,
         templateVersionId: row.current_version_id,
       };
     }
@@ -36,7 +36,7 @@ export async function ensureV2ForLegacySalesRecurring(
   if (riErr) throw new Error(riErr.message);
   if (!ri) throw new Error("Recurring invoice not found");
 
-  const inv = ri as {
+  const inv = ri as unknown as {
     company_id: string;
     contact_id: string;
     name: string;

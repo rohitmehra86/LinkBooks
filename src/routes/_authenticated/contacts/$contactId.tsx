@@ -73,7 +73,22 @@ function ContactDetail() {
     queryFn: () => fetchTags({ data: { companyId: companyId! } }),
   });
 
-  const c = contactQ.data?.contact as Record<string, unknown> | undefined;
+  const c = contactQ.data?.contact as {
+    name?: unknown;
+    kind?: unknown;
+    email?: unknown;
+    phone?: unknown;
+    tax_number?: unknown;
+    payment_terms_days?: unknown;
+    notes?: unknown;
+    account_number?: unknown;
+    legal_name?: unknown;
+    website?: unknown;
+    billing_address_line1?: unknown;
+    billing_city?: unknown;
+    billing_country?: unknown;
+    archived_at?: unknown;
+  } | undefined;
 
   const [name, setName] = useState("");
   const [kind, setKind] = useState("customer");

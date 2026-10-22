@@ -48,6 +48,18 @@ import { convertMinorToBase } from "@/lib/accounting/fx";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import type { RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 import {
+  legacyFrequencyForColumn,
+  previewOccurrencesFromSpec,
+  validateRecurrenceSpec,
+  type FrequencyKind,
+  type RecurrenceSpec,
+} from "@/lib/recurring/recurrence-rules";
+import type {
+  GenerationPolicy,
+  RecurringCatchUpPolicy,
+  RecurringTemplateMode,
+} from "@/lib/recurring/recurring-schedule-options";
+import {
   calculateDueDate,
   CANCEL_UNSAVED_MESSAGE,
   canPreviewAttachment,
@@ -142,15 +154,70 @@ export type RecurringBillSeed = {
     }>;
     document?: RecurringTemplateDocument | null;
     notify_on_generation?: boolean;
+    scheduleOptions?: {
+      mode?: RecurringTemplateMode;
+      generateDaysInAdvance?: number;
+      endDate?: string | null;
+      maxOccurrences?: number | null;
+      catchUpPolicy?: RecurringCatchUpPolicy;
+      generationPolicy?: GenerationPolicy;
+      recurrence?: RecurrenceSpec | null;
+    };
   };
 };
+
+function SchedulePreview({
+  recurring,
+}: {
+  recurring: {
+    nextDueDate: string;
+    frequency: FrequencyKind;
+    interval: string;
+    customUnit: "" | "days" | "weeks" | "months" | "years";
+    endDate: string;
+    maxOccurrences: string;
+    weekendAdjust: RecurrenceSpec["weekendAdjust"];
+    weekdays: string;
+    monthDay: string;
+    holidays: string;
+  };
+}) {
+  const spec: RecurrenceSpec = {
+    startDate: recurring.nextDueDate,
+    frequency: recurring.frequency,
+    interval: Math.max(1, Math.floor(Number(recurring.interval) || 1)),
+    customUnit: recurring.frequency === "custom" ? recurring.customUnit || null : null,
+    weekdays: recurring.weekdays
+      ? recurring.weekdays.split(",").map((d) => Number(d.trim())).filter((d) => Number.isInteger(d))
+      : null,
+    monthDay:
+      recurring.monthDay === "last_calendar_day" || recurring.monthDay === "last_business_day"
+        ? recurring.monthDay
+        : recurring.monthDay
+          ? Number(recurring.monthDay)
+          : null,
+    endDate: recurring.endDate || null,
+    maxOccurrences: recurring.maxOccurrences ? Math.floor(Number(recurring.maxOccurrences)) : null,
+    weekendAdjust: recurring.weekendAdjust,
+    holidays: recurring.holidays.split(",").map((d) => d.trim()).filter(Boolean),
+  };
+  const error = validateRecurrenceSpec(spec);
+  const dates = error ? [] : previewOccurrencesFromSpec(spec, recurring.nextDueDate, 12);
+  return (
+    <p className="text-xs text-muted-foreground">
+      {error ? error : `Next dates: ${dates.join(", ") || "none"}`}
+    </p>
+  );
+}
 
 export function NewBill({
   mode = "bill",
   seed = null,
+  onDirty,
 }: {
   mode?: "bill" | "template";
   seed?: RecurringBillSeed | null;
+  onDirty?: () => void;
 } = {}) {
   const isTemplate = mode === "template";
   const { company } = useActiveCompany();
@@ -285,11 +352,25 @@ export function NewBill({
     setTemplateId(seed.id);
     setScheduleActive(seed.is_active);
     setTemplateNotes(doc.notes ?? []);
+    const saved = seed.template.scheduleOptions;
+    const rule = saved?.recurrence;
     setRecurring({
       name: seed.name,
-      frequency: seed.frequency,
+      frequency: rule?.frequency ?? seed.frequency,
+      interval: String(rule?.interval ?? 1),
+      customUnit: rule?.customUnit || "",
       nextDueDate: seed.next_due_date,
-      autoAuthorise: seed.auto_authorise,
+      mode: saved?.mode ?? "scheduled",
+      endDate: saved?.endDate ?? rule?.endDate ?? "",
+      maxOccurrences: saved?.maxOccurrences == null ? "" : String(saved.maxOccurrences),
+      generateDaysInAdvance: String(saved?.generateDaysInAdvance ?? 0),
+      catchUpPolicy: saved?.catchUpPolicy ?? "latest_only",
+      weekendAdjust: rule?.weekendAdjust ?? "none",
+      weekdays: rule?.weekdays?.join(",") ?? "",
+      monthDay: rule?.monthDay == null ? "" : String(rule.monthDay),
+      holidays: (rule?.holidays ?? []).join(", "),
+      generationPolicy: saved?.generationPolicy ?? (seed.auto_authorise ? "auto_authorise" : "draft"),
+      autoAuthorise: (saved?.generationPolicy ?? (seed.auto_authorise ? "auto_authorise" : "draft")) === "auto_authorise",
       notify: Boolean(seed.template.notify_on_generation),
     });
     setContactId(seed.contact_id);
@@ -400,11 +481,36 @@ export function NewBill({
   });
   const [recurring, setRecurring] = useState({
     name: "",
-    frequency: "monthly" as "weekly" | "monthly" | "quarterly" | "yearly",
+    frequency: "monthly" as FrequencyKind,
+    interval: "1",
+    customUnit: "" as "" | "days" | "weeks" | "months" | "years",
     nextDueDate: today,
+    mode: "scheduled" as RecurringTemplateMode,
+    endDate: "",
+    maxOccurrences: "",
+    generateDaysInAdvance: "0",
+    catchUpPolicy: "latest_only" as RecurringCatchUpPolicy,
+    weekendAdjust: "none" as "none" | "previous_business_day" | "next_business_day",
+    weekdays: "",
+    monthDay: "",
+    holidays: "",
+    generationPolicy: "draft" as GenerationPolicy,
     autoAuthorise: false,
     notify: false,
   });
+
+  const dirtyArmed = useRef(false);
+  useEffect(() => {
+    dirtyArmed.current = false;
+    const t = window.setTimeout(() => {
+      dirtyArmed.current = true;
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [seed?.id]);
+  useEffect(() => {
+    if (!onDirty || !dirtyArmed.current) return;
+    onDirty();
+  }, [onDirty, lines, contactId, memo, billDate, dueDate, recurring]);
 
   const savingRef = useRef(false);
 
@@ -810,21 +916,41 @@ export function NewBill({
         recurringId: templateId,
         contactId: payload.contactId,
         name: recurring.name.trim() || "Recurring bill",
-        frequency: recurring.frequency,
+        frequency: legacyFrequencyForColumn(recurring.frequency),
         nextDueDate: recurring.nextDueDate,
         currencyCode: payload.currencyCode,
-        autoAuthorise: recurring.autoAuthorise,
+        autoAuthorise: recurring.generationPolicy === "auto_authorise",
         notifyOnGeneration: recurring.notify,
         activate,
         taxCalculation: payload.taxCalculation,
         scheduleOptions: {
-          mode: "scheduled",
-          generateDaysInAdvance: 0,
-          endDate: null,
-          maxOccurrences: null,
-          catchUpPolicy: "latest_only",
+          mode: recurring.mode,
+          generateDaysInAdvance: Math.max(0, Math.floor(Number(recurring.generateDaysInAdvance) || 0)),
+          endDate: recurring.endDate || null,
+          maxOccurrences: recurring.maxOccurrences ? Math.floor(Number(recurring.maxOccurrences)) : null,
+          catchUpPolicy: recurring.catchUpPolicy,
           dueDaysAfterBillDate: payload.paymentTermsDays ?? 0,
           memo: payload.memo || undefined,
+          generationPolicy: recurring.generationPolicy,
+          recurrence: {
+            startDate: recurring.nextDueDate,
+            frequency: recurring.frequency,
+            interval: Math.max(1, Math.floor(Number(recurring.interval) || 1)),
+            customUnit: recurring.frequency === "custom" ? recurring.customUnit || null : null,
+            weekdays: recurring.weekdays
+              ? recurring.weekdays.split(",").map((d) => Number(d.trim())).filter((d) => Number.isInteger(d))
+              : null,
+            monthDay:
+              recurring.monthDay === "last_calendar_day" || recurring.monthDay === "last_business_day"
+                ? recurring.monthDay
+                : recurring.monthDay
+                  ? Number(recurring.monthDay)
+                  : null,
+            endDate: recurring.endDate || null,
+            maxOccurrences: recurring.maxOccurrences ? Math.floor(Number(recurring.maxOccurrences)) : null,
+            weekendAdjust: recurring.weekendAdjust,
+            holidays: recurring.holidays.split(",").map((d) => d.trim()).filter(Boolean),
+          },
         },
         templateLines: payload.lines,
         document: {
@@ -1316,10 +1442,14 @@ export function NewBill({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="fortnightly">Fortnightly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="half_yearly">Half-yearly</SelectItem>
                     <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1332,17 +1462,145 @@ export function NewBill({
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Mode</Label>
+                <Select
+                  value={recurring.mode}
+                  onValueChange={(v) => setRecurring((r) => ({ ...r, mode: v as typeof r.mode }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="reminder">Reminder</SelectItem>
+                    <SelectItem value="on_demand">On demand</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Every</Label>
+                <Input
+                  value={recurring.interval}
+                  onChange={(e) => setRecurring((r) => ({ ...r, interval: e.target.value }))}
+                />
+              </div>
+              {recurring.frequency === "custom" ? (
+                <div className="space-y-1.5">
+                  <Label>Custom unit</Label>
+                  <Select
+                    value={recurring.customUnit || "days"}
+                    onValueChange={(v) =>
+                      setRecurring((r) => ({ ...r, customUnit: v as typeof r.customUnit }))
+                    }
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">Days</SelectItem>
+                      <SelectItem value="weeks">Weeks</SelectItem>
+                      <SelectItem value="months">Months</SelectItem>
+                      <SelectItem value="years">Years</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <div className="space-y-1.5">
+                <Label>End date</Label>
+                <Input type="date" value={recurring.endDate} onChange={(e) => setRecurring((r) => ({ ...r, endDate: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Stop after</Label>
+                <Input
+                  placeholder="occurrences"
+                  value={recurring.maxOccurrences}
+                  onChange={(e) => setRecurring((r) => ({ ...r, maxOccurrences: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Weekdays</Label>
+                <Input
+                  placeholder="1,3,5 for weekly"
+                  value={recurring.weekdays}
+                  onChange={(e) => setRecurring((r) => ({ ...r, weekdays: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Month day</Label>
+                <Input
+                  placeholder="last_calendar_day"
+                  value={recurring.monthDay}
+                  onChange={(e) => setRecurring((r) => ({ ...r, monthDay: e.target.value }))}
+                />
+              </div>
+            </div>
+            <SchedulePreview recurring={recurring} />
           </section>
           <section className="space-y-3 rounded-md border border-border p-4">
             <h2 className="text-sm font-semibold">Automation</h2>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={recurring.autoAuthorise}
-                onChange={(e) => setRecurring((r) => ({ ...r, autoAuthorise: e.target.checked }))}
-              />
-              Auto-authorise generated bills
-            </label>
+            <div className="space-y-1.5">
+              <Label>When a bill is due</Label>
+              <Select
+                value={recurring.generationPolicy}
+                onValueChange={(v) =>
+                  setRecurring((r) => ({
+                    ...r,
+                    generationPolicy: v as typeof r.generationPolicy,
+                    autoAuthorise: v === "auto_authorise",
+                  }))
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Create draft</SelectItem>
+                  <SelectItem value="submit_approval">Submit for approval</SelectItem>
+                  <SelectItem value="auto_authorise">Auto-authorise if permitted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Days in advance</Label>
+                <Input
+                  value={recurring.generateDaysInAdvance}
+                  onChange={(e) => setRecurring((r) => ({ ...r, generateDaysInAdvance: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Catch-up</Label>
+                <Select
+                  value={recurring.catchUpPolicy}
+                  onValueChange={(v) => setRecurring((r) => ({ ...r, catchUpPolicy: v as typeof r.catchUpPolicy }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="latest_only">Latest only</SelectItem>
+                    <SelectItem value="all_missed">All missed</SelectItem>
+                    <SelectItem value="review_each">Review each</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Weekends</Label>
+                <Select
+                  value={recurring.weekendAdjust}
+                  onValueChange={(v) => setRecurring((r) => ({ ...r, weekendAdjust: v as typeof r.weekendAdjust }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No change</SelectItem>
+                    <SelectItem value="previous_business_day">Previous business day</SelectItem>
+                    <SelectItem value="next_business_day">Next business day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Holidays</Label>
+                <Input
+                  placeholder="2026-12-25, 2026-12-26"
+                  value={recurring.holidays}
+                  onChange={(e) => setRecurring((r) => ({ ...r, holidays: e.target.value }))}
+                />
+              </div>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -1353,9 +1611,9 @@ export function NewBill({
             </label>
             <p className="text-xs text-muted-foreground">
               Save template stores this bill form as a schedule. It does not create a bill or an
-              Accounts Payable balance. Save &amp; activate turns the schedule on. A generated bill
-              is a normal draft unless auto-authorise is on, in which case it uses the same posting
-              path as Save &amp; authorise on a bill.
+              Accounts Payable balance. Reminder mode only records that a bill is due. On demand is
+              never picked up by the scheduler. Auto-authorise uses the same posting path as Save
+              &amp; authorise, and it is refused when the period is locked or permission is missing.
             </p>
           </section>
         </div>

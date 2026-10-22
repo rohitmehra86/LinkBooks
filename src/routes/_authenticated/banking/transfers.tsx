@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/banking/transfers")({
   component: Transfers,
 });
 
-function Transfers() {
+export function Transfers() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";

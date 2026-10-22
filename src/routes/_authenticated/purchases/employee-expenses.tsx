@@ -39,7 +39,7 @@ export const Route = createFileRoute("/_authenticated/purchases/employee-expense
   component: EmployeeExpensesPage,
 });
 
-function EmployeeExpensesPage() {
+export function EmployeeExpensesPage() {
   const { company } = useActiveCompany();
   const queryClient = useQueryClient();
   const fetchClaims = useServerFn(listEmployeeClaims);

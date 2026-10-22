@@ -803,7 +803,7 @@ export const exportContactsCsv = createServerFn({ method: "POST" })
     const csv = buildContactsCsv(
       ((rows ?? []) as Array<Record<string, string | number | null>>).map((r) => ({
         ...r,
-        is_active: r.is_active ? "true" : "false",
+        is_active: r["is_active"] ? "true" : "false",
       })),
       columns,
     );

@@ -59,7 +59,12 @@ function ContactSettingsPage() {
   const [tagName, setTagName] = useState("");
 
   useEffect(() => {
-    const s = settingsQ.data as Record<string, unknown> | undefined;
+    const s = settingsQ.data as {
+      default_kind?: unknown;
+      account_number_prefix?: unknown;
+      next_account_number?: unknown;
+      default_payment_terms_days?: unknown;
+    } | undefined;
     if (!s) return;
     setDefaultKind(String(s.default_kind ?? "customer"));
     setPrefix(String(s.account_number_prefix ?? "C"));

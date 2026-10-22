@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/sales/recurring")({
   component: RecurringInvoices,
 });
 
-function RecurringInvoices() {
+export function RecurringInvoices() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
@@ -83,7 +83,9 @@ function RecurringInvoices() {
     mutationFn: (recurringId: string) => generate({ data: { companyId: companyId!, recurringId } }),
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: ["sales-recurring", companyId] });
-      toast.success(`Generated invoice ${r.invoiceId.slice(0, 8)}… next due ${r.nextDueDate}`);
+      toast.success(
+        `Generated invoice ${r.invoiceId.slice(0, 8)}…${r.nextDueDate ? ` next due ${r.nextDueDate}` : ""}`,
+      );
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });

@@ -14,7 +14,7 @@ export async function generateSalesInvoiceFromRecurring(
   userId: string,
   companyId: string,
   recurringId: string,
-): Promise<{ invoiceId: string; journalId: string | null }> {
+): Promise<{ invoiceId: string; journalId: string | null; nextDueDate: string | null }> {
   await assertCompanyPermission(supabase, companyId, "sales.draft");
   const { data: rec, error } = await supabase
     .from("sales_recurring_invoices" as never)
@@ -25,7 +25,7 @@ export async function generateSalesInvoiceFromRecurring(
   if (error) throw new Error(error.message);
   if (!rec) throw new Error("Recurring invoice not found");
 
-  const r = rec as {
+  const r = rec as unknown as {
     is_active: boolean;
     contact_id: string;
     next_due_date: string;
@@ -54,7 +54,7 @@ export async function generateSalesInvoiceFromRecurring(
     .eq("id" as never, scheduleId as never)
     .maybeSingle();
   if (!scheduleRow) throw new Error("Schedule not found");
-  const schedule = scheduleRow as {
+  const schedule = scheduleRow as unknown as {
     rrule: string;
     dtstart: string;
     auto_authorise: boolean;
@@ -87,7 +87,7 @@ export async function generateSalesInvoiceFromRecurring(
     sales_invoice_id?: string;
   };
   if (claim.action === "already_completed" && claim.sales_invoice_id) {
-    return { invoiceId: claim.sales_invoice_id, journalId: null };
+    return { invoiceId: claim.sales_invoice_id, journalId: null, nextDueDate: null };
   }
   if (claim.action === "in_progress") {
     throw new Error("Generation already in progress for this occurrence");
@@ -209,7 +209,7 @@ export async function generateSalesInvoiceFromRecurring(
       } as never)
       .eq("id" as never, scheduleId as never);
 
-    return { invoiceId, journalId };
+    return { invoiceId, journalId, nextDueDate: nextDate };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Generation failed";
     await supabase.rpc("recurring_complete_occurrence" as never, {

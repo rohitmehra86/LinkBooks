@@ -7,11 +7,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,6 +109,7 @@ export function RecurringBillOverlay({
   const [frequency, setFrequency] = useState("monthly");
   const [autoAuthorise, setAutoAuthorise] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [formDirty, setFormDirty] = useState(false);
 
   useEffect(() => {
     if (!bill) return;
@@ -117,6 +118,7 @@ export function RecurringBillOverlay({
     setFrequency(bill.frequency);
     setAutoAuthorise(bill.auto_authorise);
     setDirty(false);
+    setFormDirty(false);
   }, [bill, recurringBillId]);
 
   const saveM = useMutation({
@@ -171,24 +173,31 @@ export function RecurringBillOverlay({
   });
 
   const handleClose = (next: boolean) => {
-    if (!next && dirty) {
+    if (!next && (dirty || formDirty)) {
       if (!window.confirm("You have unsaved changes. Close anyway?")) return;
     }
     onOpenChange(next);
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        className="flex max-h-[90vh] w-[min(90vw,960px)] max-w-none flex-col gap-0 overflow-hidden p-0"
+    <Sheet open={open} onOpenChange={handleClose}>
+      <SheetContent
+        side="right"
+        className="flex h-full w-full max-w-none flex-col gap-0 overflow-hidden p-0 sm:w-[82vw] sm:min-w-[40rem] sm:max-w-[1200px]"
         aria-describedby={undefined}
       >
-        <DialogHeader className="border-b border-border px-6 py-4">
-          <DialogTitle>{bill?.name ?? "Recurring bill"}</DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {bill?.contacts?.name ?? "Supplier"} · Next {bill?.next_due_date ?? "—"}
-          </p>
-        </DialogHeader>
+        <SheetHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+          <SheetTitle>{bill?.name ?? "Recurring bill"}</SheetTitle>
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer">
+              {bill?.contacts?.name ?? "Supplier"} · Next {bill?.next_due_date ?? "—"}
+            </summary>
+            <p className="pt-1">
+              {bill?.frequency ?? "—"} · {bill?.is_active ? "Active" : "Paused"}
+              {bill?.last_error ? ` · ${bill.last_error}` : ""}
+            </p>
+          </details>
+        </SheetHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
           <TabsList className="mx-6 mt-3 w-auto justify-start overflow-x-auto">
@@ -213,19 +222,20 @@ export function RecurringBillOverlay({
               </Alert>
             ) : (
               <>
-                <TabsContent value="details" className="mt-0 space-y-4">
+                <TabsContent forceMount value="details" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   {templateQ.data ? (
                     <NewBill
                       key={recurringBillId}
                       mode="template"
                       seed={templateQ.data as RecurringBillSeed}
+                      onDirty={() => setFormDirty(true)}
                     />
                   ) : (
                     <p className="text-sm text-muted-foreground">Loading the bill template…</p>
                   )}
                 </TabsContent>
 
-                <TabsContent value="schedule" className="mt-0 space-y-4">
+                <TabsContent forceMount value="schedule" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Next occurrence</Label>
@@ -268,7 +278,7 @@ export function RecurringBillOverlay({
                   ) : null}
                 </TabsContent>
 
-                <TabsContent value="automation" className="mt-0 space-y-4">
+                <TabsContent forceMount value="automation" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <div className="flex items-center justify-between">
                     <Label>Auto-authorise (requires recurring.auto_authorise)</Label>
                     <Switch
@@ -285,7 +295,7 @@ export function RecurringBillOverlay({
                   </p>
                 </TabsContent>
 
-                <TabsContent value="approvals" className="mt-0">
+                <TabsContent forceMount value="approvals" className="mt-0 data-[state=inactive]:hidden">
                   <Alert>
                     <AlertTitle>Bill approval workflow</AlertTitle>
                     <AlertDescription>
@@ -296,7 +306,7 @@ export function RecurringBillOverlay({
                   </Alert>
                 </TabsContent>
 
-                <TabsContent value="attachments" className="mt-0">
+                <TabsContent forceMount value="attachments" className="mt-0 data-[state=inactive]:hidden">
                   <Alert>
                     <AlertTitle>Unavailable</AlertTitle>
                     <AlertDescription>
@@ -305,7 +315,18 @@ export function RecurringBillOverlay({
                   </Alert>
                 </TabsContent>
 
-                <TabsContent value="history" className="mt-0">
+                <TabsContent forceMount value="history" className="mt-0 data-[state=inactive]:hidden">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Template versions</p>
+                  <ul className="mb-4 space-y-1 text-sm">
+                    {(historyQ.data?.versions ?? []).map(
+                      (v: { id: string; version_no: number; created_at: string }) => (
+                        <li key={v.id}>
+                          Version {v.version_no} · {v.created_at.slice(0, 16).replace("T", " ")}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Generated bills</p>
                   <ul className="space-y-2 text-sm">
                     {(historyQ.data?.rows ?? []).map(
                       (o: {
@@ -335,7 +356,7 @@ export function RecurringBillOverlay({
                   </ul>
                 </TabsContent>
 
-                <TabsContent value="forecast" className="mt-0">
+                <TabsContent forceMount value="forecast" className="mt-0 data-[state=inactive]:hidden">
                   <p className="text-sm text-muted-foreground mb-2">
                     Commitment preview for this schedule (not posted actuals).
                   </p>
@@ -350,7 +371,7 @@ export function RecurringBillOverlay({
           </div>
         </Tabs>
 
-        <div className="flex flex-wrap gap-2 border-t border-border px-6 py-4">
+        <div className="flex shrink-0 flex-wrap gap-2 border-t border-border px-6 py-4">
           <Button size="sm" disabled={saveM.isPending || !dirty} onClick={() => saveM.mutate()}>
             Save
           </Button>
@@ -372,7 +393,7 @@ export function RecurringBillOverlay({
             Close
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

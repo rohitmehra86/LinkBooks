@@ -33,10 +33,17 @@ export const runRecurringScheduler = createServerFn({ method: "POST" }).handler(
     recurringBillId,
     userId,
   }) => {
-    await generatePurchaseBillFromRecurring(admin, userId, companyId, recurringBillId, {
-      validateBillLines,
-      authoriseBill: authoriseBillInternal,
-    });
+    await generatePurchaseBillFromRecurring(
+      admin,
+      userId,
+      companyId,
+      recurringBillId,
+      {
+        validateBillLines,
+        authoriseBill: authoriseBillInternal,
+      },
+      { automatic: true },
+    );
   });
 
   await admin

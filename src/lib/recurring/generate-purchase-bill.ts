@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { nextOccurrenceAfter } from "@/lib/recurring/recurrence-engine";
+import { nextOccurrenceFromSpec } from "@/lib/recurring/recurrence-rules";
 import { buildOccurrenceIdempotencyKey } from "@/lib/recurring/occurrence-key";
 import { ensureV2ForLegacyRecurringBill } from "@/lib/recurring/v2-sync";
-import { sumLines } from "@/lib/purchases/line-math";
+import { sumLines, type LineComputed } from "@/lib/purchases/line-math";
 import type { LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
 import { assertCompanyPermission } from "@/lib/assert-company-access";
-import { addCalendarDays, parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
+import {
+  addCalendarDays,
+  parseScheduleOptions,
+  resolveGenerationPolicy,
+} from "@/lib/recurring/recurring-schedule-options";
 import { generatedDraftHeader, type RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 
 export type BillLineIn = {
@@ -23,14 +28,15 @@ export async function generatePurchaseBillFromRecurring(
   companyId: string,
   recurringId: string,
   deps: {
-    validateBillLines: (lines: BillLineIn[]) => Array<BillLineIn & { net_minor: bigint; tax_minor: bigint }>;
+    validateBillLines: (lines: BillLineIn[]) => Array<BillLineIn & LineComputed>;
     authoriseBill: (
       sb: SupabaseClient,
       uid: string,
       cid: string,
       billId: string,
-    ) => Promise<void>;
+    ) => Promise<{ journalId: string }>;
   },
+  options?: { automatic?: boolean },
 ): Promise<{ billId: string; authorised: boolean; occurrenceId?: string }> {
   const { data: rb, error } = await supabase
     .from("recurring_bills" as never)
@@ -41,7 +47,7 @@ export async function generatePurchaseBillFromRecurring(
   if (error) throw new Error(error.message);
   if (!rb) throw new Error("Recurring bill not found");
 
-  const r = rb as {
+  const r = rb as unknown as {
     is_active: boolean;
     next_due_date: string;
     last_generated_on: string | null;
@@ -58,6 +64,11 @@ export async function generatePurchaseBillFromRecurring(
 
   if (!r.is_active) throw new Error("Recurring bill is inactive");
 
+  const scheduleOpts = parseScheduleOptions(r.template.scheduleOptions ?? {});
+  if (options?.automatic && scheduleOpts.mode !== "scheduled") {
+    throw new Error("Automatic generation only runs scheduled templates");
+  }
+
   const { scheduleId, templateVersionId } = await ensureV2ForLegacyRecurringBill(
     supabase,
     recurringId,
@@ -69,7 +80,7 @@ export async function generatePurchaseBillFromRecurring(
     .eq("id" as never, scheduleId as never)
     .maybeSingle();
   if (!scheduleRow) throw new Error("Recurring schedule not found");
-  const schedule = scheduleRow as {
+  const schedule = scheduleRow as unknown as {
     rrule: string;
     dtstart: string;
     auto_authorise: boolean;
@@ -104,7 +115,11 @@ export async function generatePurchaseBillFromRecurring(
   };
 
   if (claim.action === "already_completed" && claim.purchase_bill_id) {
-    return { billId: claim.purchase_bill_id, authorised: false, occurrenceId: claim.occurrence_id };
+    return {
+      billId: claim.purchase_bill_id,
+      authorised: false,
+      ...(claim.occurrence_id ? { occurrenceId: claim.occurrence_id } : {}),
+    };
   }
   if (claim.action === "in_progress") {
     throw new Error("Generation already in progress for this occurrence");
@@ -116,7 +131,6 @@ export async function generatePurchaseBillFromRecurring(
   try {
     const lines = deps.validateBillLines(r.template.lines);
     const totals = sumLines(lines);
-    const scheduleOpts = parseScheduleOptions(r.template.scheduleOptions ?? {});
     const doc = r.template.document ?? null;
     const header = generatedDraftHeader({
       contactId: r.contact_id,
@@ -181,17 +195,33 @@ export async function generatePurchaseBillFromRecurring(
       );
     }
 
-    const autoAuthorise = schedule.auto_authorise ?? r.auto_authorise;
+    const policy = resolveGenerationPolicy(
+      r.template.scheduleOptions,
+      schedule.auto_authorise ?? r.auto_authorise,
+    );
     let authorised = false;
-    if (autoAuthorise) {
+    if (policy === "submit_approval") {
+      const { error: approvalErr } = await supabase
+        .from("purchase_bills" as never)
+        .update({
+          status: "awaiting_approval",
+          submitted_for_approval_at: new Date().toISOString(),
+          submitted_for_approval_by: userId,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq("id" as never, billId as never)
+        .eq("company_id" as never, companyId as never);
+      if (approvalErr) throw new Error(approvalErr.message);
+    } else if (policy === "auto_authorise") {
       await assertCompanyPermission(supabase, companyId, "recurring.auto_authorise");
       await deps.authoriseBill(supabase, userId, companyId, billId);
       authorised = true;
     }
 
-    const nextDate =
-      nextOccurrenceAfter({ dtstart: schedule.dtstart, rrule: schedule.rrule }, scheduledDate) ??
-      scheduledDate;
+    const nextDate = scheduleOpts.recurrence
+      ? (nextOccurrenceFromSpec(scheduleOpts.recurrence, scheduledDate) ?? scheduledDate)
+      : (nextOccurrenceAfter({ dtstart: schedule.dtstart, rrule: schedule.rrule }, scheduledDate) ??
+        scheduledDate);
 
     await supabase.rpc("recurring_complete_occurrence" as never, {
       _occurrence_id: occurrenceId,

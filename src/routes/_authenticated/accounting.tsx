@@ -69,7 +69,7 @@ function Accounting() {
   return <AccountingWorkspace companyId={company.id} currency={company.base_currency} />;
 }
 
-function AccountingWorkspace({ companyId, currency }: { companyId: string; currency: string }) {
+export function AccountingWorkspace({ companyId, currency }: { companyId: string; currency: string }) {
   const queryClient = useQueryClient();
   const fetchAccounts = useServerFn(listAccounts);
   const fetchJournals = useServerFn(listJournals);

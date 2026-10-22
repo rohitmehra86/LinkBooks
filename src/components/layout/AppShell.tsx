@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Menu, Bell, Plus, LogOut, UserRound } from "lucide-react";
+import { Menu, Bell, LogOut, UserRound } from "lucide-react";
 import { navItems } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { initialsFrom } from "@/lib/auth-helpers";
@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { CompanySwitcher } from "@/components/layout/CompanySwitcher";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { CreateNewMenu } from "@/components/create-new/CreateNewMenu";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -158,42 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <CompanySwitcher />
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" className="hidden md:inline-flex">
-                <Plus className="size-4" />
-                New
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Create</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to="/sales/invoices/new">Invoice</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/sales/quotes">Quote</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/purchases/bills/new">Bill</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/purchases/expenses">Expense</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/contacts">Contact</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/products-services">Product / service</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/accounting">Manual journal</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/banking/import">Bank CSV import</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <CreateNewMenu />
 
           <Button variant="ghost" size="icon" aria-label="Notifications" disabled title="Notifications arrive later">
             <Bell className="size-5" />

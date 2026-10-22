@@ -85,7 +85,7 @@ export function nextFromLegacyFrequency(
 export function buildRuleFromLegacy(
   frequency: LegacyRecurrenceFrequency,
   dtstartIso: string,
-): RRule {
+): InstanceType<typeof RRule> {
   const dtstart = parseUtcDate(dtstartIso);
   return new RRule({
     ...rruleOptionsFromLegacy(frequency, dtstart),
