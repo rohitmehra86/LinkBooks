@@ -1,6 +1,6 @@
 import type { Permission } from "@/lib/permissions";
 
-export type CreateGroup = "sales" | "purchases" | "banking" | "contacts";
+export type CreateGroup = "sales" | "purchases" | "banking" | "accounting" | "contacts" | "documents";
 export type CreateAuditStatus = "REUSABLE" | "PARTIAL" | "MISSING" | "BLOCKED";
 export type CreateWidth = "wide" | "narrow";
 
@@ -22,15 +22,17 @@ export type CreateAction = {
 };
 
 export const CREATE_GROUP_LABEL: Record<CreateGroup, string> = {
-  sales: "Sales & Receivables",
-  purchases: "Purchases & Payables",
-  banking: "Banking & Accounting",
-  contacts: "Contacts & Setup",
+  sales: "Sales",
+  purchases: "Purchases",
+  banking: "Banking",
+  accounting: "Accounting",
+  contacts: "Contacts & Items",
+  documents: "Documents & Tools",
 };
 
-/** Shown on commands whose tables are not in the live database yet. */
+/** Shown until a signed-in save against the live ledger has been checked. */
 export const CREATE_PENDING_DATABASE =
-  "Unavailable until the new document tables are applied and a signed-in save is verified.";
+  "Unavailable until a signed-in save is verified.";
 
 /** Shown on the new journal flyover. Journals on the Accounting page stay available. */
 export const CREATE_PENDING_JOURNAL =
@@ -193,7 +195,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "pay_bill",
-    label: "Quick payment / Pay bill",
+    label: "Quick payment",
     group: "purchases",
     aliases: ["pay bill", "supplier payment", "quick payment"],
     permission: "purchases.payment",
@@ -207,8 +209,8 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "expense",
-    label: "Expense / Spend money",
-    group: "purchases",
+    label: "Spend money",
+    group: "banking",
     aliases: ["spend money", "direct expense", "cash expense"],
     permission: "purchases.draft",
     status: "REUSABLE",
@@ -249,7 +251,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "reimbursement",
-    label: "Reimbursement claim",
+    label: "Expense claim",
     group: "purchases",
     aliases: ["expense claim", "employee claim", "mileage"],
     permission: "expenses.submit",
@@ -291,7 +293,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "bank_transfer",
-    label: "Bank transfer",
+    label: "Transfer money",
     group: "banking",
     aliases: ["transfer", "move money"],
     permission: "banking.categorise",
@@ -319,8 +321,8 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "manual_journal",
-    label: "Manual journal",
-    group: "banking",
+    label: "Manual Journal",
+    group: "accounting",
     aliases: ["journal", "general journal"],
     permission: "journals.manual",
     status: "BLOCKED",
@@ -334,7 +336,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   {
     id: "recurring_journal",
     label: "Recurring journal",
-    group: "banking",
+    group: "accounting",
     aliases: ["repeating journal"],
     permission: "journals.manual",
     status: "BLOCKED",
@@ -362,7 +364,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   {
     id: "customer",
     label: "Customer",
-    group: "contacts",
+    group: "sales",
     aliases: ["new customer", "client"],
     permission: "contacts.manage",
     status: "REUSABLE",
@@ -376,7 +378,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   {
     id: "supplier",
     label: "Supplier",
-    group: "contacts",
+    group: "purchases",
     aliases: ["vendor", "new supplier"],
     permission: "contacts.manage",
     status: "REUSABLE",
@@ -403,8 +405,8 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   },
   {
     id: "account",
-    label: "Account",
-    group: "contacts",
+    label: "Chart of account",
+    group: "accounting",
     aliases: ["chart of accounts", "gl account", "ledger account"],
     permission: "accounts.manage",
     status: "PARTIAL",
@@ -432,7 +434,7 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
   {
     id: "document_upload",
     label: "Document upload",
-    group: "contacts",
+    group: "documents",
     aliases: ["upload", "attachment", "file"],
     permission: "purchases.draft",
     status: "BLOCKED",

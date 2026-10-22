@@ -18,4 +18,4 @@ Sales receipt, customer refund, supplier refund, receive money, bank deposit, cr
 
 Document upload also stays disabled because no malware scanner is configured. Manual journals can still be posted from Accounting.
 
-The migration file is in the repository and has not been applied. Local and remote migration histories diverge, so it must not be pushed until that history is reconciled and the change is approved.
+`20261022210000_create_new_documents` is applied on the linked database. Row level security is on for the new tables. The commands stay disabled until a signed-in save is verified. Do not run a full `supabase db push`: local file `20261022180000_settings_centre_foundation.sql` repeats work already applied under versions `20261022125237` through `20261022125601`.

@@ -8,7 +8,22 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouteContext } from "@tanstack/react-router";
-import { Loader2, Plus, Star } from "lucide-react";
+import {
+  Calculator,
+  ChevronRight,
+  Clock,
+  FolderOpen,
+  Landmark,
+  Loader2,
+  Plus,
+  Receipt,
+  Search,
+  ShoppingCart,
+  Star,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import {
   CREATE_GROUP_LABEL,
@@ -31,7 +46,46 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-const GROUPS: CreateGroup[] = ["sales", "purchases", "banking", "contacts"];
+const SECTIONS: { group: CreateGroup; icon: LucideIcon }[] = [
+  { group: "sales", icon: Receipt },
+  { group: "purchases", icon: ShoppingCart },
+  { group: "banking", icon: Landmark },
+  { group: "accounting", icon: Calculator },
+  { group: "contacts", icon: Users },
+  { group: "documents", icon: FolderOpen },
+];
+
+const MENU_ORDER = [
+  "invoice",
+  "recurring_invoice",
+  "quote",
+  "sales_receipt",
+  "customer_credit",
+  "receive_payment",
+  "customer_refund",
+  "customer_statement",
+  "customer",
+  "bill",
+  "recurring_bill",
+  "purchase_order",
+  "supplier_credit",
+  "pay_bill",
+  "reimbursement",
+  "supplier_refund",
+  "supplier",
+  "expense",
+  "receive_money",
+  "bank_transfer",
+  "bank_deposit",
+  "bank_adjustment",
+  "card_payment",
+  "manual_journal",
+  "recurring_journal",
+  "account",
+  "product",
+  "project",
+  "document_upload",
+];
 
 export function CreateNewMenu() {
   const { user } = useRouteContext({ from: "/_authenticated" });
@@ -65,7 +119,10 @@ export function CreateNewMenu() {
     };
   }, [menuOpen]);
 
-  const results = useMemo(() => searchCreateActions(query, role), [query, role]);
+  const results = useMemo(() => {
+    const found = searchCreateActions(query, role);
+    return [...found].sort((a, b) => MENU_ORDER.indexOf(a.id) - MENU_ORDER.indexOf(b.id));
+  }, [query, role]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -128,11 +185,11 @@ export function CreateNewMenu() {
         aria-haspopup="dialog"
         aria-expanded={menuOpen}
         aria-controls={menuId}
+        className="rounded-full bg-neutral-950 px-4 text-white hover:bg-neutral-800"
         onClick={() => setMenuOpen((open) => !open)}
       >
         <Plus className="size-4" />
-        <span className="hidden sm:inline">Create New</span>
-        <span className="sr-only sm:hidden">Create New</span>
+        Create
       </Button>
 
       {menuOpen ? (
@@ -148,57 +205,83 @@ export function CreateNewMenu() {
             role="dialog"
             aria-modal="true"
             aria-label="Create new"
-            className="absolute right-4 top-14 z-50 flex max-h-[min(32rem,calc(100vh-5rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg md:right-6"
+            className="fixed left-1/2 top-16 z-50 flex max-h-[min(44rem,calc(100vh-5rem))] w-[min(58rem,calc(100vw-1.5rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl"
           >
-            <div className="border-b border-border p-2">
-              <Input
-                ref={searchRef}
-                value={query}
-                aria-label="Search create actions"
-                aria-activedescendant={results[activeIndex] ? `${menuId}-${results[activeIndex].id}` : undefined}
-                placeholder="Search invoices, bills, contacts…"
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={onSearchKeyDown}
-              />
+            <div className="flex items-start justify-between gap-4 px-5 pt-5">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">Create new</h2>
+                <p className="text-sm text-muted-foreground">Choose an action to open its flyover</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => setMenuOpen(false)}
+              >
+                <X className="size-4" />
+              </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {query ? null : (
-                <>
-                  <ActionSection
+            <div className="px-5 py-4">
+              <div className="relative">
+                <Input
+                  ref={searchRef}
+                  value={query}
+                  aria-label="Search create actions"
+                  aria-activedescendant={results[activeIndex] ? `${menuId}-${results[activeIndex].id}` : undefined}
+                  placeholder="Search transactions and actions..."
+                  className="h-11 rounded-xl pr-10"
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={onSearchKeyDown}
+                />
+                <Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2">
+              {!query && (favouriteActions.length > 0 || recentActions.length > 0) ? (
+                <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                  <ActionCard
                     title="Favourites"
+                    icon={Star}
                     actions={favouriteActions}
                     role={role}
                     prefs={prefs}
                     onOpen={openAction}
                     onToggle={(id) => persist(toggleFavourite(prefs, id))}
                   />
-                  <ActionSection
+                  <ActionCard
                     title="Recent"
+                    icon={Clock}
                     actions={recentActions}
                     role={role}
                     prefs={prefs}
                     onOpen={openAction}
                     onToggle={(id) => persist(toggleFavourite(prefs, id))}
                   />
-                </>
-              )}
-              {GROUPS.map((group) => (
-                <ActionSection
-                  key={group}
-                  title={CREATE_GROUP_LABEL[group]}
-                  actions={results.filter((action) => action.group === group)}
-                  role={role}
-                  prefs={prefs}
-                  activeId={results[activeIndex]?.id}
-                  menuId={menuId}
-                  onOpen={openAction}
-                  onToggle={(id) => persist(toggleFavourite(prefs, id))}
-                />
-              ))}
+                </div>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {SECTIONS.map(({ group, icon }) => (
+                  <ActionCard
+                    key={group}
+                    title={CREATE_GROUP_LABEL[group]}
+                    icon={icon}
+                    actions={results.filter((action) => action.group === group)}
+                    role={role}
+                    prefs={prefs}
+                    activeId={results[activeIndex]?.id}
+                    menuId={menuId}
+                    onOpen={openAction}
+                    onToggle={(id) => persist(toggleFavourite(prefs, id))}
+                  />
+                ))}
+              </div>
               {results.length === 0 ? (
-                <p className="px-2 py-4 text-sm text-muted-foreground">No matching actions.</p>
+                <p className="px-2 py-6 text-sm text-muted-foreground">No matching actions.</p>
               ) : null}
             </div>
+            <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+              Search, favourites, recent actions, permissions and keyboard shortcuts.
+            </p>
           </div>
         </>
       ) : null}
@@ -236,8 +319,9 @@ export function CreateNewMenu() {
   );
 }
 
-function ActionSection({
+function ActionCard({
   title,
+  icon: Icon,
   actions,
   role,
   prefs,
@@ -247,6 +331,7 @@ function ActionSection({
   onToggle,
 }: {
   title: string;
+  icon: LucideIcon;
   actions: CreateAction[];
   role: string | null | undefined;
   prefs: CreatePrefs;
@@ -257,35 +342,37 @@ function ActionSection({
 }) {
   if (actions.length === 0) return null;
   return (
-    <section className="mb-2">
-      <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">{title}</h2>
+    <section className="rounded-xl border border-border p-3">
+      <h3 className="mb-1 flex items-center gap-2 px-2 py-1 text-sm font-semibold">
+        <Icon className="size-4 text-muted-foreground" />
+        {title}
+      </h3>
       <ul>
         {actions.map((action) => {
           const runnable = actionIsRunnable(action, role);
           const allowed = permissionsForRole(role).includes(action.permission);
+          const reason = allowed
+            ? (action.blocker ?? "This action is unavailable.")
+            : "You do not have permission for this action.";
           return (
             <li key={`${title}-${action.id}`}>
               <div
                 id={menuId ? `${menuId}-${action.id}` : undefined}
                 className={cn(
-                  "flex items-center gap-1 rounded-md",
-                  activeId === action.id && "bg-accent",
+                  "flex items-center rounded-lg",
+                  activeId === action.id && "bg-muted",
                 )}
               >
                 <button
                   type="button"
                   disabled={!runnable}
-                  className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:text-muted-foreground"
+                  title={runnable ? action.label : reason}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:text-muted-foreground"
                   onClick={() => onOpen(action)}
                 >
-                  <span className="block truncate">{action.label}</span>
-                  {!runnable ? (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {allowed
-                        ? (action.blocker ?? "This action is unavailable.")
-                        : "You do not have permission for this action."}
-                    </span>
-                  ) : null}
+                  <span className="truncate">{action.label}</span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  {!runnable ? <span className="sr-only">{reason}</span> : null}
                 </button>
                 <button
                   type="button"
