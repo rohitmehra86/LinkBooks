@@ -12,6 +12,7 @@ import {
   getInvoice,
   markInvoiceSent,
   voidInvoice,
+  writeOffInvoiceBadDebt,
 } from "@/lib/sales/sales.functions";
 import { getSalesDocumentConfig } from "@/lib/sales/sales-config.functions";
 import { canVoidInvoice } from "@/lib/sales/allocation-rules";
@@ -53,12 +54,14 @@ function InvoiceDetail() {
   const fetchConfig = useServerFn(getSalesDocumentConfig);
   const doAuthorise = useServerFn(authoriseInvoice);
   const doVoid = useServerFn(voidInvoice);
+  const doWriteOff = useServerFn(writeOffInvoiceBadDebt);
   const doDelete = useServerFn(deleteDraftInvoice);
   const doCopy = useServerFn(copyInvoice);
   const doSent = useServerFn(markInvoiceSent);
   const queryClient = useQueryClient();
   const companyId = company?.id;
   const [voidOpen, setVoidOpen] = useState(false);
+  const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const query = useQuery({
@@ -93,6 +96,19 @@ function InvoiceDetail() {
       setVoidOpen(false);
       await refresh();
       toast.success("Invoice voided — reversing journal posted");
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const writeOffMutation = useMutation({
+    mutationFn: (v: { reason: string; date: string }) =>
+      doWriteOff({
+        data: { companyId: companyId!, invoiceId, reason: v.reason, writeOffDate: v.date },
+      }),
+    onSuccess: async () => {
+      setWriteOffOpen(false);
+      await refresh();
+      toast.success("Written off as bad debt — credit note posted");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -231,6 +247,11 @@ function InvoiceDetail() {
                   onClick={() => copyMutation.mutate()}
                 >
                   Copy invoice
+                </Button>
+              ) : null}
+              {(inv.status === "authorised" || inv.status === "partly_paid") && outstanding > 0 ? (
+                <Button size="sm" variant="outline" onClick={() => setWriteOffOpen(true)}>
+                  Write off bad debt
                 </Button>
               ) : null}
               {voidable ? (
@@ -440,6 +461,18 @@ function InvoiceDetail() {
         defaultDate={today}
         pending={voidMutation.isPending}
         onConfirm={(v) => voidMutation.mutate(v)}
+      />
+      <ReasonDialog
+        open={writeOffOpen}
+        onOpenChange={setWriteOffOpen}
+        title="Write off the remaining balance as bad debt?"
+        description={`Posts a credit note for ${money(outstanding, cur)} against your bad debt expense account and applies it to this invoice. Tax is relieved in proportion. This cannot be undone except by voiding the credit note.`}
+        confirmLabel="Write off"
+        dateLabel="Write-off date"
+        minDate={inv.invoice_date}
+        defaultDate={today}
+        pending={writeOffMutation.isPending}
+        onConfirm={(v) => writeOffMutation.mutate(v)}
       />
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

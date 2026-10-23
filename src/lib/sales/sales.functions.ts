@@ -729,6 +729,51 @@ export const voidInvoice = createServerFn({ method: "POST" })
     return { journalId: done.void_journal_id };
   });
 
+export const writeOffInvoiceBadDebt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      invoiceId: string;
+      reason: string;
+      writeOffDate?: string;
+      badDebtAccountId?: string;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      invoiceId: assertUuid(input.invoiceId, "invoice"),
+      reason: assertReason(input.reason, "A write-off reason"),
+      writeOffDate: optionalIsoDate(input.writeOffDate, "Write-off date"),
+      badDebtAccountId: input.badDebtAccountId
+        ? assertUuid(input.badDebtAccountId, "bad debt account")
+        : null,
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "sales.void");
+    const rpc = await callSalesRpc<{
+      credit_note_id: string;
+      journal_id: string;
+      written_off_minor: number;
+    }>(supabase, "write_off_bad_debt", {
+      company_id: data.companyId,
+      invoice_id: data.invoiceId,
+      reason: data.reason,
+      write_off_date: data.writeOffDate,
+      bad_debt_account_id: data.badDebtAccountId,
+    });
+    const done = requireRpc(
+      rpc,
+      "write_off_bad_debt",
+      "20261025300100_ops_money_documents_rpcs.sql",
+    );
+    return {
+      creditNoteId: done.credit_note_id,
+      journalId: done.journal_id,
+      writtenOffMinor: Number(done.written_off_minor),
+    };
+  });
+
 export const deleteDraftInvoice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { companyId: string; invoiceId: string }) => ({
