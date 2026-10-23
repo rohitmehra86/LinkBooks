@@ -2,12 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { listCreditNotes } from "@/lib/purchases/purchases.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { TableCard } from "@/components/common/table-card";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   Table,
   TableBody,
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/_authenticated/purchases/credit-notes/")(
 
 function CreditNotesList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const fetch = useServerFn(listCreditNotes);
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
@@ -44,59 +46,60 @@ function CreditNotesList() {
         }
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
-        <ErrorState title="Could not load credit notes" description={friendlyAuthError(query.error)} />
+        <ErrorState
+          title="Could not load credit notes"
+          description={friendlyAuthError(query.error)}
+        />
       ) : (query.data ?? []).length === 0 ? (
         <EmptyState title="No credit notes" description="Create a supplier credit note." />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Allocated</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              query.data as Array<{
-                id: string;
-                credit_date: string;
-                status: string;
-                total_minor: number;
-                amount_allocated_minor: number;
-                contacts: { name: string } | null;
-              }>
-            ).map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>
-                  <Link
-                    className="underline-offset-2 hover:underline"
-                    to="/purchases/credit-notes/$creditNoteId"
-                    params={{ creditNoteId: c.id }}
-                  >
-                    {c.credit_date}
-                  </Link>
-                </TableCell>
-                <TableCell>{c.contacts?.name ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {c.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(c.total_minor), currency)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(c.amount_allocated_minor), currency)}
-                </TableCell>
+        <TableCard>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Allocated</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(
+                query.data as Array<{
+                  id: string;
+                  credit_date: string;
+                  status: string;
+                  total_minor: number;
+                  amount_allocated_minor: number;
+                  contacts: { name: string } | null;
+                }>
+              ).map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>
+                    <Link
+                      className="underline-offset-2 hover:underline"
+                      to="/purchases/credit-notes/$creditNoteId"
+                      params={{ creditNoteId: c.id }}
+                    >
+                      {fmt.date(c.credit_date)}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{c.contacts?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} />
+                  </TableCell>
+                  <TableCell className="money">{fmt.money(c.total_minor, currency)}</TableCell>
+                  <TableCell className="money">
+                    {fmt.money(c.amount_allocated_minor, currency)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableCard>
       )}
     </>
   );

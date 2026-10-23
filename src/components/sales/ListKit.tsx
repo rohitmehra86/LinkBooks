@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { DataTableToolbar } from "@/components/common/data-table-toolbar";
+import { TableCard } from "@/components/common/table-card";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,10 +128,7 @@ export function ListToolbar({
   );
 }
 
-/** Card frame for a list table: rounded border, clipped corners, no double borders. */
-export function TableCard({ children }: { children: ReactNode }) {
-  return <div className="overflow-hidden rounded-xl border bg-card shadow-card">{children}</div>;
-}
+export { TableCard };
 
 export function SortHead({
   label,

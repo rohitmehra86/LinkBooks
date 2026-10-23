@@ -3,12 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { convertPurchaseOrderToBill, listPurchaseOrders } from "@/lib/purchases/purchases.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { useFormat } from "@/hooks/use-format";
+import {
+  convertPurchaseOrderToBill,
+  listPurchaseOrders,
+} from "@/lib/purchases/purchases.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { TableCard } from "@/components/common/table-card";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   Table,
   TableBody,
@@ -24,6 +28,7 @@ export const Route = createFileRoute("/_authenticated/purchases/orders/")({
 
 function OrdersList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const navigate = useNavigate();
   const fetch = useServerFn(listPurchaseOrders);
   const convert = useServerFn(convertPurchaseOrderToBill);
@@ -61,68 +66,66 @@ function OrdersList() {
         }
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
         <ErrorState title="Could not load orders" description={friendlyAuthError(query.error)} />
       ) : (query.data ?? []).length === 0 ? (
         <EmptyState title="No purchase orders" description="Create a PO for a supplier." />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              query.data as Array<{
-                id: string;
-                order_date: string;
-                status: string;
-                total_minor: number;
-                billed_bill_id: string | null;
-                contacts: { name: string } | null;
-              }>
-            ).map((o) => (
-              <TableRow key={o.id}>
-                <TableCell>{o.order_date}</TableCell>
-                <TableCell>{o.contacts?.name ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {o.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(o.total_minor), currency)}
-                </TableCell>
-                <TableCell>
-                  {!o.billed_bill_id && o.status !== "cancelled" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={convertMutation.isPending}
-                      onClick={() => convertMutation.mutate(o.id)}
-                    >
-                      Convert to bill
-                    </Button>
-                  ) : o.billed_bill_id ? (
-                    <Link
-                      className="text-sm underline"
-                      to="/purchases/bills/$billId"
-                      params={{ billId: o.billed_bill_id }}
-                    >
-                      View bill
-                    </Link>
-                  ) : null}
-                </TableCell>
+        <TableCard>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(
+                query.data as Array<{
+                  id: string;
+                  order_date: string;
+                  status: string;
+                  total_minor: number;
+                  billed_bill_id: string | null;
+                  contacts: { name: string } | null;
+                }>
+              ).map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell>{fmt.date(o.order_date)}</TableCell>
+                  <TableCell>{o.contacts?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={o.status} />
+                  </TableCell>
+                  <TableCell className="money">{fmt.money(o.total_minor, currency)}</TableCell>
+                  <TableCell>
+                    {!o.billed_bill_id && o.status !== "cancelled" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={convertMutation.isPending}
+                        onClick={() => convertMutation.mutate(o.id)}
+                      >
+                        Convert to bill
+                      </Button>
+                    ) : o.billed_bill_id ? (
+                      <Link
+                        className="text-sm underline"
+                        to="/purchases/bills/$billId"
+                        params={{ billId: o.billed_bill_id }}
+                      >
+                        View bill
+                      </Link>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableCard>
       )}
     </>
   );
