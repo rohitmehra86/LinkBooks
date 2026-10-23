@@ -8,6 +8,7 @@ import { getJournalDetail } from "@/lib/banking/journal.functions";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   Table,
   TableBody,
@@ -111,6 +112,7 @@ function JournalDetail() {
           </TableRow>
         </TableFooter>
       </Table>
+      <AttachmentsPanel entityType="journal" entityId={journalId} />
     </>
   );
 }

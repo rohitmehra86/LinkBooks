@@ -21,6 +21,8 @@ import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -171,8 +173,10 @@ function InvoiceDetail() {
               <Button variant="outline" size="sm" asChild>
                 <Link to="/sales/invoices">Back</Link>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => window.print()}>
-                <Printer className="mr-1 size-4" /> Print / PDF
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/documents/print/$kind/$id" params={{ kind: "sales_invoice", id: invoiceId }}>
+                  <Printer className="mr-1 size-4" /> Print / PDF
+                </Link>
               </Button>
               {inv.status === "draft" ? (
                 <>
@@ -250,9 +254,6 @@ function InvoiceDetail() {
             </p>
           ) : null
         ) : null}
-        <p className="mb-4 text-xs text-muted-foreground">
-          Delivery: use Print / PDF. Email delivery is not configured in this environment.
-        </p>
       </div>
 
       <article className="max-w-4xl space-y-6 rounded-md border border-border bg-card p-6 print:border-0 print:p-0">
@@ -428,6 +429,9 @@ function InvoiceDetail() {
           ))}
         </section>
       ) : null}
+
+      <DocumentActions kind="sales_invoice" id={invoiceId} />
+      <AttachmentsPanel entityType="sales_invoice" entityId={invoiceId} />
 
       <ReasonDialog
         open={voidOpen}

@@ -750,7 +750,14 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Document branding</CardTitle>
-              <CardDescription>Letterhead and contact details for customer-facing documents.</CardDescription>
+              <CardDescription>
+                Letterhead and contact details for customer-facing documents. Logo upload, accent colour,
+                address, tax number, bank details and footer are on the{" "}
+                <a className="underline" href="/documents/branding">
+                  document branding page
+                </a>
+                .
+              </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">

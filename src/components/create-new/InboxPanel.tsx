@@ -1,44 +1,55 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { uploadInboxDocument } from "@/lib/create-new/money-documents.functions";
+import { registerAttachment } from "@/lib/documents/attachments.functions";
+import {
+  FILE_INPUT_ACCEPT,
+  MAX_FILE_BYTES,
+  formatFileSize,
+  validateUpload,
+} from "@/lib/documents/attachments";
+import { uploadCompanyDocument } from "@/lib/documents/upload-client";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/**
+ * Create → Document upload. Files go to the private company-documents bucket and appear on the
+ * Files page as "Unfiled" until they are attached to a record from that record's page.
+ */
 export function InboxPanel() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
-  const upload = useServerFn(uploadInboxDocument);
-  const [note, setNote] = useState("");
+  const queryClient = useQueryClient();
+  const register = useServerFn(registerAttachment);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [savedName, setSavedName] = useState<string | null>(null);
 
   const saveM = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("Choose a file");
-      const contentBase64 = await fileToBase64(file);
-      return upload({
-        data: {
-          companyId: companyId!,
-          fileName: file.name,
-          contentType: file.type,
-          contentBase64,
-          sizeBytes: file.size,
-          note,
-        },
+      return uploadCompanyDocument({
+        file,
+        companyId: companyId!,
+        entityType: "company",
+        entityId: companyId!,
+        register: register as never,
       });
     },
-    onSuccess: (result) => {
+    onSuccess: async () => {
       setError(null);
-      setSaved(result.scanStatus);
-      toast.success("Document stored in the inbox");
+      setSavedName(file?.name ?? null);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      await queryClient.invalidateQueries({ queryKey: ["company-files", companyId] });
+      toast.success("File uploaded to Files");
     },
     onError: (e) => setError(friendlyAuthError(e)),
   });
@@ -53,31 +64,52 @@ export function InboxPanel() {
       }}
     >
       <p className="text-sm text-muted-foreground">
-        Files stay in this organisation. Malware scanning is not configured, so the document is stored as not scanned. OCR is not run.
+        Files are private to this organisation and listed on the Files page. Malware scanning and
+        OCR are not run. Up to {formatFileSize(MAX_FILE_BYTES)} per file.
       </p>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {saved ? <p className="text-sm">Saved. Scan status: {saved}. Processing status: inbox.</p> : null}
-      <Label>File</Label>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      {savedName ? (
+        <p className="text-sm">
+          Uploaded “{savedName}”. Find it on the{" "}
+          <a className="underline" href="/files">
+            Files
+          </a>{" "}
+          page.
+        </p>
+      ) : null}
+      <Label htmlFor="inbox-file">File</Label>
       <Input
+        id="inbox-file"
+        ref={inputRef}
         type="file"
-        accept=".pdf,image/*,.png,.jpg,.jpeg,.webp,.csv,.txt"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        accept={FILE_INPUT_ACCEPT}
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          setSavedName(null);
+          if (f) {
+            const check = validateUpload({
+              fileName: f.name,
+              sizeBytes: f.size,
+              contentType: f.type,
+            });
+            if (!check.ok) {
+              setError(check.error);
+              setFile(null);
+              e.target.value = "";
+              return;
+            }
+          }
+          setError(null);
+          setFile(f);
+        }}
       />
-      <Label>Note</Label>
-      <Input value={note} onChange={(e) => setNote(e.target.value)} />
-      <Button type="submit" disabled={saveM.isPending || !file}>{saveM.isPending ? "Uploading…" : "Upload"}</Button>
+      <Button type="submit" disabled={saveM.isPending || !file}>
+        {saveM.isPending ? "Uploading…" : "Upload"}
+      </Button>
     </form>
   );
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = String(reader.result ?? "");
-      resolve(value.includes(",") ? value.split(",")[1] ?? "" : value);
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 }

@@ -24,6 +24,8 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -620,6 +622,8 @@ function CreditNoteDetail() {
           </Button>
         </div>
       ) : null}
+      <DocumentActions kind="purchase_credit_note" id={creditNoteId} />
+      <AttachmentsPanel entityType="purchase_credit_note" entityId={creditNoteId} />
     </>
   );
 }

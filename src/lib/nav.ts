@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   Briefcase,
   Building2,
+  FolderOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,7 +31,12 @@ export const navItems: NavItem[] = [
     description: "Financial position at a glance",
   },
   { label: "Banking", to: "/banking", icon: Landmark, description: "Accounts and reconciliation" },
-  { label: "Sales", to: "/sales", icon: ReceiptText, description: "Invoices and customer payments" },
+  {
+    label: "Sales",
+    to: "/sales",
+    icon: ReceiptText,
+    description: "Invoices and customer payments",
+  },
   {
     label: "Purchases",
     to: "/purchases",
@@ -50,7 +56,18 @@ export const navItems: NavItem[] = [
     icon: BookOpen,
     description: "Chart of accounts, journals, ledger",
   },
-  { label: "Reports", to: "/reports", icon: BarChart3, description: "Reports Centre and financial statements" },
+  {
+    label: "Files",
+    to: "/files",
+    icon: FolderOpen,
+    description: "Attachments and uploaded documents",
+  },
+  {
+    label: "Reports",
+    to: "/reports",
+    icon: BarChart3,
+    description: "Reports Centre and financial statements",
+  },
   {
     label: "Accountant",
     to: "/accountant",
