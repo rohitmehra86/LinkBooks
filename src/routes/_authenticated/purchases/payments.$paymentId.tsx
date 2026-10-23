@@ -16,7 +16,7 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { formatHistoryDay } from "@/lib/purchases/bill-history";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -189,9 +189,11 @@ function PaymentDocument() {
 
       <section className="rounded-lg border border-border bg-background p-4">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="capitalize">
-            {statusLabel(payment.status)}
-          </Badge>
+          <StatusBadge
+            status={payment.status}
+            label={statusLabel(payment.status)}
+            className="capitalize"
+          />
           {payment.reference ? (
             <span className="text-sm text-muted-foreground">Ref {payment.reference}</span>
           ) : null}

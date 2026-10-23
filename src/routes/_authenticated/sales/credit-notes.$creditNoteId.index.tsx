@@ -21,7 +21,7 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -257,7 +257,7 @@ function CreditNoteDetail() {
         }
       />
       <div className="mb-4 flex flex-wrap gap-3 text-sm">
-        <Badge variant="outline">{creditNoteStatusLabel(cn.status)}</Badge>
+        <StatusBadge status={cn.status} label={creditNoteStatusLabel(cn.status)} />
         <span>#{cn.credit_number ?? "—"}</span>
         <span>Total {money(cn.total_minor, cur)}</span>
         <span>Applied {money(cn.amount_allocated_minor, cur)}</span>
