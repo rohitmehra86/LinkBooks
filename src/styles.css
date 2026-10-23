@@ -6,13 +6,15 @@
 
 /*
  * LinkBooks design system.
- * Professional financial software: deep navy structure, teal action accent,
- * ledger-friendly tabular numerals.
+ * Restrained, professional finance UI: cool neutral surfaces, a deep navy sidebar and ONE brand
+ * accent (blue) for actions, focus and selection. Money direction and document status use
+ * dedicated semantic tokens (see "Semantic" below) so colour always carries the same meaning.
+ * Numbers use tabular figures (`.numeric`, `.money`) so columns of money line up.
  */
 
 @theme inline {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -42,6 +44,19 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-brand: var(--primary);
+  --color-money-in: var(--money-in);
+  --color-money-out: var(--money-out);
+  --color-success-soft: var(--success-soft);
+  --color-success-ink: var(--success-ink);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-ink: var(--warning-ink);
+  --color-info-soft: var(--info-soft);
+  --color-info-ink: var(--info-ink);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-ink: var(--destructive-ink);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-neutral-ink: var(--neutral-ink);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -60,96 +75,135 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --shadow-card: 0 1px 2px oklch(0.2 0.03 250 / 0.06), 0 1px 3px oklch(0.2 0.03 250 / 0.04);
-  --shadow-raised: 0 8px 24px oklch(0.2 0.03 250 / 0.1);
+  --shadow-card: 0 1px 2px oklch(0.2 0.03 250 / 0.05), 0 0 0 1px oklch(0.2 0.03 250 / 0.03);
+  --shadow-raised: 0 1px 2px oklch(0.2 0.03 250 / 0.06), 0 8px 24px oklch(0.2 0.03 250 / 0.1);
+  --shadow-overlay: 0 4px 6px oklch(0.2 0.03 250 / 0.05), 0 16px 40px oklch(0.2 0.03 250 / 0.16);
 }
 
 :root {
   --radius: 0.5rem;
 
-  --background: oklch(0.985 0.003 250);
-  --foreground: oklch(0.23 0.03 250);
+  --background: oklch(0.982 0.003 250);
+  --foreground: oklch(0.22 0.03 255);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.23 0.03 250);
+  --card-foreground: oklch(0.22 0.03 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.23 0.03 250);
+  --popover-foreground: oklch(0.22 0.03 255);
 
-  --primary: oklch(0.32 0.06 252);
-  --primary-foreground: oklch(0.985 0.005 250);
+  /* Brand accent: the only saturated UI colour. */
+  --primary: oklch(0.5 0.15 255);
+  --primary-foreground: oklch(0.99 0.004 255);
 
-  --secondary: oklch(0.955 0.008 250);
-  --secondary-foreground: oklch(0.32 0.05 252);
+  --secondary: oklch(0.955 0.007 250);
+  --secondary-foreground: oklch(0.3 0.04 255);
 
-  --muted: oklch(0.955 0.008 250);
-  --muted-foreground: oklch(0.52 0.025 252);
+  --muted: oklch(0.956 0.006 250);
+  --muted-foreground: oklch(0.5 0.025 255);
 
-  --accent: oklch(0.6 0.1 190);
-  --accent-foreground: oklch(0.99 0.005 190);
+  /* Accent = subtle hover/selected surface (shadcn convention), not a second brand colour. */
+  --accent: oklch(0.95 0.012 255);
+  --accent-foreground: oklch(0.28 0.05 255);
 
-  --destructive: oklch(0.55 0.2 25);
+  --destructive: oklch(0.54 0.2 25);
   --destructive-foreground: oklch(0.99 0.005 25);
-  --success: oklch(0.56 0.12 155);
+  --success: oklch(0.55 0.13 155);
   --success-foreground: oklch(0.99 0.005 155);
-  --warning: oklch(0.72 0.14 75);
-  --warning-foreground: oklch(0.25 0.04 75);
-  --info: oklch(0.55 0.11 245);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.25 0.05 75);
+  --info: oklch(0.52 0.13 245);
   --info-foreground: oklch(0.99 0.005 245);
 
-  --border: oklch(0.905 0.01 250);
-  --input: oklch(0.905 0.01 250);
-  --ring: oklch(0.6 0.1 190);
+  /* Semantic: money direction + soft status surfaces (text "ink" is AA on its "soft" bg). */
+  --money-in: oklch(0.45 0.12 155);
+  --money-out: oklch(0.5 0.17 25);
+  --success-soft: oklch(0.95 0.045 155);
+  --success-ink: oklch(0.4 0.1 155);
+  --warning-soft: oklch(0.96 0.06 85);
+  --warning-ink: oklch(0.42 0.09 65);
+  --info-soft: oklch(0.95 0.03 250);
+  --info-ink: oklch(0.42 0.13 255);
+  --destructive-soft: oklch(0.955 0.035 25);
+  --destructive-ink: oklch(0.45 0.17 25);
+  --neutral-soft: oklch(0.945 0.006 250);
+  --neutral-ink: oklch(0.4 0.03 255);
 
-  --chart-1: oklch(0.55 0.11 245);
-  --chart-2: oklch(0.6 0.1 190);
-  --chart-3: oklch(0.56 0.12 155);
-  --chart-4: oklch(0.72 0.14 75);
-  --chart-5: oklch(0.55 0.15 320);
+  --border: oklch(0.91 0.008 250);
+  --input: oklch(0.88 0.01 250);
+  --ring: oklch(0.55 0.16 255);
 
-  --sidebar: oklch(0.26 0.04 252);
-  --sidebar-foreground: oklch(0.88 0.015 250);
-  --sidebar-primary: oklch(0.6 0.1 190);
-  --sidebar-primary-foreground: oklch(0.99 0.005 190);
-  --sidebar-accent: oklch(0.32 0.045 252);
-  --sidebar-accent-foreground: oklch(0.98 0.005 250);
-  --sidebar-border: oklch(0.34 0.04 252);
-  --sidebar-ring: oklch(0.6 0.1 190);
+  --chart-1: oklch(0.55 0.15 255);
+  --chart-2: oklch(0.62 0.12 160);
+  --chart-3: oklch(0.7 0.14 70);
+  --chart-4: oklch(0.58 0.17 25);
+  --chart-5: oklch(0.55 0.12 300);
+
+  --sidebar: oklch(0.24 0.04 258);
+  --sidebar-foreground: oklch(0.86 0.015 255);
+  --sidebar-primary: oklch(0.68 0.14 250);
+  --sidebar-primary-foreground: oklch(0.16 0.03 255);
+  --sidebar-accent: oklch(0.31 0.045 258);
+  --sidebar-accent-foreground: oklch(0.99 0.004 255);
+  --sidebar-border: oklch(0.33 0.04 258);
+  --sidebar-ring: oklch(0.68 0.14 250);
 }
 
 .dark {
-  --background: oklch(0.19 0.025 252);
-  --foreground: oklch(0.95 0.008 250);
-  --card: oklch(0.235 0.03 252);
-  --card-foreground: oklch(0.95 0.008 250);
-  --popover: oklch(0.235 0.03 252);
-  --popover-foreground: oklch(0.95 0.008 250);
-  --primary: oklch(0.85 0.02 250);
-  --primary-foreground: oklch(0.22 0.03 252);
-  --secondary: oklch(0.28 0.03 252);
-  --secondary-foreground: oklch(0.95 0.008 250);
-  --muted: oklch(0.28 0.03 252);
-  --muted-foreground: oklch(0.7 0.02 250);
-  --accent: oklch(0.65 0.1 190);
-  --accent-foreground: oklch(0.18 0.03 190);
-  --destructive: oklch(0.62 0.19 25);
+  color-scheme: dark;
+  --background: oklch(0.18 0.02 258);
+  --foreground: oklch(0.95 0.007 250);
+  --card: oklch(0.225 0.025 258);
+  --card-foreground: oklch(0.95 0.007 250);
+  --popover: oklch(0.235 0.027 258);
+  --popover-foreground: oklch(0.95 0.007 250);
+  --primary: oklch(0.7 0.13 250);
+  --primary-foreground: oklch(0.17 0.03 255);
+  --secondary: oklch(0.28 0.028 258);
+  --secondary-foreground: oklch(0.95 0.007 250);
+  --muted: oklch(0.27 0.025 258);
+  --muted-foreground: oklch(0.72 0.02 252);
+  --accent: oklch(0.3 0.035 258);
+  --accent-foreground: oklch(0.96 0.008 250);
+  --destructive: oklch(0.64 0.19 25);
   --destructive-foreground: oklch(0.99 0.005 25);
-  --success: oklch(0.65 0.12 155);
-  --success-foreground: oklch(0.18 0.03 155);
-  --warning: oklch(0.78 0.13 75);
-  --warning-foreground: oklch(0.22 0.04 75);
-  --info: oklch(0.65 0.11 245);
-  --info-foreground: oklch(0.18 0.03 245);
-  --border: oklch(1 0 0 / 12%);
+  --success: oklch(0.68 0.13 155);
+  --success-foreground: oklch(0.16 0.03 155);
+  --warning: oklch(0.8 0.14 78);
+  --warning-foreground: oklch(0.2 0.04 75);
+  --info: oklch(0.7 0.12 245);
+  --info-foreground: oklch(0.16 0.03 245);
+
+  --money-in: oklch(0.78 0.14 155);
+  --money-out: oklch(0.75 0.14 25);
+  --success-soft: oklch(0.3 0.06 155 / 0.55);
+  --success-ink: oklch(0.82 0.12 155);
+  --warning-soft: oklch(0.34 0.06 80 / 0.55);
+  --warning-ink: oklch(0.86 0.12 85);
+  --info-soft: oklch(0.32 0.07 250 / 0.55);
+  --info-ink: oklch(0.82 0.1 250);
+  --destructive-soft: oklch(0.32 0.08 25 / 0.55);
+  --destructive-ink: oklch(0.82 0.11 25);
+  --neutral-soft: oklch(0.3 0.02 258);
+  --neutral-ink: oklch(0.82 0.015 252);
+
+  --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.65 0.1 190);
-  --sidebar: oklch(0.21 0.03 252);
-  --sidebar-foreground: oklch(0.88 0.015 250);
-  --sidebar-primary: oklch(0.65 0.1 190);
-  --sidebar-primary-foreground: oklch(0.18 0.03 190);
-  --sidebar-accent: oklch(0.28 0.03 252);
+  --ring: oklch(0.72 0.14 250);
+
+  --chart-1: oklch(0.72 0.13 250);
+  --chart-2: oklch(0.75 0.12 160);
+  --chart-3: oklch(0.8 0.13 75);
+  --chart-4: oklch(0.7 0.16 25);
+  --chart-5: oklch(0.72 0.12 300);
+
+  --sidebar: oklch(0.2 0.03 258);
+  --sidebar-foreground: oklch(0.86 0.015 255);
+  --sidebar-primary: oklch(0.72 0.14 250);
+  --sidebar-primary-foreground: oklch(0.16 0.03 255);
+  --sidebar-accent: oklch(0.28 0.03 258);
   --sidebar-accent-foreground: oklch(0.98 0.005 250);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.65 0.1 190);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.72 0.14 250);
 }
 
 @layer base {
@@ -157,11 +211,22 @@
     border-color: var(--color-border);
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss03";
+    font-size: 0.875rem;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Stable layout: reserve the scrollbar gutter so pages do not jump between short and long. */
+    scrollbar-gutter: stable;
   }
 
   h1,
@@ -169,30 +234,103 @@
   h3,
   h4 {
     letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  /* One consistent, visible keyboard focus ring (WCAG 2.4.7). */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--color-primary) 22%, transparent);
+  }
+
+  /* Money and quantities line up in tables. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Respect reduced-motion preferences everywhere (WCAG 2.3.3). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
+/* Tabular figures for any amount, quantity or date column (sans, not mono: calmer, same alignment). */
 @utility numeric {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv11", "ss03";
 }
 
-/* Report printing / PDF (RP-08): sidebar, header and controls are hidden with `print:hidden`. */
+/* Monetary column cell: right-aligned, tabular, never wraps. */
+@utility money {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv11", "ss03";
+}
+
+/* Skip link: visible on keyboard focus only. */
+@utility skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 100;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  padding: 0.5rem 0.75rem;
+  color: var(--color-primary-foreground);
+  &:focus {
+    top: 0.75rem;
+  }
+}
+
+/* Printing / PDF (RP-08): sidebar, header and controls are hidden with `print:hidden`. */
 @media print {
   @page {
     margin: 12mm;
   }
+  html,
   body {
-    background: #fff;
-    color: #000;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+  /* Cards lose chrome so printed documents and reports read as plain pages. */
+  [data-slot="card"],
+  .rounded-xl.border {
+    box-shadow: none !important;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
   }
   .report-shell table {
     font-size: 11px;
   }
-  .report-shell thead {
+  .report-shell thead,
+  table thead {
     display: table-header-group;
   }
-  .report-shell tr {
+  .report-shell tr,
+  table tr {
     break-inside: avoid;
   }
+}
+
+/* Table density: wrap a table in `data-density="compact"` (see DataTableToolbar). */
+[data-density="compact"] :is(td, th) {
+  padding-block: 0.25rem;
+}
+[data-density="compact"] th {
+  height: 2rem;
 }
