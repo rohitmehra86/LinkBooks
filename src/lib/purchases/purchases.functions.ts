@@ -1514,7 +1514,7 @@ export const getSupplierPayment = createServerFn({ method: "GET" })
       ...row,
       supplier_name: supplier?.name ?? null,
       supplier_email: supplier?.email ?? null,
-      bank_label: bank ? `${bank.code} â€” ${bank.name}` : null,
+      bank_label: bank ? `${bank.code} — ${bank.name}` : null,
       recorded_by: row.created_by ? (names.get(row.created_by) ?? null) : null,
       allocations: allocationRows.map((allocation) => {
         const bill = billsById.get(allocation.bill_id);
@@ -1610,7 +1610,7 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
         b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
       if (outstanding <= 0) throw new Error("Bill has no outstanding balance");
       if (alloc.amountMinor > outstanding) {
-        throw new Error("Allocation exceeds bill outstanding balance â€” overpayment blocked");
+        throw new Error("Allocation exceeds bill outstanding balance — overpayment blocked");
       }
     }
 
@@ -1812,7 +1812,7 @@ export const reverseSupplierPayment = createServerFn({ method: "POST" })
       `by ${userId.slice(0, 8)}`,
     ]
       .filter(Boolean)
-      .join(" Â· ")
+      .join(" · ")
       .slice(0, 500);
 
     await supabase
@@ -2302,7 +2302,7 @@ export const convertPurchaseOrderToBill = createServerFn({ method: "POST" })
         updated_at: new Date().toISOString(),
       } as never)
       .eq("id" as never, data.orderId as never);
-    // No ledger posting â€” draft bill only
+    // No ledger posting — draft bill only
     return { billId };
   });
 
