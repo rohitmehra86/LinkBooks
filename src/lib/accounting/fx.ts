@@ -34,6 +34,10 @@ export function scaleMinorByRate(txnMinor: bigint | number, rate: number | strin
 /**
  * Convert transaction-currency minor units to base-currency minor units.
  * `rate` = units of base per 1 unit of transaction currency (fx_rate_to_base).
+ *
+ * Decimal-aware and single-rounding: base_minor = round(minor * rate * 10^(baseDp - txnDp)).
+ * (Rounding once at the end, not before the decimal-place shift, so JPY 1000 @ 0.0067 USD
+ * is 670 cents, not 700.) Identical to the SQL used by public.ledger_balances.
  */
 export function convertMinorToBase(
   txnMinor: bigint | number,
@@ -43,14 +47,18 @@ export function convertMinorToBase(
 ): bigint {
   const minor = typeof txnMinor === "number" ? BigInt(txnMinor) : txnMinor;
   if (txnCurrency.toUpperCase() === baseCurrency.toUpperCase()) return minor;
-  const scaled = scaleMinorByRate(minor, rate);
-  const txnPlaces = decimalPlacesFor(txnCurrency);
-  const basePlaces = decimalPlacesFor(baseCurrency);
-  if (txnPlaces === basePlaces) return scaled;
-  if (basePlaces > txnPlaces) {
-    return scaled * 10n ** BigInt(basePlaces - txnPlaces);
+  const rateStr = String(rate).trim();
+  if (!/^\d+(\.\d+)?$/.test(rateStr) || Number(rateStr) <= 0) {
+    throw new Error("fx rate must be a positive decimal");
   }
-  return roundHalfUpRational(scaled, 10n ** BigInt(txnPlaces - basePlaces));
+  const [rw, rf = ""] = rateStr.split(".");
+  const rateInt = BigInt(rw + (rf || "0"));
+  let denominator = 10n ** BigInt(rf.length);
+  let numerator = minor * rateInt;
+  const shift = decimalPlacesFor(baseCurrency) - decimalPlacesFor(txnCurrency);
+  if (shift > 0) numerator *= 10n ** BigInt(shift);
+  else if (shift < 0) denominator *= 10n ** BigInt(-shift);
+  return roundHalfUpRational(numerator, denominator);
 }
 
 /** Realised FX on settling `settledTxnMinor` originally booked at `originalRate`, settled at `settleRate`. */
@@ -96,19 +104,34 @@ export function computeUnrealizedFx(
     if (rate == null) throw new Error(`Missing closing rate for ${b.currency_code}`);
     const closingBase = convertMinorToBase(b.txn_net_minor, rate, b.currency_code, baseCurrency);
     const gainLoss = closingBase - b.booked_base_minor;
-    lines.push({ account_id: b.account_id, currency_code: b.currency_code, gainLossBaseMinor: gainLoss });
+    lines.push({
+      account_id: b.account_id,
+      currency_code: b.currency_code,
+      gainLossBaseMinor: gainLoss,
+    });
     total += gainLoss;
   }
   return { totalGainLossBaseMinor: total, lines };
 }
 
-/** Apply journal snapshot rate to convert a posted line amount to base for reporting. */
+/**
+ * Apply the journal snapshot rate to convert a posted line amount to base for reporting.
+ * When both currencies are known this is the decimal-aware converter (RP-07); otherwise it falls
+ * back to a plain rate multiplication (legacy callers that do not carry currencies).
+ */
 export function lineToBaseMinor(
   amountMinor: bigint | number,
   fxRateToBase: number | string | null | undefined,
+  txnCurrency?: string | null,
+  baseCurrency?: string | null,
 ): bigint {
-  if (fxRateToBase == null) {
-    return typeof amountMinor === "number" ? BigInt(amountMinor) : amountMinor;
+  const minor = typeof amountMinor === "number" ? BigInt(amountMinor) : amountMinor;
+  if (txnCurrency && baseCurrency && txnCurrency.toUpperCase() === baseCurrency.toUpperCase()) {
+    return minor;
   }
-  return scaleMinorByRate(amountMinor, fxRateToBase);
+  if (fxRateToBase == null) return minor;
+  if (txnCurrency && baseCurrency) {
+    return convertMinorToBase(minor, fxRateToBase, txnCurrency, baseCurrency);
+  }
+  return scaleMinorByRate(minor, fxRateToBase);
 }

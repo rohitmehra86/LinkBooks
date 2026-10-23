@@ -34,9 +34,12 @@ describe("FX conversion and rounding", () => {
   });
 
   it("JPY (0 dp) to USD (2 dp) scales places", () => {
-    // 1000 JPY * 0.0067 = 6.7 → 670 minor USD cents after place adjust:
-    // scaleMinorByRate(1000, 0.0067) = round(1000*67/10000)=7, then * 100 = 700
-    expect(convertMinorToBase(1000n, "0.0067", "JPY", "USD")).toBe(700n);
+    // 1000 JPY * 0.0067 = 6.70 USD = 670 cents. Single rounding at the end (RP-07 fix:
+    // the old two-stage rounding produced 700 because it rounded 6.7 to 7 before shifting places).
+    expect(convertMinorToBase(1000n, "0.0067", "JPY", "USD")).toBe(670n);
+    // KWD (3 dp) to GBP (2 dp): 1.000 KWD = 2.4 GBP -> 240 pence, 12.345 KWD -> 2963 pence
+    expect(convertMinorToBase(1000n, "2.4", "KWD", "GBP")).toBe(240n);
+    expect(convertMinorToBase(12_345n, "2.4", "KWD", "GBP")).toBe(2_963n);
   });
 
   it("never silently uses a voided/missing path — callers must supply rate", () => {

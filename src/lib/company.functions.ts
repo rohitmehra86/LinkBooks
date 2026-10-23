@@ -1,10 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { CompanyRole } from "@/lib/company-constants";
-import {
-  assertCompanyMember,
-  assertCompanyPermission,
-} from "@/lib/assert-company-access";
+import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import {
   assertUuid,
   validateCompanyInput,
@@ -26,6 +23,9 @@ export type CompanySummary = {
   timezone: string;
   is_demo: boolean;
   archived_at: string | null;
+  /** Display preferences (U-08). Null falls back to en-GB. */
+  locale?: string | null;
+  date_format?: string | null;
   role: CompanyRole;
 };
 
@@ -53,9 +53,34 @@ export const getCompanyContext = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
 
     const companies: CompanySummary[] = (memberships ?? [])
-      .map((m) => ({ ...(m.companies as Omit<CompanySummary, "role">), role: m.role as CompanyRole }))
+      .map((m) => ({
+        ...(m.companies as Omit<CompanySummary, "role">),
+        role: m.role as CompanyRole,
+      }))
       .filter((c) => !c.archived_at)
       .sort((a, b) => Number(a.is_demo) - Number(b.is_demo) || a.name.localeCompare(b.name));
+
+    // locale / date_format are display preferences (U-08); a failure here must not block the app.
+    if (companies.length > 0) {
+      const { data: prefs } = await supabase
+        .from("companies" as never)
+        .select("id, locale, date_format" as never)
+        .in("id" as never, companies.map((c) => c.id) as never);
+      const byId = new Map(
+        (
+          (prefs ?? []) as unknown as Array<{
+            id: string;
+            locale: string | null;
+            date_format: string | null;
+          }>
+        ).map((p) => [p.id, p]),
+      );
+      for (const c of companies) {
+        const p = byId.get(c.id);
+        c.locale = p?.locale ?? null;
+        c.date_format = p?.date_format ?? null;
+      }
+    }
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -162,19 +187,27 @@ export const getCompanyDetails = createServerFn({ method: "GET" })
     const { company_tax_settings, ...rest } = row as typeof row & {
       company_tax_settings: CompanyDetails["tax"] | CompanyDetails["tax"][];
     };
-    const tax = Array.isArray(company_tax_settings) ? (company_tax_settings[0] ?? null) : company_tax_settings;
-    return { ...(rest as Omit<CompanySummary, "role">), role: (me?.role ?? "read_only") as CompanyRole, tax };
+    const tax = Array.isArray(company_tax_settings)
+      ? (company_tax_settings[0] ?? null)
+      : company_tax_settings;
+    return {
+      ...(rest as Omit<CompanySummary, "role">),
+      role: (me?.role ?? "read_only") as CompanyRole,
+      tax,
+    };
   });
 
 export const updateCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: CreateCompanyInput & {
-      companyId: string;
-      tax_regime: string;
-      registration_number: string;
-      prices_include_tax: boolean;
-    }) => {
+    (
+      input: CreateCompanyInput & {
+        companyId: string;
+        tax_regime: string;
+        registration_number: string;
+        prices_include_tax: boolean;
+      },
+    ) => {
       const base = validateCompanyInput(input);
       return {
         ...base,
@@ -260,7 +293,11 @@ export const getActiveCompanyPermissions = createServerFn({ method: "GET" })
   .handler(
     async ({
       context,
-    }): Promise<{ companyId: string | null; role: CompanyRole | null; permissions: Permission[] }> => {
+    }): Promise<{
+      companyId: string | null;
+      role: CompanyRole | null;
+      permissions: Permission[];
+    }> => {
       const { supabase, userId } = context;
       const { data: memberships, error } = await supabase
         .from("company_members")
@@ -272,7 +309,12 @@ export const getActiveCompanyPermissions = createServerFn({ method: "GET" })
       const companies = (memberships ?? [])
         .map((m) => {
           const c = m.companies as { id: string; archived_at: string | null; is_demo: boolean };
-          return { id: c.id, archived_at: c.archived_at, is_demo: c.is_demo, role: m.role as CompanyRole };
+          return {
+            id: c.id,
+            archived_at: c.archived_at,
+            is_demo: c.is_demo,
+            role: m.role as CompanyRole,
+          };
         })
         .filter((c) => !c.archived_at);
 

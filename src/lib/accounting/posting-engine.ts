@@ -65,7 +65,9 @@ export async function postJournal(
     lines: input.lines.map((l) => ({
       account_id: l.account_id,
       description: l.description ?? null,
-      debit_minor: Number(typeof l.debit_minor === "bigint" ? l.debit_minor : BigInt(l.debit_minor)),
+      debit_minor: Number(
+        typeof l.debit_minor === "bigint" ? l.debit_minor : BigInt(l.debit_minor),
+      ),
       credit_minor: Number(
         typeof l.credit_minor === "bigint" ? l.credit_minor : BigInt(l.credit_minor),
       ),
@@ -79,12 +81,63 @@ export async function postJournal(
     }
   }
 
-  const { data, error } = await supabase.rpc("post_journal" as never, {
-    payload,
-  } as never);
+  const call = () =>
+    supabase.rpc(
+      "post_journal" as never,
+      {
+        payload,
+      } as never,
+    );
+  let { data, error } = await call();
+  if (error && isNoPeriodError(error.message)) {
+    // AC-01: create the financial year covering this date once, then retry. Locked or
+    // out-of-range dates are rejected by the RPC itself, so this never opens a closed year.
+    const created = await ensureFiscalPeriodForDate(supabase, input.company_id, input.journal_date);
+    if (created.ok) {
+      ({ data, error } = await call());
+    }
+  }
   if (error) throw new Error(error.message);
   if (!data || typeof data !== "string") throw new Error("Posting failed: no journal id returned");
   return { journalId: data };
+}
+
+export function isNoPeriodError(message: string | null | undefined): boolean {
+  return /No accounting period covers posting date/i.test(message ?? "");
+}
+
+/** True when PostgREST/Postgres says the function does not exist yet (migration not applied). */
+export function isMissingRpcError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    error.code === "PGRST202" ||
+    error.code === "42883" ||
+    /could not find the function|does not exist/i.test(error.message ?? "")
+  );
+}
+
+/**
+ * Ensure an accounting period covers `date` (creates the company's financial year, clipped so it
+ * never overlaps existing periods). Returns `{ ok: false }` without throwing when the migration is
+ * not applied, so posting keeps its original behaviour.
+ */
+export async function ensureFiscalPeriodForDate(
+  supabase: AuthedClient,
+  companyId: string,
+  date: string,
+): Promise<{ ok: true; periodId: string } | { ok: false; reason: string }> {
+  const { data, error } = await supabase.rpc(
+    "ensure_fiscal_period_for_date" as never,
+    {
+      _company_id: companyId,
+      _date: date,
+    } as never,
+  );
+  if (error) {
+    return { ok: false, reason: isMissingRpcError(error) ? "rpc_missing" : error.message };
+  }
+  if (typeof data !== "string") return { ok: false, reason: "no_period_returned" };
+  return { ok: true, periodId: data };
 }
 
 export async function reverseJournal(
@@ -92,10 +145,13 @@ export async function reverseJournal(
   journalId: string,
   idempotencyKey?: string,
 ): Promise<{ journalId: string }> {
-  const { data, error } = await supabase.rpc("reverse_journal" as never, {
-    _journal_id: journalId,
-    _idempotency_key: idempotencyKey ?? null,
-  } as never);
+  const { data, error } = await supabase.rpc(
+    "reverse_journal" as never,
+    {
+      _journal_id: journalId,
+      _idempotency_key: idempotencyKey ?? null,
+    } as never,
+  );
   if (error) throw new Error(error.message);
   if (!data || typeof data !== "string") throw new Error("Reversal failed: no journal id returned");
   return { journalId: data };

@@ -176,3 +176,23 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* Report printing / PDF (RP-08): sidebar, header and controls are hidden with `print:hidden`. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+  .report-shell table {
+    font-size: 11px;
+  }
+  .report-shell thead {
+    display: table-header-group;
+  }
+  .report-shell tr {
+    break-inside: avoid;
+  }
+}

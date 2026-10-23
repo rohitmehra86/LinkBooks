@@ -11,9 +11,11 @@ import {
   reversePostedJournal,
   type JournalListItem,
 } from "@/lib/accounting/accounting.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { roleHasPermission } from "@/lib/permissions";
+import { useFormat } from "@/hooks/use-format";
+import { SortableHead } from "@/components/common/sortable-head";
+import { nextSort, sortRows, type SortState } from "@/lib/sort";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
@@ -55,8 +57,18 @@ function canReverseHere(journal: JournalListItem): boolean {
   );
 }
 
-export function JournalsPanel({ companyId, currency }: { companyId: string; currency: string }) {
+export function JournalsPanel({
+  companyId,
+  currency,
+  initialOpenJournalId,
+}: {
+  companyId: string;
+  currency: string;
+  /** Opens this journal's lines on load (deep link from reports and search). */
+  initialOpenJournalId?: string | undefined;
+}) {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const qc = useQueryClient();
   const fetchJournals = useServerFn(listJournals);
   const fetchDetail = useServerFn(getJournalDetail);
@@ -68,7 +80,8 @@ export function JournalsPanel({ companyId, currency }: { companyId: string; curr
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [limit, setLimit] = useState(100);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialOpenJournalId ?? null);
+  const [sort, setSort] = useState<SortState<"number" | "date" | "source" | "amount"> | null>(null);
 
   const query = useQuery({
     queryKey: ["journals", companyId, search, source, from, to, limit],
@@ -101,7 +114,26 @@ export function JournalsPanel({ companyId, currency }: { companyId: string; curr
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
-  const rows = query.data ?? [];
+  const fetched = query.data ?? [];
+  const rows = !sort
+    ? fetched
+    : sortRows(
+        fetched,
+        (j) =>
+          sort.key === "number"
+            ? j.journal_number
+            : sort.key === "date"
+              ? j.journal_date
+              : sort.key === "source"
+                ? (SOURCE_LABEL[j.source_type] ?? j.source_type)
+                : j.total_debit_minor,
+        sort.dir,
+      );
+  const headProps = (key: "number" | "date" | "source" | "amount") => ({
+    active: sort?.key === key,
+    dir: sort?.dir ?? ("asc" as const),
+    onSort: () => setSort((cur) => nextSort(cur, key)),
+  });
 
   return (
     <div className="space-y-4">
@@ -175,11 +207,11 @@ export function JournalsPanel({ companyId, currency }: { companyId: string; curr
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" />
-                <TableHead>#</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Source</TableHead>
+                <SortableHead label="#" {...headProps("number")} />
+                <SortableHead label="Date" {...headProps("date")} />
+                <SortableHead label="Source" {...headProps("source")} />
                 <TableHead>Narration</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <SortableHead label="Amount" align="right" {...headProps("amount")} />
                 <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
@@ -194,18 +226,29 @@ export function JournalsPanel({ companyId, currency }: { companyId: string; curr
                       onClick={() => setOpen(expanded ? null : j.id)}
                     >
                       <TableCell>
-                        {expanded ? (
-                          <ChevronDown className="size-4" />
-                        ) : (
-                          <ChevronRight className="size-4" />
-                        )}
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "Hide" : "Show"} lines of journal ${j.journal_number}`}
+                          className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpen(expanded ? null : j.id);
+                          }}
+                        >
+                          {expanded ? (
+                            <ChevronDown className="size-4" />
+                          ) : (
+                            <ChevronRight className="size-4" />
+                          )}
+                        </button>
                       </TableCell>
                       <TableCell>{j.journal_number}</TableCell>
-                      <TableCell>{j.journal_date}</TableCell>
+                      <TableCell>{fmt.date(j.journal_date)}</TableCell>
                       <TableCell>{SOURCE_LABEL[j.source_type] ?? j.source_type}</TableCell>
                       <TableCell className="max-w-[260px] truncate">{j.memo ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {fromMinorUnits(j.total_debit_minor, j.currency_code || currency)}
+                        {fmt.amount(j.total_debit_minor, j.currency_code || currency)}
                       </TableCell>
                       <TableCell className="space-x-1">
                         <Badge variant="secondary" className="capitalize">
@@ -271,12 +314,12 @@ export function JournalsPanel({ companyId, currency }: { companyId: string; curr
                                     <TableCell>{line.description ?? "—"}</TableCell>
                                     <TableCell className="text-right tabular-nums">
                                       {line.debit_minor
-                                        ? fromMinorUnits(line.debit_minor, currency)
+                                        ? fmt.amount(line.debit_minor, currency)
                                         : ""}
                                     </TableCell>
                                     <TableCell className="text-right tabular-nums">
                                       {line.credit_minor
-                                        ? fromMinorUnits(line.credit_minor, currency)
+                                        ? fmt.amount(line.credit_minor, currency)
                                         : ""}
                                     </TableCell>
                                   </TableRow>

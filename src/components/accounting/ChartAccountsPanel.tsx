@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, MoreHorizontal } from "lucide-react";
@@ -451,7 +452,15 @@ export function ChartAccountsPanel({
                       {account.isSystem ? <Badge variant="outline">System</Badge> : null}
                     </div>
                     <span className="truncate text-muted-foreground">{kind}</span>
-                    <span className="font-mono text-xs">{money(account, currency, "balance")}</span>
+                    <Link
+                      to="/reports/$reportId"
+                      params={{ reportId: "general-ledger" }}
+                      search={{ account: account.id } as never}
+                      className="font-mono text-xs hover:underline"
+                      title="Open account transactions"
+                    >
+                      {money(account, currency, "balance")}
+                    </Link>
                     <span className="font-mono text-xs">
                       {showYtd ? money(account, currency, "ytd") : account.transactionCount}
                     </span>
@@ -782,7 +791,8 @@ function money(account: ChartAccount, currency: string, which: "balance" | "ytd"
     : account.normalBalance === "debit"
       ? debit - credit
       : credit - debit;
-  return fromMinorUnits(signed, account.currencyCode || currency);
+  // Totals are converted to the company base currency by the ledger aggregates.
+  return fromMinorUnits(signed, currency);
 }
 
 function draftFrom(
