@@ -142,10 +142,14 @@ export async function generatePurchaseBillFromRecurring(
       ? doc.dueDate
       : addCalendarDays(scheduledDate, scheduleOpts.dueDaysAfterBillDate || 0);
     const memo = doc?.memo?.trim() || scheduleOpts.memo?.trim() || "Generated from recurring bill";
+    // P-16: every generated bill gets its own internal number from the company's numbering sequence.
+    const { allocateDocumentNumber } = await import("@/lib/settings/document-numbering");
+    const billNumber = await allocateDocumentNumber(supabase as never, companyId, "purchase_bill");
     const { data: bill, error: bErr } = await supabase
       .from("purchase_bills" as never)
       .insert({
         company_id: companyId,
+        bill_number: billNumber,
         ...header,
         bill_date: scheduledDate,
         due_date: dueDate,

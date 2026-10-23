@@ -7,6 +7,8 @@ import { useActiveCompany } from "@/hooks/use-active-company";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { RunDueButton } from "@/components/recurring/RunDueButton";
+import { runDueRecurringBills } from "@/lib/recurring/run-due.functions";
 import {
   Table,
   TableBody,
@@ -66,6 +68,7 @@ function RecurringTransactionsPage() {
   const dup = useServerFn(duplicateRecurringBill);
   const archive = useServerFn(archiveRecurringBill);
   const generate = useServerFn(generateRecurringBill);
+  const runDue = useServerFn(runDueRecurringBills);
 
   const workspaceQ = useQuery({
     queryKey: [
@@ -165,6 +168,16 @@ function RecurringTransactionsPage() {
       <PageHeader
         title="Recurring transactions"
         description="Supplier bill schedules — premium overlay, idempotent generation, exceptions and forecast."
+        actions={
+          <RunDueButton
+            label="bills"
+            run={() => runDue({ data: { companyId: companyId! } })}
+            invalidateKeys={[
+              ["recurring-bills", companyId],
+              ["bills", companyId],
+            ]}
+          />
+        }
       />
 
       <Tabs
@@ -265,10 +278,7 @@ function RecurringTransactionsPage() {
           {workspaceQ.isPending ? (
             <LoadingState />
           ) : workspaceQ.isError ? (
-            <ErrorState
-              title="Could not load"
-              description={friendlyAuthError(workspaceQ.error)}
-            />
+            <ErrorState title="Could not load" description={friendlyAuthError(workspaceQ.error)} />
           ) : (workspaceQ.data?.rows ?? []).length === 0 ? (
             <EmptyState
               title="No recurring bill templates"
@@ -347,7 +357,12 @@ function RecurringTransactionsPage() {
                               variant="ghost"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!window.confirm("Archive this template? Generated bills stay in Purchases.")) return;
+                                if (
+                                  !window.confirm(
+                                    "Archive this template? Generated bills stay in Purchases.",
+                                  )
+                                )
+                                  return;
                                 archiveM.mutate(legacyId);
                               }}
                             >
@@ -408,32 +423,42 @@ function RecurringTransactionsPage() {
                     status: string;
                     error_message: string | null;
                     recurring_schedules?:
-                      | { recurring_templates?: { name?: string; legacy_recurring_bill_id?: string | null } }
-                      | Array<{ recurring_templates?: { name?: string; legacy_recurring_bill_id?: string | null } }>;
+                      | {
+                          recurring_templates?: {
+                            name?: string;
+                            legacy_recurring_bill_id?: string | null;
+                          };
+                        }
+                      | Array<{
+                          recurring_templates?: {
+                            name?: string;
+                            legacy_recurring_bill_id?: string | null;
+                          };
+                        }>;
                   }) => {
                     const sched = Array.isArray(r.recurring_schedules)
                       ? r.recurring_schedules[0]
                       : r.recurring_schedules;
                     const legacyId = sched?.recurring_templates?.legacy_recurring_bill_id;
                     return (
-                    <TableRow key={r.id}>
-                      <TableCell>{r.scheduled_date}</TableCell>
-                      <TableCell>{sched?.recurring_templates?.name ?? "—"}</TableCell>
-                      <TableCell>{r.status}</TableCell>
-                      <TableCell>{r.error_message ?? "—"}</TableCell>
-                      <TableCell>
-                        {r.status === "failed" && legacyId ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={retryM.isPending}
-                            onClick={() => retryM.mutate(legacyId)}
-                          >
-                            Retry
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
+                      <TableRow key={r.id}>
+                        <TableCell>{r.scheduled_date}</TableCell>
+                        <TableCell>{sched?.recurring_templates?.name ?? "—"}</TableCell>
+                        <TableCell>{r.status}</TableCell>
+                        <TableCell>{r.error_message ?? "—"}</TableCell>
+                        <TableCell>
+                          {r.status === "failed" && legacyId ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={retryM.isPending}
+                              onClick={() => retryM.mutate(legacyId)}
+                            >
+                              Retry
+                            </Button>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
                     );
                   },
                 )}
@@ -462,7 +487,12 @@ function RecurringTransactionsPage() {
                 </TableHeader>
                 <TableBody>
                   {(forecastQ.data?.items ?? []).map(
-                    (i: { date: string; name: string; documentType: string; scheduleId: string }) => (
+                    (i: {
+                      date: string;
+                      name: string;
+                      documentType: string;
+                      scheduleId: string;
+                    }) => (
                       <TableRow key={`${i.scheduleId}-${i.date}`}>
                         <TableCell>{i.date}</TableCell>
                         <TableCell>{i.name}</TableCell>
