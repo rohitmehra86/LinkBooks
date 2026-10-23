@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { listSuppliers, saveAndAuthoriseCreditNote } from "@/lib/purchases/purchases.functions";
-import { toMinorUnits } from "@/lib/accounting/money";
+import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
+import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,9 @@ export function NewCreditNote() {
   const fetchSuppliers = useServerFn(listSuppliers);
   const fetchAccounts = useServerFn(listAccounts);
   const save = useServerFn(saveAndAuthoriseCreditNote);
+  const { can } = useCan();
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
+  const baseCurrency = company?.base_currency ?? "GBP";
   const today = new Date().toISOString().slice(0, 10);
 
   const [contactId, setContactId] = useState("");
@@ -54,6 +56,14 @@ export function NewCreditNote() {
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
   });
 
+  // The credit note is in the supplier's currency (falls back to the base currency).
+  const supplierCurrency = (
+    (suppliersQ.data ?? []) as Array<{ id: string; default_currency: string | null }>
+  ).find((s) => s.id === contactId)?.default_currency;
+  const currency = (supplierCurrency || baseCurrency).toUpperCase();
+  const netInvalid = tryParseMinor(net || "0", currency) === null;
+  const taxInvalid = tryParseMinor(tax || "0", currency) === null;
+
   const accounts = ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; is_postable: boolean; is_active: boolean }>).filter(
     (a) => a.is_active && a.is_postable,
   );
@@ -71,8 +81,8 @@ export function NewCreditNote() {
             {
               description,
               accountId,
-              netMinor: Number(toMinorUnits(net || "0", currency)),
-              taxMinor: Number(toMinorUnits(tax || "0", currency)),
+              netMinor: Number(parseMinorOrThrow(net || "0", currency, "Net amount")),
+              taxMinor: Number(parseMinorOrThrow(tax || "0", currency, "Tax")),
             },
           ],
         },
@@ -135,19 +145,38 @@ export function NewCreditNote() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label>Net</Label>
-            <Input value={net} onChange={(e) => setNet(e.target.value)} />
+            <Label>Net ({currency})</Label>
+            <Input
+              value={net}
+              inputMode="decimal"
+              aria-invalid={netInvalid}
+              onChange={(e) => setNet(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
-            <Label>Tax</Label>
-            <Input value={tax} onChange={(e) => setTax(e.target.value)} />
+            <Label>Tax ({currency})</Label>
+            <Input
+              value={tax}
+              inputMode="decimal"
+              aria-invalid={taxInvalid}
+              onChange={(e) => setTax(e.target.value)}
+            />
           </div>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => mutation.mutate(false)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={mutation.isPending || netInvalid || taxInvalid || !can("purchases.draft")}
+            onClick={() => mutation.mutate(false)}
+          >
             Save draft
           </Button>
-          <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate(true)}>
+          <Button
+            size="sm"
+            disabled={mutation.isPending || netInvalid || taxInvalid || !can("purchases.authorise")}
+            onClick={() => mutation.mutate(true)}
+          >
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             Authorise & post
           </Button>
