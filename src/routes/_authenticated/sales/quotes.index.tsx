@@ -4,22 +4,23 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { convertQuoteToInvoice, exportQuotesCsv, listQuotes } from "@/lib/sales/sales.functions";
 import { isQuoteConvertible } from "@/lib/sales/quote-status";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   ListToolbar,
   Pager,
+  TableCard,
   SortHead,
   downloadCsv,
   initialListState,
   useDebounced,
   type ListState,
 } from "@/components/sales/ListKit";
-import { money } from "@/components/sales/sales-form-utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -46,6 +47,7 @@ const STATUSES = [
 
 function QuotesList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const companyId = company?.id;
   const navigate = useNavigate();
   const fetchQuotes = useServerFn(listQuotes);
@@ -116,7 +118,7 @@ function QuotesList() {
         exporting={exporter.isPending}
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
         <ErrorState
           title="Could not load quotes"
@@ -124,75 +126,85 @@ function QuotesList() {
           onRetry={() => query.refetch()}
         />
       ) : rows.length === 0 ? (
-        <EmptyState title="No quotes" description="No quotes match — create one for a customer." />
+        <EmptyState
+          title="No quotes"
+          description="No quotes match — create one for a customer."
+          action={
+            <Button size="sm" asChild>
+              <Link to="/sales/quotes/new">New quote</Link>
+            </Button>
+          }
+        />
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortHead label="Number" column="quote_number" state={state} onChange={patch} />
-                <SortHead label="Date" column="quote_date" state={state} onChange={patch} />
-                <SortHead label="Expires" column="expiry_date" state={state} onChange={patch} />
-                <TableHead>Customer</TableHead>
-                <SortHead label="Status" column="status" state={state} onChange={patch} />
-                <SortHead
-                  label="Total"
-                  column="total_minor"
-                  state={state}
-                  onChange={patch}
-                  className="text-right"
-                />
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((qt) => {
-                const can = isQuoteConvertible(qt, today);
-                return (
-                  <TableRow key={qt.id}>
-                    <TableCell>
-                      <Link
-                        className="underline-offset-2 hover:underline"
-                        to="/sales/quotes/$quoteId"
-                        params={{ quoteId: qt.id }}
-                      >
-                        {qt.quote_number ?? qt.id.slice(0, 8)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{qt.quote_date}</TableCell>
-                    <TableCell>{qt.expiry_date ?? "—"}</TableCell>
-                    <TableCell>{qt.contacts?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{qt.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money(qt.total_minor, qt.currency_code)}
-                    </TableCell>
-                    <TableCell className="space-x-2 text-right">
-                      {can.ok ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={convertM.isPending}
-                          onClick={() => convertM.mutate(qt.id)}
-                        >
-                          Convert
-                        </Button>
-                      ) : qt.converted_invoice_id ? (
+          <TableCard>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead label="Number" column="quote_number" state={state} onChange={patch} />
+                  <SortHead label="Date" column="quote_date" state={state} onChange={patch} />
+                  <SortHead label="Expires" column="expiry_date" state={state} onChange={patch} />
+                  <TableHead>Customer</TableHead>
+                  <SortHead label="Status" column="status" state={state} onChange={patch} />
+                  <SortHead
+                    label="Total"
+                    column="total_minor"
+                    state={state}
+                    onChange={patch}
+                    className="text-right"
+                  />
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((qt) => {
+                  const can = isQuoteConvertible(qt, today);
+                  return (
+                    <TableRow key={qt.id}>
+                      <TableCell>
                         <Link
-                          className="text-sm underline"
-                          to="/sales/invoices/$invoiceId"
-                          params={{ invoiceId: qt.converted_invoice_id }}
+                          className="underline-offset-2 hover:underline"
+                          to="/sales/quotes/$quoteId"
+                          params={{ quoteId: qt.id }}
                         >
-                          View invoice
+                          {qt.quote_number ?? qt.id.slice(0, 8)}
                         </Link>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </TableCell>
+                      <TableCell>{fmt.date(qt.quote_date)}</TableCell>
+                      <TableCell>{qt.expiry_date ? fmt.date(qt.expiry_date) : "—"}</TableCell>
+                      <TableCell>{qt.contacts?.name ?? "—"}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={qt.status} />
+                      </TableCell>
+                      <TableCell className="money">
+                        {fmt.money(qt.total_minor, qt.currency_code)}
+                      </TableCell>
+                      <TableCell className="space-x-2 text-right">
+                        {can.ok ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={convertM.isPending}
+                            onClick={() => convertM.mutate(qt.id)}
+                          >
+                            Convert
+                          </Button>
+                        ) : qt.converted_invoice_id ? (
+                          <Link
+                            className="text-sm underline"
+                            to="/sales/invoices/$invoiceId"
+                            params={{ invoiceId: qt.converted_invoice_id }}
+                          >
+                            View invoice
+                          </Link>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableCard>
           <Pager total={query.data?.total ?? 0} state={state} onChange={patch} />
         </>
       )}

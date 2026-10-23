@@ -95,3 +95,38 @@ export async function requireBankAccount(
   const bankIds = await loadBankGlAccountIds(supabase, companyId);
   if (!isBankOrCashAccount(row, bankIds)) throw new Error(NOT_A_BANK_ACCOUNT_MESSAGE);
 }
+
+export type ApCandidate = {
+  id: string;
+  code: string;
+  system_key: string | null;
+  is_active: boolean;
+  archived_at: string | null;
+};
+
+/** Role first (system_key "ap"), then the conventional code 2000. Inactive and archived accounts never win. */
+export function pickApControlAccount(rows: ApCandidate[]): { id: string; code: string } | null {
+  const usable = rows.filter((r) => r.is_active && !r.archived_at);
+  const best = usable.find((r) => r.system_key === "ap") ?? usable.find((r) => r.code === "2000");
+  return best ? { id: best.id, code: best.code } : null;
+}
+
+/** The accounts payable control account for a company (P-31: found by role, not only by code). */
+export async function requireApControlAccount(
+  supabase: Client,
+  companyId: string,
+): Promise<{ id: string; code: string }> {
+  const { data, error } = await supabase
+    .from("accounts" as never)
+    .select("id, code, system_key, is_active, archived_at" as never)
+    .eq("company_id" as never, companyId as never)
+    .or("system_key.eq.ap,code.eq.2000" as never);
+  if (error) throw new Error(error.message);
+  const best = pickApControlAccount((data ?? []) as unknown as ApCandidate[]);
+  if (!best) {
+    throw new Error(
+      "Accounts payable control account is missing. Open Accounting and ensure the chart of accounts is seeded.",
+    );
+  }
+  return best;
+}

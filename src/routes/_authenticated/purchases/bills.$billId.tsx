@@ -60,8 +60,9 @@ import {
   type PurchaseLineFormState,
 } from "@/components/purchases/PurchasesDocumentLines";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -81,6 +82,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type BillSearch = { fromTab?: string; files?: boolean };
@@ -807,13 +809,7 @@ function BillDocumentWorkspace() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-          <Badge variant="outline" className="capitalize">
-            {bill.status === "authorised"
-              ? "Awaiting payment"
-              : bill.status === "partly_paid"
-                ? "Partially paid"
-                : bill.status.replace(/_/g, " ")}
-          </Badge>
+          <StatusBadge status={bill.status} />
           <span>
             Document total{" "}
             <strong className="tabular-nums">
@@ -841,6 +837,16 @@ function BillDocumentWorkspace() {
             <span className="text-xs text-muted-foreground">
               {neighbors.position} of {neighbors.total}
             </span>
+          ) : null}
+          {bill.status !== "void" ? (
+            <ProjectTagControl kind="purchase_bill" documentId={billId} />
+          ) : null}
+          {["authorised", "partly_paid"].includes(bill.status) ? (
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/purchases/credit-notes/new" search={{ billId }}>
+                Credit this bill
+              </Link>
+            </Button>
           ) : null}
         </div>
       </header>
@@ -1399,6 +1405,8 @@ function BillDocumentWorkspace() {
           ) : null}
         </aside>
       </div>
+
+      <DocumentActions kind="purchase_bill" id={billId} />
 
       <BillRelatedFilesOverlay
         open={filesOpen}

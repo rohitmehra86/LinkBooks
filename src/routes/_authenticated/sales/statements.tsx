@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Printer } from "lucide-react";
+import { Mail, Printer } from "lucide-react";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listCustomers } from "@/lib/sales/sales.functions";
 import { getCustomerStatement } from "@/lib/sales/sales-statements.functions";
 import { money } from "@/components/sales/sales-form-utils";
+import { useCan } from "@/hooks/use-can";
+import { useFormat } from "@/hooks/use-format";
+import { getDocumentBranding, getDocumentDelivery } from "@/lib/documents/documents.functions";
+import { renderEmail } from "@/lib/documents/email-templates";
+import { EmailDocumentDialog } from "@/components/documents/EmailDocumentDialog";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
@@ -35,6 +40,12 @@ export function Statements() {
   const [contactId, setContactId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const { can } = useCan();
+  const fmt = useFormat();
+  const queryClient = useQueryClient();
+  const fetchBranding = useServerFn(getDocumentBranding);
+  const fetchDelivery = useServerFn(getDocumentDelivery);
 
   const customersQ = useQuery({
     queryKey: ["customers", companyId],
@@ -52,6 +63,20 @@ export function Statements() {
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
         },
+      }),
+  });
+
+  const brandingQ = useQuery({
+    queryKey: ["document-branding", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchBranding({ data: { companyId: companyId! } }),
+  });
+  const deliveryQ = useQuery({
+    queryKey: ["document-delivery", companyId, "customer_statement", contactId],
+    enabled: Boolean(companyId && contactId),
+    queryFn: () =>
+      fetchDelivery({
+        data: { companyId: companyId!, kind: "customer_statement", id: contactId },
       }),
   });
 
@@ -74,11 +99,21 @@ export function Statements() {
     <>
       <PageHeader
         title="Customer statements"
-        description="Chronological activity from posted invoices, receipts and credit notes. Print/PDF only — email delivery is not configured."
+        description="Chronological activity from posted invoices, receipts and credit notes, with a running balance. Print or save as PDF, or email the statement."
         actions={
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="mr-1 size-4" /> Print / PDF
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!contactId || !stmtQ.data}
+              onClick={() => setEmailOpen(true)}
+            >
+              <Mail className="mr-1 size-4" /> Email…
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="mr-1 size-4" /> Print / PDF
+            </Button>
+          </>
         }
       />
       <div className="mb-6 flex flex-wrap gap-3">
@@ -112,14 +147,35 @@ export function Statements() {
         <ErrorState title="Could not load statement" description={friendlyAuthError(stmtQ.error)} />
       ) : (
         <div className="space-y-6 print:space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold">{company.name ?? "Organisation"}</h2>
-            <p className="text-sm text-muted-foreground">
-              Statement for {customerName}
-              {stmtQ.data.from || stmtQ.data.to
-                ? ` · ${stmtQ.data.from ?? "start"} to ${stmtQ.data.to ?? "today"}`
-                : ""}
-            </p>
+          <div className="flex items-start gap-4">
+            {brandingQ.data?.branding.logoUrl ? (
+              <img
+                src={brandingQ.data.branding.logoUrl}
+                alt="Company logo"
+                className="max-h-14 max-w-[180px] object-contain"
+              />
+            ) : null}
+            <div>
+              <h2 className="text-lg font-semibold">
+                {brandingQ.data?.branding.displayName ?? company?.name ?? "Organisation"}
+              </h2>
+              {(brandingQ.data?.branding.addressLines ?? []).map((l, i) => (
+                <p key={i} className="text-sm text-muted-foreground">
+                  {l}
+                </p>
+              ))}
+              {brandingQ.data?.branding.taxNumber ? (
+                <p className="text-sm text-muted-foreground">
+                  Tax no. {brandingQ.data.branding.taxNumber}
+                </p>
+              ) : null}
+              <p className="mt-1 text-sm text-muted-foreground">
+                Statement for {customerName}
+                {stmtQ.data.from || stmtQ.data.to
+                  ? ` · ${stmtQ.data.from ?? "start"} to ${stmtQ.data.to ?? "today"}`
+                  : ""}
+              </p>
+            </div>
           </div>
           {stmtQ.data.currencies.length === 0 ? (
             <EmptyState title="No activity" description="No posted activity for this customer." />
@@ -207,8 +263,98 @@ export function Statements() {
             Opening balance is everything owed before the start date. Each currency is shown on its
             own and never added to another.
           </p>
+          {brandingQ.data?.branding.bankDetails ? (
+            <p className="whitespace-pre-line text-xs">
+              <span className="font-semibold">Payment details:</span>{" "}
+              {brandingQ.data.branding.bankDetails}
+            </p>
+          ) : null}
+          {deliveryQ.data && !deliveryQ.data.emailConfigured ? (
+            <p className="text-xs text-muted-foreground print:hidden">
+              Email sending is not configured. Download the PDF, copy the link, or use your own
+              email program.
+            </p>
+          ) : null}
+          {deliveryQ.data && deliveryQ.data.history.length > 0 ? (
+            <div className="print:hidden">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Send history
+              </h3>
+              <ul className="divide-y divide-border rounded border border-border text-sm">
+                {deliveryQ.data.history.map((h) => (
+                  <li key={h.id} className="flex flex-wrap justify-between gap-2 px-3 py-2">
+                    <span>
+                      to {h.to_addresses.join(", ")}
+                      {h.error ? <span className="text-destructive"> — {h.error}</span> : null}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {h.status === "sent" ? "Sent" : "Failed"} · {fmt.dateTime(h.created_at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       )}
+      {contactId && stmtQ.data && deliveryQ.data && brandingQ.data ? (
+        <EmailDocumentDialog
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+          companyId={companyId}
+          kind="customer_statement"
+          id={contactId}
+          title={`Email statement to ${customerName}`}
+          templates={["statement"]}
+          defaultTemplate="statement"
+          defaultTo={
+            ((customersQ.data ?? []) as Array<{ id: string; email?: string | null }>).find(
+              (c) => c.id === contactId,
+            )?.email ?? ""
+          }
+          emailConfigured={deliveryQ.data.emailConfigured}
+          blockedReason={deliveryQ.data.blockedReason}
+          canSend={can("sales.draft")}
+          extra={{
+            ...(stmtQ.data.from ? { from: stmtQ.data.from } : {}),
+            ...(stmtQ.data.to ? { toDate: stmtQ.data.to } : {}),
+          }}
+          preview={(t, message) => {
+            const r = renderEmail(t, {
+              companyName: brandingQ.data.branding.displayName,
+              partyName: customerName,
+              documentLabel: "Statement",
+              documentNumber: null,
+              currency: fmt.baseCurrency,
+              totalMinor: 0,
+              dueMinor: null,
+              issueDate: null,
+              dueDate: null,
+              daysOverdue: 0,
+              link: null,
+              customMessage: message.trim() || null,
+              locale: brandingQ.data.locale,
+              dateFormat: brandingQ.data.dateFormat,
+              bankDetails: brandingQ.data.branding.bankDetails,
+              statement: {
+                from: stmtQ.data.from ?? null,
+                to: stmtQ.data.to ?? null,
+                rows: stmtQ.data.currencies.map((c) => ({
+                  currency: c.currency_code,
+                  openingMinor: c.opening_balance_minor,
+                  closingMinor: c.closing_balance_minor,
+                })),
+              },
+            });
+            return { subject: r.subject, body: r.text };
+          }}
+          onSent={() =>
+            void queryClient.invalidateQueries({
+              queryKey: ["document-delivery", companyId, "customer_statement", contactId],
+            })
+          }
+        />
+      ) : null}
     </>
   );
 }

@@ -11,15 +11,18 @@ import {
 } from "@/lib/demo/demo.functions";
 import { getDashboardSnapshot } from "@/lib/dashboard/dashboard.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, ErrorState, LoadingState } from "@/components/common/states";
+import { PageHeader, ErrorState, LoadingState, CardGridSkeleton } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
 import {
   AgeingWidget,
   ApprovalsWidget,
   BankAccountsWidget,
   CashFlowWidget,
+  GettingStarted,
+  KpiRow,
   ProfitWidget,
   QuickActions,
+  ReconcileAction,
   TasksWidget,
   WatchlistWidget,
 } from "@/components/dashboard/DashboardWidgets";
@@ -131,9 +134,10 @@ function Dashboard() {
         }
         actions={
           <>
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="ghost" size="sm" asChild>
               <Link to="/reports">Reports</Link>
             </Button>
+            {data ? <ReconcileAction data={data} /> : null}
             <QuickActions />
           </>
         }
@@ -158,7 +162,10 @@ function Dashboard() {
       ) : null}
 
       {dashQ.isPending ? (
-        <LoadingState rows={6} />
+        <div className="space-y-6">
+          <CardGridSkeleton />
+          <LoadingState rows={6} />
+        </div>
       ) : dashQ.isError ? (
         <ErrorState
           title="Could not load the dashboard"
@@ -166,37 +173,41 @@ function Dashboard() {
           onRetry={() => void dashQ.refetch()}
         />
       ) : data ? (
-        <div className="grid gap-6 lg:grid-cols-3">
-          <BankAccountsWidget data={data} />
-          <AgeingWidget kind="receivables" data={data} />
-          <AgeingWidget kind="payables" data={data} />
-          <CashFlowWidget data={data} />
-          <ProfitWidget data={data} />
-          <ApprovalsWidget data={data} />
-          <WatchlistWidget data={data} />
-          <TasksWidget data={data} />
-          {isDemo ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Module coverage</CardTitle>
-                <CardDescription>Honest status of each area in demo</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
-                  {(modulesQ.data?.modules ?? []).map((m) => (
-                    <li key={m.path} className="flex items-start justify-between gap-2">
-                      <Link className="underline-offset-2 hover:underline" to={m.path}>
-                        {m.label}
-                      </Link>
-                      <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {m.status}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ) : null}
+        <div className="space-y-6">
+          <GettingStarted data={data} />
+          <KpiRow data={data} />
+          <div className="grid gap-6 lg:grid-cols-3">
+            <CashFlowWidget data={data} />
+            <BankAccountsWidget data={data} />
+            <AgeingWidget kind="receivables" data={data} />
+            <AgeingWidget kind="payables" data={data} />
+            <ProfitWidget data={data} />
+            <ApprovalsWidget data={data} />
+            <WatchlistWidget data={data} />
+            <TasksWidget data={data} />
+            {isDemo ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Module coverage</CardTitle>
+                  <CardDescription>Honest status of each area in demo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+                    {(modulesQ.data?.modules ?? []).map((m) => (
+                      <li key={m.path} className="flex items-start justify-between gap-2">
+                        <Link className="underline-offset-2 hover:underline" to={m.path}>
+                          {m.label}
+                        </Link>
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          {m.status}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </>

@@ -12,15 +12,20 @@ import {
   getInvoice,
   markInvoiceSent,
   voidInvoice,
+  writeOffInvoiceBadDebt,
 } from "@/lib/sales/sales.functions";
 import { getSalesDocumentConfig } from "@/lib/sales/sales-config.functions";
 import { canVoidInvoice } from "@/lib/sales/allocation-rules";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,12 +58,14 @@ function InvoiceDetail() {
   const fetchConfig = useServerFn(getSalesDocumentConfig);
   const doAuthorise = useServerFn(authoriseInvoice);
   const doVoid = useServerFn(voidInvoice);
+  const doWriteOff = useServerFn(writeOffInvoiceBadDebt);
   const doDelete = useServerFn(deleteDraftInvoice);
   const doCopy = useServerFn(copyInvoice);
   const doSent = useServerFn(markInvoiceSent);
   const queryClient = useQueryClient();
   const companyId = company?.id;
   const [voidOpen, setVoidOpen] = useState(false);
+  const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const query = useQuery({
@@ -93,6 +100,19 @@ function InvoiceDetail() {
       setVoidOpen(false);
       await refresh();
       toast.success("Invoice voided — reversing journal posted");
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const writeOffMutation = useMutation({
+    mutationFn: (v: { reason: string; date: string }) =>
+      doWriteOff({
+        data: { companyId: companyId!, invoiceId, reason: v.reason, writeOffDate: v.date },
+      }),
+    onSuccess: async () => {
+      setWriteOffOpen(false);
+      await refresh();
+      toast.success("Written off as bad debt — credit note posted");
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -171,8 +191,13 @@ function InvoiceDetail() {
               <Button variant="outline" size="sm" asChild>
                 <Link to="/sales/invoices">Back</Link>
               </Button>
-              <Button variant="outline" size="sm" onClick={() => window.print()}>
-                <Printer className="mr-1 size-4" /> Print / PDF
+              <Button variant="outline" size="sm" asChild>
+                <Link
+                  to="/documents/print/$kind/$id"
+                  params={{ kind: "sales_invoice", id: invoiceId }}
+                >
+                  <Printer className="mr-1 size-4" /> Print / PDF
+                </Link>
               </Button>
               {inv.status === "draft" ? (
                 <>
@@ -233,6 +258,11 @@ function InvoiceDetail() {
                   Copy invoice
                 </Button>
               ) : null}
+              {(inv.status === "authorised" || inv.status === "partly_paid") && outstanding > 0 ? (
+                <Button size="sm" variant="outline" onClick={() => setWriteOffOpen(true)}>
+                  Write off bad debt
+                </Button>
+              ) : null}
               {voidable ? (
                 <Button size="sm" variant="destructive" onClick={() => setVoidOpen(true)}>
                   Void
@@ -250,9 +280,11 @@ function InvoiceDetail() {
             </p>
           ) : null
         ) : null}
-        <p className="mb-4 text-xs text-muted-foreground">
-          Delivery: use Print / PDF. Email delivery is not configured in this environment.
-        </p>
+        {inv.status !== "void" ? (
+          <div className="mb-3">
+            <ProjectTagControl kind="sales_invoice" documentId={invoiceId} />
+          </div>
+        ) : null}
       </div>
 
       <article className="max-w-4xl space-y-6 rounded-md border border-border bg-card p-6 print:border-0 print:p-0">
@@ -280,9 +312,7 @@ function InvoiceDetail() {
             <p className="text-sm text-muted-foreground">Date {inv.invoice_date}</p>
             <p className="text-sm text-muted-foreground">Due {inv.due_date}</p>
             <div className="mt-1 flex justify-end gap-2 print:hidden">
-              <Badge variant="outline" className="capitalize">
-                {inv.status.replace("_", " ")}
-              </Badge>
+              <StatusBadge status={inv.status} />
               {overdue ? <Badge variant="destructive">Overdue</Badge> : null}
               {inv.sent_at ? <Badge variant="secondary">Sent</Badge> : null}
             </div>
@@ -429,6 +459,9 @@ function InvoiceDetail() {
         </section>
       ) : null}
 
+      <DocumentActions kind="sales_invoice" id={invoiceId} />
+      <AttachmentsPanel entityType="sales_invoice" entityId={invoiceId} />
+
       <ReasonDialog
         open={voidOpen}
         onOpenChange={setVoidOpen}
@@ -440,6 +473,18 @@ function InvoiceDetail() {
         defaultDate={today}
         pending={voidMutation.isPending}
         onConfirm={(v) => voidMutation.mutate(v)}
+      />
+      <ReasonDialog
+        open={writeOffOpen}
+        onOpenChange={setWriteOffOpen}
+        title="Write off the remaining balance as bad debt?"
+        description={`Posts a credit note for ${money(outstanding, cur)} against your bad debt expense account and applies it to this invoice. Tax is relieved in proportion. This cannot be undone except by voiding the credit note.`}
+        confirmLabel="Write off"
+        dateLabel="Write-off date"
+        minDate={inv.invoice_date}
+        defaultDate={today}
+        pending={writeOffMutation.isPending}
+        onConfirm={(v) => writeOffMutation.mutate(v)}
       />
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

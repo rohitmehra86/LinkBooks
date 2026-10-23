@@ -3,8 +3,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import { addDaysIso, type SalesLineInput } from "@/lib/sales/line-helpers";
-import { postInvoiceAuthorisation, voidPostedDocument } from "@/lib/sales/posting";
-import { callSalesRpc, type SalesClient } from "@/lib/sales/rpc";
+import { postInvoiceAuthorisation } from "@/lib/sales/posting";
+import { callSalesRpc, requireRpc, type SalesClient } from "@/lib/sales/rpc";
 import { deleteDraftDocument, saveSalesDocument } from "@/lib/sales/doc-save";
 import {
   type ListQuery,
@@ -721,52 +721,57 @@ export const voidInvoice = createServerFn({ method: "POST" })
         void_date: data.voidDate,
       },
     );
-    if (!rpc.missing) return { journalId: rpc.data.void_journal_id };
-
-    // ---- fallback until the migration is applied ----
-    const { data: inv, error } = await supabase
-      .from("sales_invoices" as never)
-      .select("id, status, posted_journal_id, amount_paid_minor, amount_credited_minor" as never)
-      .eq("id" as never, data.invoiceId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!inv) throw new Error("Invoice not found");
-    const b = inv as {
-      status: string;
-      posted_journal_id: string | null;
-      amount_paid_minor: number;
-      amount_credited_minor: number;
-    };
-    if (b.status === "draft") throw new Error("Delete a draft invoice instead of voiding it");
-    if (b.status === "void") throw new Error("Invoice is already void");
-    if (b.status !== "authorised") {
-      throw new Error("Only authorised invoices with no payments or credits can be voided");
-    }
-    if (b.amount_paid_minor > 0 || b.amount_credited_minor > 0) {
-      throw new Error("Remove payments and credit allocations before voiding this invoice");
-    }
-    if (!b.posted_journal_id) throw new Error("Invoice has no posted journal");
-    const journalId = await voidPostedDocument(
-      supabase as never,
-      b.posted_journal_id,
-      `sales_invoice:${data.invoiceId}:void`,
-      data.voidDate ?? undefined,
+    const done = requireRpc(
+      rpc,
+      "void_sales_invoice",
+      "20261024110300_sales_ar_correction_rpcs.sql",
     );
-    const { data: done, error: upErr } = await supabase
-      .from("sales_invoices" as never)
-      .update({
-        status: "void",
-        void_journal_id: journalId,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("id" as never, data.invoiceId as never)
-      .eq("status" as never, "authorised" as never)
-      .select("id");
-    if (upErr) throw new Error(upErr.message);
-    if (!done || (done as unknown[]).length === 0)
-      throw new Error("Invoice changed — reload and retry");
-    return { journalId };
+    return { journalId: done.void_journal_id };
+  });
+
+export const writeOffInvoiceBadDebt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      invoiceId: string;
+      reason: string;
+      writeOffDate?: string;
+      badDebtAccountId?: string;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      invoiceId: assertUuid(input.invoiceId, "invoice"),
+      reason: assertReason(input.reason, "A write-off reason"),
+      writeOffDate: optionalIsoDate(input.writeOffDate, "Write-off date"),
+      badDebtAccountId: input.badDebtAccountId
+        ? assertUuid(input.badDebtAccountId, "bad debt account")
+        : null,
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "sales.void");
+    const rpc = await callSalesRpc<{
+      credit_note_id: string;
+      journal_id: string;
+      written_off_minor: number;
+    }>(supabase, "write_off_bad_debt", {
+      company_id: data.companyId,
+      invoice_id: data.invoiceId,
+      reason: data.reason,
+      write_off_date: data.writeOffDate,
+      bad_debt_account_id: data.badDebtAccountId,
+    });
+    const done = requireRpc(
+      rpc,
+      "write_off_bad_debt",
+      "20261025300100_ops_money_documents_rpcs.sql",
+    );
+    return {
+      creditNoteId: done.credit_note_id,
+      journalId: done.journal_id,
+      writtenOffMinor: Number(done.written_off_minor),
+    };
   });
 
 export const deleteDraftInvoice = createServerFn({ method: "POST" })

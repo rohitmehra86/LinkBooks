@@ -8,6 +8,7 @@ import { getJournalDetail } from "@/lib/banking/journal.functions";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   Table,
   TableBody,
@@ -90,10 +91,10 @@ function JournalDetail() {
             <TableRow key={l.id}>
               <TableCell>{l.accounts ? `${l.accounts.code} ${l.accounts.name}` : "—"}</TableCell>
               <TableCell>{l.description ?? ""}</TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {l.debit_minor ? fromMinorUnits(l.debit_minor, currency) : ""}
               </TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {l.credit_minor ? fromMinorUnits(l.credit_minor, currency) : ""}
               </TableCell>
             </TableRow>
@@ -102,15 +103,16 @@ function JournalDetail() {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={2}>Total ({currency})</TableCell>
-            <TableCell className="text-right font-mono">
+            <TableCell className="money">
               {fromMinorUnits(debit, currency)}
             </TableCell>
-            <TableCell className="text-right font-mono">
+            <TableCell className="money">
               {fromMinorUnits(credit, currency)}
             </TableCell>
           </TableRow>
         </TableFooter>
       </Table>
+      <AttachmentsPanel entityType="journal" entityId={journalId} />
     </>
   );
 }

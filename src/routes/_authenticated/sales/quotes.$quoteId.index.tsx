@@ -16,8 +16,10 @@ import { isQuoteConvertible, quoteStatusActions, type QuoteStatus } from "@/lib/
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -188,9 +190,7 @@ function QuoteDetailPage() {
         }
       />
       <div className="mb-4 flex flex-wrap gap-3 text-sm">
-        <Badge variant="outline" className="capitalize">
-          {q.status}
-        </Badge>
+        <StatusBadge status={q.status} />
         <span>#{q.quote_number ?? "—"}</span>
         <span>Total {money(q.total_minor, cur)}</span>
         {q.sent_at ? <span>Sent {q.sent_at.slice(0, 10)}</span> : null}
@@ -269,6 +269,8 @@ function QuoteDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <DocumentActions kind="sales_quote" id={quoteId} />
+      <AttachmentsPanel entityType="sales_quote" entityId={quoteId} />
     </>
   );
 }

@@ -635,17 +635,28 @@ export function AgedView({ ctx, kind }: { ctx: ReportCtx; kind: "ar" | "ap" }) {
 export function TaxSummaryView({ ctx }: { ctx: ReportCtx }) {
   const fmt = useFormat();
   const fetchTax = useServerFn(getTaxReport);
+  // null = the basis the company files on (Tax settings).
+  const [basisChoice, setBasisChoice] = useState<"accrual" | "cash" | null>(null);
   const q = useQuery({
-    queryKey: ["report-tax", ctx.companyId, ctx.from, ctx.to],
-    queryFn: () => fetchTax({ data: { companyId: ctx.companyId, from: ctx.from, to: ctx.to } }),
+    queryKey: ["report-tax", ctx.companyId, ctx.from, ctx.to, basisChoice],
+    queryFn: () =>
+      fetchTax({
+        data: {
+          companyId: ctx.companyId,
+          from: ctx.from,
+          to: ctx.to,
+          ...(basisChoice ? { basis: basisChoice } : {}),
+        },
+      }),
   });
   const d = q.data;
+  const basis = d?.basis ?? basisChoice ?? "accrual";
   return (
     <ReportShell
       title="Tax Summary"
       ctx={ctx}
       mode="range"
-      basis="Tax control account movements"
+      basis={`Document tax lines, ${basis} basis; ledger movements below`}
       getCsv={() =>
         d
           ? {
@@ -679,6 +690,83 @@ export function TaxSummaryView({ ctx }: { ctx: ReportCtx }) {
                 </Link>
               </AlertDescription>
             </Alert>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Label htmlFor="tax-basis">Basis</Label>
+              <select
+                id="tax-basis"
+                className={selectCls}
+                value={basis}
+                onChange={(e) => setBasisChoice(e.target.value === "cash" ? "cash" : "accrual")}
+              >
+                <option value="accrual">Accrual (invoice date)</option>
+                <option value="cash">Cash (payment date)</option>
+              </select>
+              {d.settingsBasis !== basis ? (
+                <span className="text-xs text-muted-foreground">
+                  The company files on the {d.settingsBasis} basis.
+                </span>
+              ) : null}
+            </div>
+            <div className="mb-2 grid gap-3 sm:grid-cols-3">
+              <Stat
+                label="Output tax (from documents)"
+                value={fmt.money(d.documents.output_tax_minor, ctx.currency)}
+              />
+              <Stat
+                label="Input tax reclaimable"
+                value={fmt.money(d.documents.input_tax_minor, ctx.currency)}
+              />
+              <Stat
+                label="Net payable"
+                value={fmt.money(d.documents.net_tax_minor, ctx.currency)}
+              />
+            </div>
+            {d.documents.self_assessed_lines > 0 ? (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Includes {d.documents.self_assessed_lines} reverse-charge line(s): the tax is
+                counted as both output and input tax.
+              </p>
+            ) : null}
+            {d.documents.skippedNoRate > 0 ? (
+              <Alert className="mb-2">
+                <AlertDescription>
+                  {d.documents.skippedNoRate} foreign-currency document(s) have no exchange rate on
+                  their journal and are left out.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {d.documents.rows.length > 0 ? (
+              <Table className="mb-4">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Side</TableHead>
+                    <TableHead>Treatment</TableHead>
+                    <TableHead className="text-right">Lines</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {d.documents.rows.map((r) => (
+                    <TableRow key={`${r.side}-${r.treatment}-${r.self_assessed}`}>
+                      <TableCell>{r.side === "sales" ? "Sales" : "Purchases"}</TableCell>
+                      <TableCell>
+                        {r.treatment.replace(/_/g, " ")}
+                        {r.self_assessed ? " (self-assessed)" : ""}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{r.lines}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt.amount(r.net_minor, ctx.currency)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmt.amount(r.tax_minor, ctx.currency)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : null}
+            <p className="mb-2 text-sm font-medium">Ledger movements on the tax accounts</p>
             <div className="mb-4 grid gap-3 sm:grid-cols-3">
               <Stat
                 label="Output (credits)"

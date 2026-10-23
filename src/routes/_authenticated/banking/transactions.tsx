@@ -1,9 +1,13 @@
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
+import { TableCard } from "@/components/common/table-card";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   bulkCategoriseTransactions,
   excludeBankTransaction,
@@ -15,12 +19,12 @@ import {
 } from "@/lib/banking/banking.functions";
 import { bulkCodeByFilter, listCodingOptions } from "@/lib/banking/coding.functions";
 import { unmatchBankTransaction } from "@/lib/banking/matching.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { cn } from "@/lib/utils";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { BankCodingPanel } from "@/components/banking/BankCodingPanel";
 import { BankMatchPanel } from "@/components/banking/BankMatchPanel";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,6 +95,7 @@ type Expanded = { id: string; mode: "code" | "match"; initialAccountId?: string 
 
 function BankTransactions() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const companyId = company?.id;
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -500,289 +505,307 @@ function BankTransactions() {
       ) : null}
 
       {txnsQ.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : txnsQ.isError ? (
         <ErrorState title="Could not load" description={friendlyAuthError(txnsQ.error)} />
       ) : rows.length === 0 ? (
-        <EmptyState title="No transactions" description="Import a CSV or change filters." />
+        <EmptyState
+          title="No transactions"
+          description="Import a CSV or change filters."
+          action={
+            <Button size="sm" asChild>
+              <Link to="/banking/import">Import statement</Link>
+            </Button>
+          }
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8">
-                {reviewing ? (
-                  <Checkbox
-                    aria-label="Select all on this page"
-                    checked={allPageSelected}
-                    onCheckedChange={(v) =>
-                      setSelected(
-                        v === true ? new Set(uncategorisedRows.map((r) => r.id)) : new Set(),
-                      )
-                    }
-                  />
-                ) : null}
-              </TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Description</TableHead>
-              {search.bankAccountId ? null : <TableHead>Account</TableHead>}
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Journal</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((t) => {
-              const currency =
-                currencyByAccount.get(t.bank_account_id) ?? company?.base_currency ?? "GBP";
-              const bankJournals = t.links.filter(
-                (l) => l.sourceType === "bank_transaction" && !l.reversed,
-              );
-              const canRedo = t.status === "matched" && bankJournals.length > 0;
-              const open = expanded?.id === t.id ? expanded : null;
-              return (
-                <Fragment key={t.id}>
-                  <TableRow>
-                    <TableCell>
-                      {t.status === "uncategorised" ? (
-                        <Checkbox
-                          aria-label={`Select ${t.description ?? "transaction"}`}
-                          checked={selected.has(t.id)}
-                          onCheckedChange={(v) =>
-                            setSelected((s) => {
-                              const next = new Set(s);
-                              if (v === true) next.add(t.id);
-                              else next.delete(t.id);
-                              return next;
-                            })
-                          }
-                        />
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{t.txn_date}</TableCell>
-                    <TableCell>
-                      <div>{t.description ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {[t.payee, t.reference ? `Ref ${t.reference}` : null, t.contact_name]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                      {t.exclude_reason ? (
-                        <div className="text-xs text-muted-foreground">
-                          Excluded: {t.exclude_reason}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    {search.bankAccountId ? null : (
-                      <TableCell className="whitespace-nowrap text-sm">
-                        {nameByAccount.get(t.bank_account_id) ?? "—"}
-                      </TableCell>
-                    )}
-                    <TableCell className="whitespace-nowrap text-right font-mono text-sm">
-                      {fromMinorUnits(t.amount_minor, currency)}{" "}
-                      <span className="text-xs">{currency}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{t.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {t.links.length === 0 ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <div className="flex flex-col">
-                          {t.links.map((l) =>
-                            l.journalId ? (
-                              <Link
-                                key={l.journalLineId}
-                                to="/banking/journal/$journalId"
-                                params={{ journalId: l.journalId }}
-                                className="text-sm underline-offset-4 hover:underline"
-                              >
-                                Journal #{l.journalNumber}
-                                {l.reversed ? " (reversed)" : ""}
-                              </Link>
-                            ) : null,
-                          )}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1">
+        <TableCard>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8">
+                  {reviewing ? (
+                    <Checkbox
+                      aria-label="Select all on this page"
+                      checked={allPageSelected}
+                      onCheckedChange={(v) =>
+                        setSelected(
+                          v === true ? new Set(uncategorisedRows.map((r) => r.id)) : new Set(),
+                        )
+                      }
+                    />
+                  ) : null}
+                </TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Description</TableHead>
+                {search.bankAccountId ? null : <TableHead>Account</TableHead>}
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Journal</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((t) => {
+                const currency =
+                  currencyByAccount.get(t.bank_account_id) ?? company?.base_currency ?? "GBP";
+                const bankJournals = t.links.filter(
+                  (l) => l.sourceType === "bank_transaction" && !l.reversed,
+                );
+                const canRedo = t.status === "matched" && bankJournals.length > 0;
+                const open = expanded?.id === t.id ? expanded : null;
+                return (
+                  <Fragment key={t.id}>
+                    <TableRow>
+                      <TableCell>
                         {t.status === "uncategorised" ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant={open?.mode === "code" ? "secondary" : "default"}
-                              onClick={() =>
-                                setExpanded(
-                                  open?.mode === "code" ? null : { id: t.id, mode: "code" },
-                                )
-                              }
-                            >
-                              Code
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                setExpanded(
-                                  open?.mode === "match" ? null : { id: t.id, mode: "match" },
-                                )
-                              }
-                            >
-                              Match
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={excludeM.isPending}
-                              onClick={() => excludeM.mutate(t.id)}
-                            >
-                              Exclude
-                            </Button>
-                          </>
+                          <Checkbox
+                            aria-label={`Select ${t.description ?? "transaction"}`}
+                            checked={selected.has(t.id)}
+                            onCheckedChange={(v) =>
+                              setSelected((s) => {
+                                const next = new Set(s);
+                                if (v === true) next.add(t.id);
+                                else next.delete(t.id);
+                                return next;
+                              })
+                            }
+                          />
                         ) : null}
-                        {t.status === "matched" ? (
-                          canRedo ? (
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{fmt.date(t.txn_date)}</TableCell>
+                      <TableCell>
+                        <div>{t.description ?? "—"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[t.payee, t.reference ? `Ref ${t.reference}` : null, t.contact_name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                        {t.exclude_reason ? (
+                          <div className="text-xs text-muted-foreground">
+                            Excluded: {t.exclude_reason}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      {search.bankAccountId ? null : (
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {nameByAccount.get(t.bank_account_id) ?? "—"}
+                        </TableCell>
+                      )}
+                      <TableCell
+                        className={cn(
+                          "money font-medium",
+                          t.amount_minor > 0 && "text-money-in",
+                          t.amount_minor < 0 && "text-money-out",
+                        )}
+                      >
+                        {fmt.money(t.amount_minor, currency)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={t.status} />
+                      </TableCell>
+                      <TableCell>
+                        {t.links.length === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <div className="flex flex-col">
+                            {t.links.map((l) =>
+                              l.journalId ? (
+                                <Link
+                                  key={l.journalLineId}
+                                  to="/banking/journal/$journalId"
+                                  params={{ journalId: l.journalId }}
+                                  className="text-sm underline-offset-4 hover:underline"
+                                >
+                                  Journal #{l.journalNumber}
+                                  {l.reversed ? " (reversed)" : ""}
+                                </Link>
+                              ) : null,
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {t.status === "uncategorised" ? (
                             <>
-                              <ConfirmButton
-                                title="Remove & redo this coding?"
-                                description="A reversing journal is posted for the journal that coded this line, the link is removed, and the line returns to For review so you can code it again. Nothing is deleted."
-                                confirmLabel="Remove & redo"
-                                disabled={unmatchM.isPending}
-                                onConfirm={() => unmatchM.mutate({ txnId: t.id, redo: true })}
+                              <Button
+                                size="sm"
+                                variant={open?.mode === "code" ? "secondary" : "default"}
+                                onClick={() =>
+                                  setExpanded(
+                                    open?.mode === "code" ? null : { id: t.id, mode: "code" },
+                                  )
+                                }
                               >
-                                Remove &amp; redo
-                              </ConfirmButton>
+                                Code
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setExpanded(
+                                    open?.mode === "match" ? null : { id: t.id, mode: "match" },
+                                  )
+                                }
+                              >
+                                Match
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={excludeM.isPending}
+                                onClick={() => excludeM.mutate(t.id)}
+                              >
+                                Exclude
+                              </Button>
+                            </>
+                          ) : null}
+                          {t.status === "matched" ? (
+                            <ProjectTagControl lazy kind="bank_transaction" documentId={t.id} />
+                          ) : null}
+                          {t.status === "matched" ? (
+                            canRedo ? (
+                              <>
+                                <ConfirmButton
+                                  title="Remove & redo this coding?"
+                                  description="A reversing journal is posted for the journal that coded this line, the link is removed, and the line returns to For review so you can code it again. Nothing is deleted."
+                                  confirmLabel="Remove & redo"
+                                  disabled={unmatchM.isPending}
+                                  onConfirm={() => unmatchM.mutate({ txnId: t.id, redo: true })}
+                                >
+                                  Remove &amp; redo
+                                </ConfirmButton>
+                                <ConfirmButton
+                                  title="Unmatch this line?"
+                                  description="A reversing journal is posted and the line returns to For review."
+                                  confirmLabel="Unmatch"
+                                  disabled={unmatchM.isPending}
+                                  onConfirm={() => unmatchM.mutate({ txnId: t.id, redo: false })}
+                                >
+                                  Unmatch
+                                </ConfirmButton>
+                              </>
+                            ) : (
                               <ConfirmButton
                                 title="Unmatch this line?"
-                                description="A reversing journal is posted and the line returns to For review."
+                                description="The link to the ledger line is removed and the line returns to For review. The journal it was matched to is not changed."
                                 confirmLabel="Unmatch"
                                 disabled={unmatchM.isPending}
                                 onConfirm={() => unmatchM.mutate({ txnId: t.id, redo: false })}
                               >
                                 Unmatch
                               </ConfirmButton>
-                            </>
-                          ) : (
-                            <ConfirmButton
-                              title="Unmatch this line?"
-                              description="The link to the ledger line is removed and the line returns to For review. The journal it was matched to is not changed."
-                              confirmLabel="Unmatch"
-                              disabled={unmatchM.isPending}
-                              onConfirm={() => unmatchM.mutate({ txnId: t.id, redo: false })}
+                            )
+                          ) : null}
+                          {t.status === "reconciled" ? (
+                            <span className="text-xs text-muted-foreground">
+                              Reconciled. Reopen the reconciliation to change.
+                            </span>
+                          ) : null}
+                          {t.status === "excluded" ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={restoreM.isPending}
+                              onClick={() => restoreM.mutate(t.id)}
                             >
-                              Unmatch
-                            </ConfirmButton>
-                          )
-                        ) : null}
-                        {t.status === "reconciled" ? (
-                          <span className="text-xs text-muted-foreground">
-                            Reconciled. Reopen the reconciliation to change.
-                          </span>
-                        ) : null}
-                        {t.status === "excluded" ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={restoreM.isPending}
-                            onClick={() => restoreM.mutate(t.id)}
-                          >
-                            Restore
-                          </Button>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  {open ? (
-                    <TableRow>
-                      <TableCell colSpan={search.bankAccountId ? 7 : 8} className="bg-muted/10">
-                        {open.mode === "code" ? (
-                          <div className="space-y-2">
-                            {suggestQ.data && suggestQ.data.suggestions.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-1 text-xs">
-                                <span className="text-muted-foreground">Suggested:</span>
-                                {suggestQ.data.suggestions.slice(0, 4).map((s) => (
-                                  <Button
-                                    key={`${s.offsetAccountId}-${s.reason}`}
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-xs"
-                                    title={s.reason}
-                                    onClick={() =>
-                                      setExpanded({
-                                        id: t.id,
-                                        mode: "code",
-                                        initialAccountId: s.offsetAccountId,
-                                      })
-                                    }
-                                  >
-                                    {[s.accountCode, s.accountName].filter(Boolean).join(" ") ||
-                                      "Account"}{" "}
-                                    · {Math.round(s.confidence * 100)}%
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : suggestQ.data ? (
-                              <Alert>
-                                <AlertDescription>
-                                  {suggestQ.data.externalResearchNote}
-                                </AlertDescription>
-                              </Alert>
-                            ) : null}
-                            {optionsQ.data ? (
-                              <BankCodingPanel
-                                key={`${t.id}-${open.initialAccountId ?? ""}`}
-                                companyId={companyId}
-                                txn={{
-                                  id: t.id,
-                                  amountMinor: t.amount_minor,
-                                  description: t.description,
-                                }}
-                                currency={currency}
-                                options={optionsQ.data}
-                                {...(open.initialAccountId
-                                  ? { initialAccountId: open.initialAccountId }
-                                  : {})}
-                                onCancel={() => setExpanded(null)}
-                                onDone={() => {
-                                  setExpanded(null);
-                                  void invalidate();
-                                }}
-                              />
-                            ) : optionsQ.isError ? (
-                              <p className="text-sm text-destructive">
-                                {friendlyAuthError(optionsQ.error)}
-                              </p>
-                            ) : (
-                              <LoadingState rows={2} />
-                            )}
-                          </div>
-                        ) : (
-                          <BankMatchPanel
-                            companyId={companyId}
-                            txn={{
-                              id: t.id,
-                              amountMinor: t.amount_minor,
-                              description: t.description,
-                              bankAccountId: t.bank_account_id,
-                            }}
-                            currency={currency}
-                            onCancel={() => setExpanded(null)}
-                            onDone={() => {
-                              setExpanded(null);
-                              void invalidate();
-                            }}
-                          />
-                        )}
+                              Restore
+                            </Button>
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
+                    {open ? (
+                      <TableRow>
+                        <TableCell colSpan={search.bankAccountId ? 7 : 8} className="bg-muted/10">
+                          {open.mode === "code" ? (
+                            <div className="space-y-2">
+                              {suggestQ.data && suggestQ.data.suggestions.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-1 text-xs">
+                                  <span className="text-muted-foreground">Suggested:</span>
+                                  {suggestQ.data.suggestions.slice(0, 4).map((s) => (
+                                    <Button
+                                      key={`${s.offsetAccountId}-${s.reason}`}
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 px-2 text-xs"
+                                      title={s.reason}
+                                      onClick={() =>
+                                        setExpanded({
+                                          id: t.id,
+                                          mode: "code",
+                                          initialAccountId: s.offsetAccountId,
+                                        })
+                                      }
+                                    >
+                                      {[s.accountCode, s.accountName].filter(Boolean).join(" ") ||
+                                        "Account"}{" "}
+                                      · {Math.round(s.confidence * 100)}%
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : suggestQ.data ? (
+                                <Alert>
+                                  <AlertDescription>
+                                    {suggestQ.data.externalResearchNote}
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
+                              {optionsQ.data ? (
+                                <BankCodingPanel
+                                  key={`${t.id}-${open.initialAccountId ?? ""}`}
+                                  companyId={companyId}
+                                  txn={{
+                                    id: t.id,
+                                    amountMinor: t.amount_minor,
+                                    description: t.description,
+                                  }}
+                                  currency={currency}
+                                  options={optionsQ.data}
+                                  {...(open.initialAccountId
+                                    ? { initialAccountId: open.initialAccountId }
+                                    : {})}
+                                  onCancel={() => setExpanded(null)}
+                                  onDone={() => {
+                                    setExpanded(null);
+                                    void invalidate();
+                                  }}
+                                />
+                              ) : optionsQ.isError ? (
+                                <p className="text-sm text-destructive">
+                                  {friendlyAuthError(optionsQ.error)}
+                                </p>
+                              ) : (
+                                <ListSkeleton rows={2} />
+                              )}
+                            </div>
+                          ) : (
+                            <BankMatchPanel
+                              companyId={companyId}
+                              txn={{
+                                id: t.id,
+                                amountMinor: t.amount_minor,
+                                description: t.description,
+                                bankAccountId: t.bank_account_id,
+                              }}
+                              currency={currency}
+                              onCancel={() => setExpanded(null)}
+                              onDone={() => {
+                                setExpanded(null);
+                                void invalidate();
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableCard>
       )}
 
       {txnsQ.data ? (

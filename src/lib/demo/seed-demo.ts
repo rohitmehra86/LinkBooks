@@ -662,7 +662,7 @@ export async function seedDemoCompanyData(
       company_id: companyId,
       payee_name: "TravelCo Demo",
       contact_id: null,
-      expense_date: "2025-08-10",
+      expense_date: "2026-07-10",
       expense_account_id: expenseId,
       payment_account_id: bankGl,
       currency_code: DEMO_CURRENCY,
@@ -1185,6 +1185,16 @@ async function linkDemoDocumentsToJournals(
       .update({ posted_journal_id: supplierPaymentJid } as never)
       .eq("company_id" as never, companyId as never)
       .eq("reference" as never, "SPAY-2001" as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const expenseJid = journalByKey.get("demo:exp-1");
+  if (expenseJid) {
+    await supabase
+      .from("purchase_expenses" as never)
+      .update({ posted_journal_id: expenseJid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("reference" as never, "EXP-1" as never)
       .is("posted_journal_id" as never, null as never);
   }
 

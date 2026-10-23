@@ -10,8 +10,10 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { money } from "@/components/sales/sales-form-utils";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -140,7 +142,7 @@ function ReceiptDetail() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               {money(receipt.amount_minor, cur)}
-              <Badge variant="secondary">{receipt.status}</Badge>
+              <StatusBadge status={receipt.status} />
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
@@ -276,6 +278,8 @@ function ReceiptDetail() {
           })
         }
       />
+      <DocumentActions kind="sales_receipt" id={receiptId} />
+      <AttachmentsPanel entityType="sales_receipt" entityId={receiptId} />
     </>
   );
 }

@@ -28,6 +28,8 @@ import {
 } from "@/components/sales/SalesDocumentLines";
 import { lineFormToInput, lineRowToForm } from "@/components/sales/sales-form-utils";
 import { Button } from "@/components/ui/button";
+import { RunDueButton } from "@/components/recurring/RunDueButton";
+import { runDueRecurringInvoices } from "@/lib/recurring/run-due.functions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +70,7 @@ export function RecurringInvoices() {
   const qc = useQueryClient();
   const enabled = Boolean(companyId);
   const fetchList = useServerFn(listRecurringInvoices);
+  const runDue = useServerFn(runDueRecurringInvoices);
   const fetchOne = useServerFn(getRecurringInvoice);
   const fetchCustomers = useServerFn(listCustomers);
   const fetchAccounts = useServerFn(listAccounts);
@@ -257,9 +260,19 @@ export function RecurringInvoices() {
         description="Generates draft invoices on demand with customer terms and tax. Auto-authorise posts only when you have sales.authorise. Base currency only."
         actions={
           !formOpen ? (
-            <Button size="sm" onClick={() => setFormOpen(true)}>
-              New recurring invoice
-            </Button>
+            <div className="flex gap-2">
+              <RunDueButton
+                label="invoices"
+                run={() => runDue({ data: { companyId: companyId! } })}
+                invalidateKeys={[
+                  ["sales-recurring", companyId],
+                  ["sales-invoices", companyId],
+                ]}
+              />
+              <Button size="sm" onClick={() => setFormOpen(true)}>
+                New recurring invoice
+              </Button>
+            </div>
           ) : null
         }
       />

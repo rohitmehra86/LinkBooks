@@ -25,7 +25,7 @@ Branch: `workstream-b-sales` (not pushed). Source audit: `docs/audit/BUGS_SALES_
 | AR-07 | Done | Credit notes use `SalesDocumentLines` (multi-line, tax, discount, tax code). |
 | AR-08 | Done | `getAgedReceivablesAsAt` in `ar-reports.functions.ts`: as-at from dated events, unallocated receipts and unapplied credits as negative lines, per currency, ties to AR control. **Not yet wired into the Reports page** (reports workstream). |
 | AR-09 | Done | Statement has opening balance, per-currency sections, void entries. |
-| AR-10 | Partial | Currency picker + FX rate on invoices, quotes, credit notes and receipts; amounts shown in document currency; `fx_rate_to_base` passed to posting. Recurring invoices are base currency only. No FX revaluation / realised gain-loss. |
+| AR-10 | Partial | Currency picker + FX rate on invoices, quotes, credit notes and receipts; amounts shown in document currency; `fx_rate_to_base` passed to posting. Recurring invoices are base currency only. Realised FX on settlement and manual-rate unrealised revaluation with auto-reversal were added in wave 2 E (see `WAVE2_E_ACCOUNTING.md`); credit-note FX is still open. |
 | AR-11 | Done | `saveAndAuthoriseInvoice` keeps one draft; the editor keeps the saved id, so a failed authorise leaves the form on the same draft. |
 | AR-12 | Done | `save_sales_document_draft` RPC saves header + lines atomically (compensated fallback). |
 | AR-13 | Done | Number allocated in the transaction when missing, on save and on quote->invoice. |

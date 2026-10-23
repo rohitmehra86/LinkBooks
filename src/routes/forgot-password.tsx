@@ -92,7 +92,11 @@ function ForgotPasswordPage() {
               aria-invalid={Boolean(fieldError)}
               placeholder="you@company.com"
             />
-            {fieldError ? <p className="text-xs text-destructive">{fieldError}</p> : null}
+            {fieldError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {fieldError}
+              </p>
+            ) : null}
           </div>
 
           <Button type="submit" className="w-full" disabled={busy}>

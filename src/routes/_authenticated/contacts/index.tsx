@@ -14,7 +14,7 @@ import {
 } from "@/lib/contacts/contacts.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableCard } from "@/components/common/table-card";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -301,7 +302,7 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
         </div>
         <TabsContent value={view} className="mt-4">
           {query.isPending ? (
-            <LoadingState />
+            <ListSkeleton />
           ) : query.isError ? (
             <ErrorState
               title="Could not load contacts"
@@ -314,42 +315,46 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
               description="Add a contact above or import a CSV."
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Account #</TableHead>
-                  <TableHead>Roles</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Terms</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(query.data as ContactRow[]).map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      <Link
-                        to="/contacts/$contactId"
-                        params={{ contactId: c.id }}
-                        className="font-medium underline-offset-2 hover:underline"
-                      >
-                        {c.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c.account_number ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{c.kind}</Badge>
-                    </TableCell>
-                    <TableCell>{c.email ?? "—"}</TableCell>
-                    <TableCell>{c.phone ?? "—"}</TableCell>
-                    <TableCell>{c.payment_terms_days}d</TableCell>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Account #</TableHead>
+                    <TableHead>Roles</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Terms</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {(query.data as ContactRow[]).map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link
+                          to="/contacts/$contactId"
+                          params={{ contactId: c.id }}
+                          className="font-medium underline-offset-2 hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {c.account_number ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="neutral" className="capitalize">
+                          {c.kind === "both" ? "Customer & supplier" : c.kind}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{c.email ?? "—"}</TableCell>
+                      <TableCell>{c.phone ?? "—"}</TableCell>
+                      <TableCell>{c.payment_terms_days}d</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
           )}
           {!query.isPending &&
           !query.isError &&

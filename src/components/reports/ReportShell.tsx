@@ -6,13 +6,16 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { csvFilename, downloadCsv, toCsv, type CsvCell } from "@/lib/reports/csv";
 import { sourceLabel, sourceTarget } from "@/lib/reports/links";
 import type { ReportSearch } from "@/lib/reports/search";
-import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { EmptyState, ErrorState, ReportSkeleton } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SavedViews } from "./SavedViews";
 
 export type ReportCtx = {
+  /** Catalogue id of the report; enables saved views. */
+  reportId?: string;
   companyId: string;
   companyName: string;
   currency: string;
@@ -106,7 +109,7 @@ export function ReportShell({
             <Label htmlFor="report-columns">Columns</Label>
             <select
               id="report-columns"
-              className="flex h-10 rounded-md border border-input bg-background px-3 text-sm"
+              className="flex h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 pointer-coarse:h-11"
               value={ctx.search.columns ?? "none"}
               onChange={(e) =>
                 ctx.setSearch({ columns: e.target.value === "none" ? undefined : e.target.value })
@@ -125,7 +128,7 @@ export function ReportShell({
             <Label htmlFor="report-compare">Compare</Label>
             <select
               id="report-compare"
-              className="flex h-10 rounded-md border border-input bg-background px-3 text-sm"
+              className="flex h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 pointer-coarse:h-11"
               value={ctx.search.compare ?? "none"}
               onChange={(e) =>
                 ctx.setSearch({ compare: e.target.value === "none" ? undefined : e.target.value })
@@ -154,6 +157,8 @@ export function ReportShell({
         </div>
       </div>
 
+      <SavedViews ctx={ctx} />
+
       {children}
     </div>
   );
@@ -172,7 +177,7 @@ export function ReportPane({
   emptyDescription: string;
   children: ReactNode;
 }) {
-  if (query.isPending) return <LoadingState />;
+  if (query.isPending) return <ReportSkeleton />;
   if (query.isError) {
     return (
       <ErrorState

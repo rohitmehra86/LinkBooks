@@ -895,6 +895,50 @@ export const findPotentialDuplicates = createServerFn({ method: "GET" })
   .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
   .handler(async ({ data, context }) => {
     await assertCompanyMember(context.supabase, data.companyId);
+    // Set-based finder in SQL: no 2,000-contact cap and no O(n^2) loop in the server.
+    const rpc = await context.supabase.rpc(
+      "find_duplicate_contacts" as never,
+      { _company_id: data.companyId, _limit: 50 } as never,
+    );
+    if (!rpc.error) {
+      type Row = {
+        a_id: string;
+        a_name: string;
+        a_email: string | null;
+        a_phone: string | null;
+        a_tax_number: string | null;
+        a_account_number: string | null;
+        b_id: string;
+        b_name: string;
+        b_email: string | null;
+        b_phone: string | null;
+        b_tax_number: string | null;
+        b_account_number: string | null;
+        score: number;
+        reasons: string[];
+      };
+      return ((rpc.data ?? []) as unknown as Row[]).map((r) => ({
+        a: {
+          id: r.a_id,
+          name: r.a_name,
+          email: r.a_email,
+          phone: r.a_phone,
+          tax_number: r.a_tax_number,
+          account_number: r.a_account_number,
+        },
+        b: {
+          id: r.b_id,
+          name: r.b_name,
+          email: r.b_email,
+          phone: r.b_phone,
+          tax_number: r.b_tax_number,
+          account_number: r.b_account_number,
+        },
+        score: r.score,
+        reasons: r.reasons,
+      }));
+    }
+    // Older database without the function: bounded in-app fallback.
     const { data: rows, error } = await context.supabase
       .from("contacts" as never)
       .select("id, name, email, phone, tax_number, account_number, is_active" as never)

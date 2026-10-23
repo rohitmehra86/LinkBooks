@@ -1,18 +1,11 @@
-import type { ReactNode } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { useState, type ReactNode } from "react";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 
-/** A button that asks for confirmation before running a (potentially ledger-changing) action. */
+/**
+ * A button that asks for confirmation before running a (potentially ledger-changing) action.
+ * Thin wrapper over the shared `ConfirmDialog` so every confirmation looks and behaves the same.
+ */
 export function ConfirmButton({
   children,
   title,
@@ -32,23 +25,30 @@ export function ConfirmButton({
   variant?: "default" | "outline" | "secondary" | "ghost" | "destructive";
   size?: "default" | "sm";
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button type="button" size={size} variant={variant} disabled={disabled}>
-          {children}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>{confirmLabel}</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <Button
+        type="button"
+        size={size}
+        variant={variant}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        {children}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={title}
+        description={description}
+        confirmLabel={confirmLabel}
+        tone={variant === "destructive" ? "destructive" : "default"}
+        onConfirm={() => {
+          setOpen(false);
+          onConfirm();
+        }}
+      />
+    </>
   );
 }

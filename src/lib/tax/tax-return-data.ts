@@ -10,6 +10,7 @@
 import { fetchAllPages } from "@/lib/accounting/fetch-all";
 import { convertMinorToBase } from "@/lib/accounting/fx";
 import type { Sb } from "@/lib/accounting/ledger-data";
+import { isSelfAssessedReverseCharge, reverseChargeTaxMinor } from "@/lib/tax/reverse-charge";
 import { scaleByFraction, type TaxFact, type TaxSide } from "@/lib/tax/vat-return";
 
 type Row = Record<string, unknown>;
@@ -57,7 +58,7 @@ type Source = {
   dateCol: string;
   /** Header carries net/tax itself (no line table). */
   headerOnly?: boolean;
-  lines?: { table: string; fk: string; hasCode: boolean };
+  lines?: { table: string; fk: string; hasCode: boolean; hasRate?: boolean };
   /** Cash basis: payments applied to the document, with the payment date. */
   allocations?: {
     table: string;
@@ -101,7 +102,7 @@ const SOURCES: Source[] = [
     sign: 1,
     header: "purchase_bills",
     dateCol: "bill_date",
-    lines: { table: "purchase_bill_lines", fk: "bill_id", hasCode: true },
+    lines: { table: "purchase_bill_lines", fk: "bill_id", hasCode: true, hasRate: true },
     allocations: {
       table: "supplier_payment_allocations",
       docFk: "bill_id",
@@ -336,7 +337,7 @@ export async function loadTaxFacts(
     }
 
     const lineSpec = src.lines!;
-    const lineColumns = `id, ${lineSpec.fk}, net_minor, tax_minor${lineSpec.hasCode ? ", tax_code_id" : ""}`;
+    const lineColumns = `id, ${lineSpec.fk}, net_minor, tax_minor${lineSpec.hasCode ? ", tax_code_id" : ""}${lineSpec.hasRate ? ", tax_rate_bps" : ""}`;
     for (const ids of chunks([...docs.keys()], CHUNK)) {
       const lines = await fetchAllPages<Row>((f, t) =>
         table(sb, lineSpec.table)
@@ -351,14 +352,24 @@ export async function loadTaxFacts(
         if (!d) continue;
         const codeId = lineSpec.hasCode ? str(line, "tax_code_id") : "";
         const code = codeId ? codes.get(codeId) : undefined;
+        const netMinor = big(line, "net_minor");
+        let taxMinor = big(line, "tax_minor");
+        // Reverse charge on a bill: the supplier charged no tax, so the buyer works it out from
+        // the net amount and the code's rate. It counts as output and input tax (TX-04).
+        const selfAssessed =
+          Boolean(lineSpec.hasRate) && isSelfAssessedReverseCharge(code?.treatment, taxMinor);
+        if (selfAssessed) {
+          taxMinor = reverseChargeTaxMinor(netMinor, Number(big(line, "tax_rate_bps")));
+        }
         facts.push({
           side: src.side,
           sign: src.sign,
           treatment: code?.treatment ?? null,
           recoverable: code ? code.recoverable : true,
-          netBase: scale(d, toBase(d, big(line, "net_minor"))),
-          taxBase: scale(d, toBase(d, big(line, "tax_minor"))),
+          netBase: scale(d, toBase(d, netMinor)),
+          taxBase: scale(d, toBase(d, taxMinor)),
           coded: Boolean(code),
+          ...(selfAssessed ? { selfAssessed: true } : {}),
         });
       }
     }

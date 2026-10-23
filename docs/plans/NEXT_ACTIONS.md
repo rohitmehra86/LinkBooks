@@ -1,5 +1,18 @@
 # Exact next executable steps
 
+## After wave 2 (23 Oct 2026)
+1. Apply the new look to the bills list and the document create/edit forms (UI wave leftovers).
+2. Install schedulers: auto-reversals (`process_due_auto_reversals_system`), recurring journals (`process_all_due_recurring_journals`), reminders. Make recurring invoice/bill generators callable by the service role.
+3. Server-side PDF and PDF attachment in emails; supplier statements; online payment provider (only when real).
+4. Bank feeds provider, e-filing of tax returns, reverse-charge on credit notes and bank-coded spend.
+5. Tracking categories and per-line project tags; budget summary on the dashboard.
+6. Add pgTAP / saved SQL scenario tests for the RPCs (currently verified by hand under RLS).
+7. Older items below that are still open: deferred balance trigger, composite FKs, S5, S7, S9/S10, demo date alignment, RLS impersonation tests.
+
+---
+
+## Earlier plan (kept for reference)
+
 1. **M2 — Flyover foundation**
    - Extend reusable Create flyover shell (focus trap, unsaved guard, nested Add New) already partially in `create-new/`.
    - Unblock `manual_journal` Create action only after signed-in post verified against Accounting page parity.

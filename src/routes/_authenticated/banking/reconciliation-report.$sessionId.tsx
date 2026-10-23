@@ -72,7 +72,7 @@ function ReconciliationReport() {
                 <TableCell>
                   #{i.journalNumber} · {i.description || i.source}
                 </TableCell>
-                <TableCell className="text-right font-mono">{money(i.amountMinor)}</TableCell>
+                <TableCell className="money">{money(i.amountMinor)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -114,7 +114,7 @@ function ReconciliationReport() {
           <TableBody>
             <TableRow>
               <TableCell>Balance per bank statement</TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {money(r.totals.statementBalance)}
               </TableCell>
             </TableRow>
@@ -125,14 +125,14 @@ function ReconciliationReport() {
           title="Add: outstanding receipts (in the ledger, not yet on the statement)"
           items={r.outstanding}
         />
-        <p className="mt-1 text-right font-mono text-sm">
+        <p className="mt-1 money text-sm">
           Total {money(r.totals.outstandingReceipts)}
         </p>
         <Section
           title="Less: outstanding payments (in the ledger, not yet on the statement)"
           items={r.outstandingPaymentsList}
         />
-        <p className="mt-1 text-right font-mono text-sm">
+        <p className="mt-1 money text-sm">
           Total {money(r.totals.outstandingPayments)}
         </p>
 
@@ -140,7 +140,7 @@ function ReconciliationReport() {
           <TableBody>
             <TableRow>
               <TableCell className="font-semibold">Expected balance per books</TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {money(r.totals.expectedBookBalance)}
               </TableCell>
             </TableRow>
@@ -148,7 +148,7 @@ function ReconciliationReport() {
               <TableCell className="font-semibold">
                 Balance per ledger at {r.session.statementDate}
               </TableCell>
-              <TableCell className="text-right font-mono">{money(r.totals.bookBalance)}</TableCell>
+              <TableCell className="money">{money(r.totals.bookBalance)}</TableCell>
             </TableRow>
             <TableRow>
               <TableCell
@@ -158,7 +158,7 @@ function ReconciliationReport() {
               >
                 Unexplained difference
               </TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {money(r.totals.unexplainedDifference)}
               </TableCell>
             </TableRow>

@@ -71,6 +71,7 @@ export function Transfers() {
   const [date, setDate] = useState(today);
   const [amount, setAmount] = useState(search.amount ?? "");
   const [memo, setMemo] = useState("");
+  const [received, setReceived] = useState("");
 
   useEffect(() => {
     if (search.direction === "out" && search.bankAccountId) setFromId(search.bankAccountId);
@@ -97,11 +98,13 @@ export function Transfers() {
     fromAcc && toAcc && fromAcc.currency_code !== toAcc.currency_code,
   );
   const amountMinor = moneyFieldMinor(amount, currency, { allowNegative: false });
+  const toCurrency = toAcc?.currency_code ?? currency;
+  const receivedMinor = moneyFieldMinor(received, toCurrency, { allowNegative: false });
   const canPost =
     Boolean(fromId && toId && fromId !== toId) &&
     amountMinor !== null &&
     amountMinor > 0n &&
-    !currencyMismatch;
+    (!currencyMismatch || (receivedMinor !== null && receivedMinor > 0n));
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -113,12 +116,14 @@ export function Transfers() {
           transferDate: date,
           amountMinor: Number(amountMinor),
           currencyCode: currency,
+          toAmountMinor: currencyMismatch && receivedMinor !== null ? Number(receivedMinor) : null,
           memo,
         },
       }),
     onSuccess: async () => {
       toast.success("Transfer posted. One journal only.");
       setAmount("");
+      setReceived("");
       setMemo("");
       await qc.invalidateQueries({ queryKey: ["bank-transfers", companyId] });
       await qc.invalidateQueries({ queryKey: ["bank-account-summaries", companyId] });
@@ -176,9 +181,9 @@ export function Transfers() {
           </Select>
         </div>
         {currencyMismatch ? (
-          <p className="text-sm text-destructive">
-            These accounts are in different currencies. Cross-currency transfers are not supported
-            here.
+          <p className="text-sm text-muted-foreground">
+            These accounts are in different currencies. Enter what each side shows on the statement.
+            The difference against the stored exchange rates is posted to FX gain/loss.
           </p>
         ) : null}
         <div className="space-y-1">
@@ -195,6 +200,18 @@ export function Transfers() {
             onChange={setAmount}
           />
         </div>
+        {currencyMismatch ? (
+          <div className="space-y-1">
+            <Label>Amount received ({toCurrency})</Label>
+            <MoneyField
+              label="Amount received"
+              value={received}
+              currency={toCurrency}
+              options={{ allowNegative: false }}
+              onChange={setReceived}
+            />
+          </div>
+        ) : null}
         <div className="space-y-1">
           <Label>Memo</Label>
           <Input value={memo} maxLength={500} onChange={(e) => setMemo(e.target.value)} />
@@ -232,8 +249,17 @@ export function Transfers() {
                 <TableCell>{t.transfer_date}</TableCell>
                 <TableCell>{t.from_name}</TableCell>
                 <TableCell>{t.to_name}</TableCell>
-                <TableCell className="text-right font-mono">
+                <TableCell className="money">
                   {fromMinorUnits(t.amount_minor, t.currency_code || currency)} {t.currency_code}
+                  {t.to_amount_minor != null && t.to_currency_code !== t.currency_code ? (
+                    <span className="block text-xs text-muted-foreground">
+                      received {fromMinorUnits(t.to_amount_minor, t.to_currency_code ?? currency)}{" "}
+                      {t.to_currency_code}
+                      {t.fx_difference_minor !== 0
+                        ? `, FX ${fromMinorUnits(t.fx_difference_minor, company?.base_currency ?? currency)}`
+                        : ""}
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell>{t.memo ?? "—"}</TableCell>
                 <TableCell>

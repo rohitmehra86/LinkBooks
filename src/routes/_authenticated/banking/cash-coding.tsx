@@ -440,7 +440,7 @@ function CashCoding() {
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-mono text-sm">
+                    <TableCell className="money text-sm">
                       {fromMinorUnits(t.amount_minor, currencyOf(t))}{" "}
                       <span className="text-xs">{currencyOf(t)}</span>
                     </TableCell>

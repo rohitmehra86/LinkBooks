@@ -101,6 +101,8 @@ export function CreateNewMenu() {
   const [flyoverId, setFlyoverId] = useState<string | null>(null);
   const [Panel, setPanel] = useState<ComponentType | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
+  // Set by any edit inside the flyover, so closing an untouched form does not ask to discard (U-14).
+  const flyoverDirty = useRef(false);
 
   useEffect(() => {
     setPrefs(readCreatePrefs(window.localStorage, user.id));
@@ -140,6 +142,7 @@ export function CreateNewMenu() {
     setQuery("");
     setPanel(null);
     setPanelError(null);
+    flyoverDirty.current = false;
     setFlyoverId(action.id);
     void loadCreatePanel(action.id)
       .then((Loaded) => setPanel(() => Loaded))
@@ -149,7 +152,13 @@ export function CreateNewMenu() {
   }
 
   function closeFlyover() {
-    if (!window.confirm("Close this form? Unsaved changes on this form will be lost.")) return;
+    if (
+      flyoverDirty.current &&
+      !window.confirm("Close this form? Unsaved changes on this form will be lost.")
+    ) {
+      return;
+    }
+    flyoverDirty.current = false;
     setFlyoverId(null);
     setPanel(null);
     setPanelError(null);
@@ -185,7 +194,7 @@ export function CreateNewMenu() {
         aria-haspopup="dialog"
         aria-expanded={menuOpen}
         aria-controls={menuId}
-        className="rounded-full bg-neutral-950 px-4 text-white hover:bg-neutral-800"
+        className="gap-1.5 px-3.5"
         onClick={() => setMenuOpen((open) => !open)}
       >
         <Plus className="size-4" />
@@ -299,7 +308,15 @@ export function CreateNewMenu() {
           <SheetHeader className="shrink-0 border-b border-border px-6 py-4 pr-12 text-left">
             <SheetTitle>{flyover?.label ?? "Create"}</SheetTitle>
           </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-6 py-4"
+            onInput={() => {
+              flyoverDirty.current = true;
+            }}
+            onChange={() => {
+              flyoverDirty.current = true;
+            }}
+          >
             {panelError ? <p className="text-sm text-destructive">{panelError}</p> : null}
             {!Panel && !panelError ? (
               <div className="flex justify-center py-12">

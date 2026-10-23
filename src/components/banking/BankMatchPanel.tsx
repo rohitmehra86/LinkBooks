@@ -165,7 +165,7 @@ export function BankMatchPanel({
                 #{c.journalNumber} · {c.description || c.source}
               </span>
               {c.exact ? <Badge variant="secondary">Exact amount</Badge> : null}
-              <span className="font-mono">{money(c.amountMinor)}</span>
+              <span className="numeric">{money(c.amountMinor)}</span>
             </li>
           ))}
         </ul>
@@ -209,7 +209,7 @@ export function BankMatchPanel({
                 />
                 <span className="w-24 whitespace-nowrap">{o.txn_date}</span>
                 <span className="min-w-0 flex-1 truncate">{o.description ?? "—"}</span>
-                <span className="font-mono">{money(o.amount_minor)}</span>
+                <span className="numeric">{money(o.amount_minor)}</span>
               </li>
             ))}
             {others.length === 0 ? (

@@ -18,12 +18,16 @@ import { Route as AuthenticatedAccountantRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAccountingRouteImport } from './routes/_authenticated/accounting'
 import { Route as AuthenticatedAiAssistantRouteImport } from './routes/_authenticated/ai-assistant'
 import { Route as AuthenticatedBankingRouteRouteImport } from './routes/_authenticated/banking/route'
+import { Route as AuthenticatedFilesRouteImport } from './routes/_authenticated/files'
 import { Route as AuthenticatedFirmRouteImport } from './routes/_authenticated/firm'
+import { Route as AuthenticatedFixedAssetsRouteImport } from './routes/_authenticated/fixed-assets'
 import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedProductsServicesRouteImport } from './routes/_authenticated/products-services'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedPurchasesRouteRouteImport } from './routes/_authenticated/purchases/route'
+import { Route as AuthenticatedRecurringJournalsRouteImport } from './routes/_authenticated/recurring-journals'
 import { Route as AuthenticatedSalesRouteRouteImport } from './routes/_authenticated/sales/route'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTaxRouteImport } from './routes/_authenticated/tax'
@@ -36,11 +40,14 @@ import { Route as AuthenticatedBankingReconcileRouteImport } from './routes/_aut
 import { Route as AuthenticatedBankingRulesRouteImport } from './routes/_authenticated/banking/rules'
 import { Route as AuthenticatedBankingTransactionsRouteImport } from './routes/_authenticated/banking/transactions'
 import { Route as AuthenticatedBankingTransfersRouteImport } from './routes/_authenticated/banking/transfers'
+import { Route as AuthenticatedBudgetsIndexRouteImport } from './routes/_authenticated/budgets/index'
+import { Route as AuthenticatedBudgetsBudgetIdRouteImport } from './routes/_authenticated/budgets/$budgetId'
 import { Route as AuthenticatedContactsIndexRouteImport } from './routes/_authenticated/contacts/index'
 import { Route as AuthenticatedContactsContactIdRouteImport } from './routes/_authenticated/contacts/$contactId'
 import { Route as AuthenticatedContactsDuplicatesRouteImport } from './routes/_authenticated/contacts/duplicates'
 import { Route as AuthenticatedContactsImportRouteImport } from './routes/_authenticated/contacts/import'
 import { Route as AuthenticatedContactsSettingsRouteImport } from './routes/_authenticated/contacts/settings'
+import { Route as AuthenticatedDocumentsBrandingRouteImport } from './routes/_authenticated/documents.branding'
 import { Route as AuthenticatedPurchasesIndexRouteImport } from './routes/_authenticated/purchases/index'
 import { Route as AuthenticatedPurchasesEmployeeExpensesRouteImport } from './routes/_authenticated/purchases/employee-expenses'
 import { Route as AuthenticatedPurchasesRecurringRouteImport } from './routes/_authenticated/purchases/recurring'
@@ -52,8 +59,10 @@ import { Route as AuthenticatedReportsReportIdRouteImport } from './routes/_auth
 import { Route as AuthenticatedSalesIndexRouteImport } from './routes/_authenticated/sales/index'
 import { Route as AuthenticatedSalesCustomersRouteImport } from './routes/_authenticated/sales/customers'
 import { Route as AuthenticatedSalesRecurringRouteImport } from './routes/_authenticated/sales/recurring'
+import { Route as AuthenticatedSalesRemindersRouteImport } from './routes/_authenticated/sales/reminders'
 import { Route as AuthenticatedSalesSettingsRouteImport } from './routes/_authenticated/sales/settings'
 import { Route as AuthenticatedSalesStatementsRouteImport } from './routes/_authenticated/sales/statements'
+import { Route as ShareInvoiceTokenRouteImport } from './routes/share.invoice.$token'
 import { Route as AuthenticatedBankingJournalJournalIdRouteImport } from './routes/_authenticated/banking/journal.$journalId'
 import { Route as AuthenticatedBankingReconciliationReportSessionIdRouteImport } from './routes/_authenticated/banking/reconciliation-report.$sessionId'
 import { Route as AuthenticatedPurchasesBillsIndexRouteImport } from './routes/_authenticated/purchases/bills.index'
@@ -69,6 +78,7 @@ import { Route as AuthenticatedPurchasesOrdersIndexRouteImport } from './routes/
 import { Route as AuthenticatedPurchasesOrdersNewRouteImport } from './routes/_authenticated/purchases/orders.new'
 import { Route as AuthenticatedPurchasesPaymentsIndexRouteImport } from './routes/_authenticated/purchases/payments.index'
 import { Route as AuthenticatedPurchasesPaymentsPaymentIdRouteImport } from './routes/_authenticated/purchases/payments.$paymentId'
+import { Route as AuthenticatedPurchasesPaymentsBatchRouteImport } from './routes/_authenticated/purchases/payments.batch'
 import { Route as AuthenticatedPurchasesPaymentsNewRouteImport } from './routes/_authenticated/purchases/payments.new'
 import { Route as AuthenticatedSalesCreditNotesIndexRouteImport } from './routes/_authenticated/sales/credit-notes.index'
 import { Route as AuthenticatedSalesCreditNotesCreditNoteIdRouteImport } from './routes/_authenticated/sales/credit-notes.$creditNoteId'
@@ -82,6 +92,7 @@ import { Route as AuthenticatedSalesQuotesNewRouteImport } from './routes/_authe
 import { Route as AuthenticatedSalesReceiptsIndexRouteImport } from './routes/_authenticated/sales/receipts.index'
 import { Route as AuthenticatedSalesReceiptsReceiptIdRouteImport } from './routes/_authenticated/sales/receipts.$receiptId'
 import { Route as AuthenticatedSalesReceiptsNewRouteImport } from './routes/_authenticated/sales/receipts.new'
+import { Route as AuthenticatedDocumentsPrintKindIdRouteImport } from './routes/_authenticated/documents.print.$kind.$id'
 import { Route as AuthenticatedPurchasesBillsBillIdEditRouteImport } from './routes/_authenticated/purchases/bills.$billId.edit'
 import { Route as AuthenticatedSalesCreditNotesCreditNoteIdIndexRouteImport } from './routes/_authenticated/sales/credit-notes.$creditNoteId.index'
 import { Route as AuthenticatedSalesCreditNotesCreditNoteIdEditRouteImport } from './routes/_authenticated/sales/credit-notes.$creditNoteId.edit'
@@ -136,11 +147,22 @@ const AuthenticatedBankingRouteRoute =
     path: '/banking',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedFilesRoute = AuthenticatedFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedFirmRoute = AuthenticatedFirmRouteImport.update({
   id: '/firm',
   path: '/firm',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedFixedAssetsRoute =
+  AuthenticatedFixedAssetsRouteImport.update({
+    id: '/fixed-assets',
+    path: '/fixed-assets',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedHelpRoute = AuthenticatedHelpRouteImport.update({
   id: '/help',
   path: '/help',
@@ -162,10 +184,21 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedPurchasesRouteRoute =
   AuthenticatedPurchasesRouteRouteImport.update({
     id: '/purchases',
     path: '/purchases',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRecurringJournalsRoute =
+  AuthenticatedRecurringJournalsRouteImport.update({
+    id: '/recurring-journals',
+    path: '/recurring-journals',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSalesRouteRoute = AuthenticatedSalesRouteRouteImport.update({
@@ -237,6 +270,18 @@ const AuthenticatedBankingTransfersRoute =
     path: '/transfers',
     getParentRoute: () => AuthenticatedBankingRouteRoute,
   } as any)
+const AuthenticatedBudgetsIndexRoute =
+  AuthenticatedBudgetsIndexRouteImport.update({
+    id: '/budgets/',
+    path: '/budgets/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedBudgetsBudgetIdRoute =
+  AuthenticatedBudgetsBudgetIdRouteImport.update({
+    id: '/budgets/$budgetId',
+    path: '/budgets/$budgetId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedContactsIndexRoute =
   AuthenticatedContactsIndexRouteImport.update({
     id: '/contacts/',
@@ -265,6 +310,12 @@ const AuthenticatedContactsSettingsRoute =
   AuthenticatedContactsSettingsRouteImport.update({
     id: '/contacts/settings',
     path: '/contacts/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDocumentsBrandingRoute =
+  AuthenticatedDocumentsBrandingRouteImport.update({
+    id: '/documents/branding',
+    path: '/documents/branding',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedPurchasesIndexRoute =
@@ -332,6 +383,12 @@ const AuthenticatedSalesRecurringRoute =
     path: '/recurring',
     getParentRoute: () => AuthenticatedSalesRouteRoute,
   } as any)
+const AuthenticatedSalesRemindersRoute =
+  AuthenticatedSalesRemindersRouteImport.update({
+    id: '/reminders',
+    path: '/reminders',
+    getParentRoute: () => AuthenticatedSalesRouteRoute,
+  } as any)
 const AuthenticatedSalesSettingsRoute =
   AuthenticatedSalesSettingsRouteImport.update({
     id: '/settings',
@@ -344,6 +401,11 @@ const AuthenticatedSalesStatementsRoute =
     path: '/statements',
     getParentRoute: () => AuthenticatedSalesRouteRoute,
   } as any)
+const ShareInvoiceTokenRoute = ShareInvoiceTokenRouteImport.update({
+  id: '/share/invoice/$token',
+  path: '/share/invoice/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedBankingJournalJournalIdRoute =
   AuthenticatedBankingJournalJournalIdRouteImport.update({
     id: '/journal/$journalId',
@@ -434,6 +496,12 @@ const AuthenticatedPurchasesPaymentsPaymentIdRoute =
     path: '/payments/$paymentId',
     getParentRoute: () => AuthenticatedPurchasesRouteRoute,
   } as any)
+const AuthenticatedPurchasesPaymentsBatchRoute =
+  AuthenticatedPurchasesPaymentsBatchRouteImport.update({
+    id: '/payments/batch',
+    path: '/payments/batch',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
 const AuthenticatedPurchasesPaymentsNewRoute =
   AuthenticatedPurchasesPaymentsNewRouteImport.update({
     id: '/payments/new',
@@ -512,6 +580,12 @@ const AuthenticatedSalesReceiptsNewRoute =
     path: '/receipts/new',
     getParentRoute: () => AuthenticatedSalesRouteRoute,
   } as any)
+const AuthenticatedDocumentsPrintKindIdRoute =
+  AuthenticatedDocumentsPrintKindIdRouteImport.update({
+    id: '/documents/print/$kind/$id',
+    path: '/documents/print/$kind/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPurchasesBillsBillIdEditRoute =
   AuthenticatedPurchasesBillsBillIdEditRouteImport.update({
     id: '/edit',
@@ -566,11 +640,15 @@ export interface FileRoutesByFullPath {
   '/accountant': typeof AuthenticatedAccountantRoute
   '/accounting': typeof AuthenticatedAccountingRoute
   '/ai-assistant': typeof AuthenticatedAiAssistantRoute
+  '/files': typeof AuthenticatedFilesRoute
   '/firm': typeof AuthenticatedFirmRoute
+  '/fixed-assets': typeof AuthenticatedFixedAssetsRoute
   '/help': typeof AuthenticatedHelpRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/projects': typeof AuthenticatedProjectsRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
@@ -581,10 +659,12 @@ export interface FileRoutesByFullPath {
   '/banking/rules': typeof AuthenticatedBankingRulesRoute
   '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/budgets/$budgetId': typeof AuthenticatedBudgetsBudgetIdRoute
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
   '/contacts/import': typeof AuthenticatedContactsImportRoute
   '/contacts/settings': typeof AuthenticatedContactsSettingsRoute
+  '/documents/branding': typeof AuthenticatedDocumentsBrandingRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -593,9 +673,12 @@ export interface FileRoutesByFullPath {
   '/reports/$reportId': typeof AuthenticatedReportsReportIdRoute
   '/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/reminders': typeof AuthenticatedSalesRemindersRoute
   '/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/share/invoice/$token': typeof ShareInvoiceTokenRoute
   '/banking/': typeof AuthenticatedBankingIndexRoute
+  '/budgets/': typeof AuthenticatedBudgetsIndexRoute
   '/contacts/': typeof AuthenticatedContactsIndexRoute
   '/purchases/': typeof AuthenticatedPurchasesIndexRoute
   '/reports/': typeof AuthenticatedReportsIndexRoute
@@ -610,6 +693,7 @@ export interface FileRoutesByFullPath {
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRouteWithChildren
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -628,6 +712,7 @@ export interface FileRoutesByFullPath {
   '/sales/invoices/': typeof AuthenticatedSalesInvoicesIndexRoute
   '/sales/quotes/': typeof AuthenticatedSalesQuotesIndexRoute
   '/sales/receipts/': typeof AuthenticatedSalesReceiptsIndexRoute
+  '/documents/print/$kind/$id': typeof AuthenticatedDocumentsPrintKindIdRoute
   '/purchases/bills/$billId/edit': typeof AuthenticatedPurchasesBillsBillIdEditRoute
   '/sales/credit-notes/$creditNoteId/edit': typeof AuthenticatedSalesCreditNotesCreditNoteIdEditRoute
   '/sales/invoices/$invoiceId/edit': typeof AuthenticatedSalesInvoicesInvoiceIdEditRoute
@@ -643,11 +728,15 @@ export interface FileRoutesByTo {
   '/accountant': typeof AuthenticatedAccountantRoute
   '/accounting': typeof AuthenticatedAccountingRoute
   '/ai-assistant': typeof AuthenticatedAiAssistantRoute
+  '/files': typeof AuthenticatedFilesRoute
   '/firm': typeof AuthenticatedFirmRoute
+  '/fixed-assets': typeof AuthenticatedFixedAssetsRoute
   '/help': typeof AuthenticatedHelpRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/projects': typeof AuthenticatedProjectsRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/': typeof AuthenticatedIndexRoute
@@ -659,10 +748,12 @@ export interface FileRoutesByTo {
   '/banking/rules': typeof AuthenticatedBankingRulesRoute
   '/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/budgets/$budgetId': typeof AuthenticatedBudgetsBudgetIdRoute
   '/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
   '/contacts/import': typeof AuthenticatedContactsImportRoute
   '/contacts/settings': typeof AuthenticatedContactsSettingsRoute
+  '/documents/branding': typeof AuthenticatedDocumentsBrandingRoute
   '/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -671,9 +762,12 @@ export interface FileRoutesByTo {
   '/reports/$reportId': typeof AuthenticatedReportsReportIdRoute
   '/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/sales/reminders': typeof AuthenticatedSalesRemindersRoute
   '/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/share/invoice/$token': typeof ShareInvoiceTokenRoute
   '/banking': typeof AuthenticatedBankingIndexRoute
+  '/budgets': typeof AuthenticatedBudgetsIndexRoute
   '/contacts': typeof AuthenticatedContactsIndexRoute
   '/purchases': typeof AuthenticatedPurchasesIndexRoute
   '/reports': typeof AuthenticatedReportsIndexRoute
@@ -688,6 +782,7 @@ export interface FileRoutesByTo {
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
   '/sales/invoices/new': typeof AuthenticatedSalesInvoicesNewRoute
@@ -703,6 +798,7 @@ export interface FileRoutesByTo {
   '/sales/invoices': typeof AuthenticatedSalesInvoicesIndexRoute
   '/sales/quotes': typeof AuthenticatedSalesQuotesIndexRoute
   '/sales/receipts': typeof AuthenticatedSalesReceiptsIndexRoute
+  '/documents/print/$kind/$id': typeof AuthenticatedDocumentsPrintKindIdRoute
   '/purchases/bills/$billId/edit': typeof AuthenticatedPurchasesBillsBillIdEditRoute
   '/sales/credit-notes/$creditNoteId/edit': typeof AuthenticatedSalesCreditNotesCreditNoteIdEditRoute
   '/sales/invoices/$invoiceId/edit': typeof AuthenticatedSalesInvoicesInvoiceIdEditRoute
@@ -723,11 +819,15 @@ export interface FileRoutesById {
   '/_authenticated/accountant': typeof AuthenticatedAccountantRoute
   '/_authenticated/accounting': typeof AuthenticatedAccountingRoute
   '/_authenticated/ai-assistant': typeof AuthenticatedAiAssistantRoute
+  '/_authenticated/files': typeof AuthenticatedFilesRoute
   '/_authenticated/firm': typeof AuthenticatedFirmRoute
+  '/_authenticated/fixed-assets': typeof AuthenticatedFixedAssetsRoute
   '/_authenticated/help': typeof AuthenticatedHelpRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/products-services': typeof AuthenticatedProductsServicesRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/projects': typeof AuthenticatedProjectsRoute
+  '/_authenticated/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tax': typeof AuthenticatedTaxRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -739,10 +839,12 @@ export interface FileRoutesById {
   '/_authenticated/banking/rules': typeof AuthenticatedBankingRulesRoute
   '/_authenticated/banking/transactions': typeof AuthenticatedBankingTransactionsRoute
   '/_authenticated/banking/transfers': typeof AuthenticatedBankingTransfersRoute
+  '/_authenticated/budgets/$budgetId': typeof AuthenticatedBudgetsBudgetIdRoute
   '/_authenticated/contacts/$contactId': typeof AuthenticatedContactsContactIdRoute
   '/_authenticated/contacts/duplicates': typeof AuthenticatedContactsDuplicatesRoute
   '/_authenticated/contacts/import': typeof AuthenticatedContactsImportRoute
   '/_authenticated/contacts/settings': typeof AuthenticatedContactsSettingsRoute
+  '/_authenticated/documents/branding': typeof AuthenticatedDocumentsBrandingRoute
   '/_authenticated/purchases/employee-expenses': typeof AuthenticatedPurchasesEmployeeExpensesRoute
   '/_authenticated/purchases/recurring': typeof AuthenticatedPurchasesRecurringRoute
   '/_authenticated/purchases/settings': typeof AuthenticatedPurchasesSettingsRoute
@@ -751,9 +853,12 @@ export interface FileRoutesById {
   '/_authenticated/reports/$reportId': typeof AuthenticatedReportsReportIdRoute
   '/_authenticated/sales/customers': typeof AuthenticatedSalesCustomersRoute
   '/_authenticated/sales/recurring': typeof AuthenticatedSalesRecurringRoute
+  '/_authenticated/sales/reminders': typeof AuthenticatedSalesRemindersRoute
   '/_authenticated/sales/settings': typeof AuthenticatedSalesSettingsRoute
   '/_authenticated/sales/statements': typeof AuthenticatedSalesStatementsRoute
+  '/share/invoice/$token': typeof ShareInvoiceTokenRoute
   '/_authenticated/banking/': typeof AuthenticatedBankingIndexRoute
+  '/_authenticated/budgets/': typeof AuthenticatedBudgetsIndexRoute
   '/_authenticated/contacts/': typeof AuthenticatedContactsIndexRoute
   '/_authenticated/purchases/': typeof AuthenticatedPurchasesIndexRoute
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
@@ -768,6 +873,7 @@ export interface FileRoutesById {
   '/_authenticated/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/_authenticated/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/_authenticated/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/_authenticated/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/_authenticated/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/_authenticated/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRouteWithChildren
   '/_authenticated/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -786,6 +892,7 @@ export interface FileRoutesById {
   '/_authenticated/sales/invoices/': typeof AuthenticatedSalesInvoicesIndexRoute
   '/_authenticated/sales/quotes/': typeof AuthenticatedSalesQuotesIndexRoute
   '/_authenticated/sales/receipts/': typeof AuthenticatedSalesReceiptsIndexRoute
+  '/_authenticated/documents/print/$kind/$id': typeof AuthenticatedDocumentsPrintKindIdRoute
   '/_authenticated/purchases/bills/$billId/edit': typeof AuthenticatedPurchasesBillsBillIdEditRoute
   '/_authenticated/sales/credit-notes/$creditNoteId/edit': typeof AuthenticatedSalesCreditNotesCreditNoteIdEditRoute
   '/_authenticated/sales/invoices/$invoiceId/edit': typeof AuthenticatedSalesInvoicesInvoiceIdEditRoute
@@ -807,11 +914,15 @@ export interface FileRouteTypes {
     | '/accountant'
     | '/accounting'
     | '/ai-assistant'
+    | '/files'
     | '/firm'
+    | '/fixed-assets'
     | '/help'
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/projects'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/banking/cash-coding'
@@ -822,10 +933,12 @@ export interface FileRouteTypes {
     | '/banking/rules'
     | '/banking/transactions'
     | '/banking/transfers'
+    | '/budgets/$budgetId'
     | '/contacts/$contactId'
     | '/contacts/duplicates'
     | '/contacts/import'
     | '/contacts/settings'
+    | '/documents/branding'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
     | '/purchases/settings'
@@ -834,9 +947,12 @@ export interface FileRouteTypes {
     | '/reports/$reportId'
     | '/sales/customers'
     | '/sales/recurring'
+    | '/sales/reminders'
     | '/sales/settings'
     | '/sales/statements'
+    | '/share/invoice/$token'
     | '/banking/'
+    | '/budgets/'
     | '/contacts/'
     | '/purchases/'
     | '/reports/'
@@ -851,6 +967,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
     | '/purchases/payments/$paymentId'
+    | '/purchases/payments/batch'
     | '/purchases/payments/new'
     | '/sales/credit-notes/$creditNoteId'
     | '/sales/credit-notes/new'
@@ -869,6 +986,7 @@ export interface FileRouteTypes {
     | '/sales/invoices/'
     | '/sales/quotes/'
     | '/sales/receipts/'
+    | '/documents/print/$kind/$id'
     | '/purchases/bills/$billId/edit'
     | '/sales/credit-notes/$creditNoteId/edit'
     | '/sales/invoices/$invoiceId/edit'
@@ -884,11 +1002,15 @@ export interface FileRouteTypes {
     | '/accountant'
     | '/accounting'
     | '/ai-assistant'
+    | '/files'
     | '/firm'
+    | '/fixed-assets'
     | '/help'
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/projects'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/'
@@ -900,10 +1022,12 @@ export interface FileRouteTypes {
     | '/banking/rules'
     | '/banking/transactions'
     | '/banking/transfers'
+    | '/budgets/$budgetId'
     | '/contacts/$contactId'
     | '/contacts/duplicates'
     | '/contacts/import'
     | '/contacts/settings'
+    | '/documents/branding'
     | '/purchases/employee-expenses'
     | '/purchases/recurring'
     | '/purchases/settings'
@@ -912,9 +1036,12 @@ export interface FileRouteTypes {
     | '/reports/$reportId'
     | '/sales/customers'
     | '/sales/recurring'
+    | '/sales/reminders'
     | '/sales/settings'
     | '/sales/statements'
+    | '/share/invoice/$token'
     | '/banking'
+    | '/budgets'
     | '/contacts'
     | '/purchases'
     | '/reports'
@@ -929,6 +1056,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
     | '/purchases/payments/$paymentId'
+    | '/purchases/payments/batch'
     | '/purchases/payments/new'
     | '/sales/credit-notes/new'
     | '/sales/invoices/new'
@@ -944,6 +1072,7 @@ export interface FileRouteTypes {
     | '/sales/invoices'
     | '/sales/quotes'
     | '/sales/receipts'
+    | '/documents/print/$kind/$id'
     | '/purchases/bills/$billId/edit'
     | '/sales/credit-notes/$creditNoteId/edit'
     | '/sales/invoices/$invoiceId/edit'
@@ -963,11 +1092,15 @@ export interface FileRouteTypes {
     | '/_authenticated/accountant'
     | '/_authenticated/accounting'
     | '/_authenticated/ai-assistant'
+    | '/_authenticated/files'
     | '/_authenticated/firm'
+    | '/_authenticated/fixed-assets'
     | '/_authenticated/help'
     | '/_authenticated/onboarding'
     | '/_authenticated/products-services'
     | '/_authenticated/profile'
+    | '/_authenticated/projects'
+    | '/_authenticated/recurring-journals'
     | '/_authenticated/settings'
     | '/_authenticated/tax'
     | '/_authenticated/'
@@ -979,10 +1112,12 @@ export interface FileRouteTypes {
     | '/_authenticated/banking/rules'
     | '/_authenticated/banking/transactions'
     | '/_authenticated/banking/transfers'
+    | '/_authenticated/budgets/$budgetId'
     | '/_authenticated/contacts/$contactId'
     | '/_authenticated/contacts/duplicates'
     | '/_authenticated/contacts/import'
     | '/_authenticated/contacts/settings'
+    | '/_authenticated/documents/branding'
     | '/_authenticated/purchases/employee-expenses'
     | '/_authenticated/purchases/recurring'
     | '/_authenticated/purchases/settings'
@@ -991,9 +1126,12 @@ export interface FileRouteTypes {
     | '/_authenticated/reports/$reportId'
     | '/_authenticated/sales/customers'
     | '/_authenticated/sales/recurring'
+    | '/_authenticated/sales/reminders'
     | '/_authenticated/sales/settings'
     | '/_authenticated/sales/statements'
+    | '/share/invoice/$token'
     | '/_authenticated/banking/'
+    | '/_authenticated/budgets/'
     | '/_authenticated/contacts/'
     | '/_authenticated/purchases/'
     | '/_authenticated/reports/'
@@ -1008,6 +1146,7 @@ export interface FileRouteTypes {
     | '/_authenticated/purchases/expenses/new'
     | '/_authenticated/purchases/orders/new'
     | '/_authenticated/purchases/payments/$paymentId'
+    | '/_authenticated/purchases/payments/batch'
     | '/_authenticated/purchases/payments/new'
     | '/_authenticated/sales/credit-notes/$creditNoteId'
     | '/_authenticated/sales/credit-notes/new'
@@ -1026,6 +1165,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sales/invoices/'
     | '/_authenticated/sales/quotes/'
     | '/_authenticated/sales/receipts/'
+    | '/_authenticated/documents/print/$kind/$id'
     | '/_authenticated/purchases/bills/$billId/edit'
     | '/_authenticated/sales/credit-notes/$creditNoteId/edit'
     | '/_authenticated/sales/invoices/$invoiceId/edit'
@@ -1040,6 +1180,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ShareInvoiceTokenRoute: typeof ShareInvoiceTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1107,11 +1248,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBankingRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/files': {
+      id: '/_authenticated/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof AuthenticatedFilesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/firm': {
       id: '/_authenticated/firm'
       path: '/firm'
       fullPath: '/firm'
       preLoaderRoute: typeof AuthenticatedFirmRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/fixed-assets': {
+      id: '/_authenticated/fixed-assets'
+      path: '/fixed-assets'
+      fullPath: '/fixed-assets'
+      preLoaderRoute: typeof AuthenticatedFixedAssetsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/help': {
@@ -1142,11 +1297,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/projects': {
+      id: '/_authenticated/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AuthenticatedProjectsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/purchases': {
       id: '/_authenticated/purchases'
       path: '/purchases'
       fullPath: '/purchases'
       preLoaderRoute: typeof AuthenticatedPurchasesRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/recurring-journals': {
+      id: '/_authenticated/recurring-journals'
+      path: '/recurring-journals'
+      fullPath: '/recurring-journals'
+      preLoaderRoute: typeof AuthenticatedRecurringJournalsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/sales': {
@@ -1233,6 +1402,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBankingTransfersRouteImport
       parentRoute: typeof AuthenticatedBankingRouteRoute
     }
+    '/_authenticated/budgets/': {
+      id: '/_authenticated/budgets/'
+      path: '/budgets'
+      fullPath: '/budgets/'
+      preLoaderRoute: typeof AuthenticatedBudgetsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/budgets/$budgetId': {
+      id: '/_authenticated/budgets/$budgetId'
+      path: '/budgets/$budgetId'
+      fullPath: '/budgets/$budgetId'
+      preLoaderRoute: typeof AuthenticatedBudgetsBudgetIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/contacts/': {
       id: '/_authenticated/contacts/'
       path: '/contacts'
@@ -1266,6 +1449,13 @@ declare module '@tanstack/react-router' {
       path: '/contacts/settings'
       fullPath: '/contacts/settings'
       preLoaderRoute: typeof AuthenticatedContactsSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/documents/branding': {
+      id: '/_authenticated/documents/branding'
+      path: '/documents/branding'
+      fullPath: '/documents/branding'
+      preLoaderRoute: typeof AuthenticatedDocumentsBrandingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/purchases/': {
@@ -1345,6 +1535,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSalesRecurringRouteImport
       parentRoute: typeof AuthenticatedSalesRouteRoute
     }
+    '/_authenticated/sales/reminders': {
+      id: '/_authenticated/sales/reminders'
+      path: '/reminders'
+      fullPath: '/sales/reminders'
+      preLoaderRoute: typeof AuthenticatedSalesRemindersRouteImport
+      parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
     '/_authenticated/sales/settings': {
       id: '/_authenticated/sales/settings'
       path: '/settings'
@@ -1358,6 +1555,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/sales/statements'
       preLoaderRoute: typeof AuthenticatedSalesStatementsRouteImport
       parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/share/invoice/$token': {
+      id: '/share/invoice/$token'
+      path: '/share/invoice/$token'
+      fullPath: '/share/invoice/$token'
+      preLoaderRoute: typeof ShareInvoiceTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/banking/journal/$journalId': {
       id: '/_authenticated/banking/journal/$journalId'
@@ -1464,6 +1668,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRouteImport
       parentRoute: typeof AuthenticatedPurchasesRouteRoute
     }
+    '/_authenticated/purchases/payments/batch': {
+      id: '/_authenticated/purchases/payments/batch'
+      path: '/payments/batch'
+      fullPath: '/purchases/payments/batch'
+      preLoaderRoute: typeof AuthenticatedPurchasesPaymentsBatchRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
     '/_authenticated/purchases/payments/new': {
       id: '/_authenticated/purchases/payments/new'
       path: '/payments/new'
@@ -1554,6 +1765,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/sales/receipts/new'
       preLoaderRoute: typeof AuthenticatedSalesReceiptsNewRouteImport
       parentRoute: typeof AuthenticatedSalesRouteRoute
+    }
+    '/_authenticated/documents/print/$kind/$id': {
+      id: '/_authenticated/documents/print/$kind/$id'
+      path: '/documents/print/$kind/$id'
+      fullPath: '/documents/print/$kind/$id'
+      preLoaderRoute: typeof AuthenticatedDocumentsPrintKindIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/purchases/bills/$billId/edit': {
       id: '/_authenticated/purchases/bills/$billId/edit'
@@ -1675,6 +1893,7 @@ interface AuthenticatedPurchasesRouteRouteChildren {
   AuthenticatedPurchasesExpensesNewRoute: typeof AuthenticatedPurchasesExpensesNewRoute
   AuthenticatedPurchasesOrdersNewRoute: typeof AuthenticatedPurchasesOrdersNewRoute
   AuthenticatedPurchasesPaymentsPaymentIdRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  AuthenticatedPurchasesPaymentsBatchRoute: typeof AuthenticatedPurchasesPaymentsBatchRoute
   AuthenticatedPurchasesPaymentsNewRoute: typeof AuthenticatedPurchasesPaymentsNewRoute
   AuthenticatedPurchasesBillsIndexRoute: typeof AuthenticatedPurchasesBillsIndexRoute
   AuthenticatedPurchasesCreditNotesIndexRoute: typeof AuthenticatedPurchasesCreditNotesIndexRoute
@@ -1707,6 +1926,8 @@ const AuthenticatedPurchasesRouteRouteChildren: AuthenticatedPurchasesRouteRoute
     AuthenticatedPurchasesOrdersNewRoute: AuthenticatedPurchasesOrdersNewRoute,
     AuthenticatedPurchasesPaymentsPaymentIdRoute:
       AuthenticatedPurchasesPaymentsPaymentIdRoute,
+    AuthenticatedPurchasesPaymentsBatchRoute:
+      AuthenticatedPurchasesPaymentsBatchRoute,
     AuthenticatedPurchasesPaymentsNewRoute:
       AuthenticatedPurchasesPaymentsNewRoute,
     AuthenticatedPurchasesBillsIndexRoute:
@@ -1783,6 +2004,7 @@ const AuthenticatedSalesQuotesQuoteIdRouteWithChildren =
 interface AuthenticatedSalesRouteRouteChildren {
   AuthenticatedSalesCustomersRoute: typeof AuthenticatedSalesCustomersRoute
   AuthenticatedSalesRecurringRoute: typeof AuthenticatedSalesRecurringRoute
+  AuthenticatedSalesRemindersRoute: typeof AuthenticatedSalesRemindersRoute
   AuthenticatedSalesSettingsRoute: typeof AuthenticatedSalesSettingsRoute
   AuthenticatedSalesStatementsRoute: typeof AuthenticatedSalesStatementsRoute
   AuthenticatedSalesIndexRoute: typeof AuthenticatedSalesIndexRoute
@@ -1804,6 +2026,7 @@ const AuthenticatedSalesRouteRouteChildren: AuthenticatedSalesRouteRouteChildren
   {
     AuthenticatedSalesCustomersRoute: AuthenticatedSalesCustomersRoute,
     AuthenticatedSalesRecurringRoute: AuthenticatedSalesRecurringRoute,
+    AuthenticatedSalesRemindersRoute: AuthenticatedSalesRemindersRoute,
     AuthenticatedSalesSettingsRoute: AuthenticatedSalesSettingsRoute,
     AuthenticatedSalesStatementsRoute: AuthenticatedSalesStatementsRoute,
     AuthenticatedSalesIndexRoute: AuthenticatedSalesIndexRoute,
@@ -1839,21 +2062,29 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountantRoute: typeof AuthenticatedAccountantRoute
   AuthenticatedAccountingRoute: typeof AuthenticatedAccountingRoute
   AuthenticatedAiAssistantRoute: typeof AuthenticatedAiAssistantRoute
+  AuthenticatedFilesRoute: typeof AuthenticatedFilesRoute
   AuthenticatedFirmRoute: typeof AuthenticatedFirmRoute
+  AuthenticatedFixedAssetsRoute: typeof AuthenticatedFixedAssetsRoute
   AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProductsServicesRoute: typeof AuthenticatedProductsServicesRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
+  AuthenticatedRecurringJournalsRoute: typeof AuthenticatedRecurringJournalsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTaxRoute: typeof AuthenticatedTaxRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedBudgetsBudgetIdRoute: typeof AuthenticatedBudgetsBudgetIdRoute
   AuthenticatedContactsContactIdRoute: typeof AuthenticatedContactsContactIdRoute
   AuthenticatedContactsDuplicatesRoute: typeof AuthenticatedContactsDuplicatesRoute
   AuthenticatedContactsImportRoute: typeof AuthenticatedContactsImportRoute
   AuthenticatedContactsSettingsRoute: typeof AuthenticatedContactsSettingsRoute
+  AuthenticatedDocumentsBrandingRoute: typeof AuthenticatedDocumentsBrandingRoute
   AuthenticatedReportsReportIdRoute: typeof AuthenticatedReportsReportIdRoute
+  AuthenticatedBudgetsIndexRoute: typeof AuthenticatedBudgetsIndexRoute
   AuthenticatedContactsIndexRoute: typeof AuthenticatedContactsIndexRoute
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
+  AuthenticatedDocumentsPrintKindIdRoute: typeof AuthenticatedDocumentsPrintKindIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1864,21 +2095,30 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountantRoute: AuthenticatedAccountantRoute,
   AuthenticatedAccountingRoute: AuthenticatedAccountingRoute,
   AuthenticatedAiAssistantRoute: AuthenticatedAiAssistantRoute,
+  AuthenticatedFilesRoute: AuthenticatedFilesRoute,
   AuthenticatedFirmRoute: AuthenticatedFirmRoute,
+  AuthenticatedFixedAssetsRoute: AuthenticatedFixedAssetsRoute,
   AuthenticatedHelpRoute: AuthenticatedHelpRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProductsServicesRoute: AuthenticatedProductsServicesRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
+  AuthenticatedRecurringJournalsRoute: AuthenticatedRecurringJournalsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTaxRoute: AuthenticatedTaxRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedBudgetsBudgetIdRoute: AuthenticatedBudgetsBudgetIdRoute,
   AuthenticatedContactsContactIdRoute: AuthenticatedContactsContactIdRoute,
   AuthenticatedContactsDuplicatesRoute: AuthenticatedContactsDuplicatesRoute,
   AuthenticatedContactsImportRoute: AuthenticatedContactsImportRoute,
   AuthenticatedContactsSettingsRoute: AuthenticatedContactsSettingsRoute,
+  AuthenticatedDocumentsBrandingRoute: AuthenticatedDocumentsBrandingRoute,
   AuthenticatedReportsReportIdRoute: AuthenticatedReportsReportIdRoute,
+  AuthenticatedBudgetsIndexRoute: AuthenticatedBudgetsIndexRoute,
   AuthenticatedContactsIndexRoute: AuthenticatedContactsIndexRoute,
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
+  AuthenticatedDocumentsPrintKindIdRoute:
+    AuthenticatedDocumentsPrintKindIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -1889,6 +2129,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ShareInvoiceTokenRoute: ShareInvoiceTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

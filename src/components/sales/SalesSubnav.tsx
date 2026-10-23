@@ -10,22 +10,26 @@ const items = [
   { to: "/sales/customers", label: "Customers" },
   { to: "/sales/recurring", label: "Recurring" },
   { to: "/sales/statements", label: "Statements" },
+  { to: "/sales/reminders", label: "Reminders" },
   { to: "/sales/settings", label: "Settings" },
 ] as const;
 
 export function SalesSubnav() {
   return (
-    <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-border pb-px">
+    <nav
+      aria-label="Sales sections"
+      className="mb-6 flex gap-1 overflow-x-auto border-b border-border print:hidden"
+    >
       {items.map((item) => (
         <Link
           key={item.to}
           to={item.to}
           activeOptions={{ exact: "exact" in item ? item.exact : false }}
           className={cn(
-            "shrink-0 rounded-t-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground",
+            "shrink-0 -mb-px rounded-t-md border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3",
           )}
           activeProps={{
-            className: "border-b-2 border-primary text-foreground",
+            className: "border-primary text-foreground",
           }}
         >
           {item.label}

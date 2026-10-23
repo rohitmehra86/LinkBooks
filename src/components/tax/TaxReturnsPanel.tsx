@@ -63,7 +63,10 @@ function warningsFor(s: Partial<ReturnSummary>, regime: string): Warning[] {
   if (n("reverseChargeLines") > 0)
     out.push({
       tone: "warn",
-      text: `${n("reverseChargeLines")} reverse-charge line(s) are included at their stored tax. Reverse-charge tax on both sides (boxes 1 and 4) is not calculated.`,
+      text:
+        n("selfAssessedLines") > 0
+          ? `${n("reverseChargeLines")} reverse-charge line(s): the tax on ${n("selfAssessedLines")} of them is worked out from the net amount and counted in both box 1 (output) and box 4 (input). Older reverse-charge bills that already carry tax are counted as input tax only.`
+          : `${n("reverseChargeLines")} reverse-charge line(s) carry tax from the bill and are counted as input tax only. Bills saved from now on work out the reverse charge for both boxes 1 and 4.`,
     });
   if (n("skippedNoRate") > 0)
     out.push({
