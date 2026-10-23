@@ -87,9 +87,10 @@ function ReportsCentre() {
           />
         </div>
         <div className="w-full space-y-2 sm:w-64">
-          <Label>Category</Label>
+          <Label htmlFor="report-category">Category</Label>
           <select
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            id="report-category"
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 pointer-coarse:h-11"
             value={category}
             onChange={(e) => setCategory(e.target.value as ReportCategoryId | "all")}
           >
@@ -117,12 +118,16 @@ function ReportsCentre() {
               {rows.map((report) => (
                 <Card
                   key={report.id}
-                  className={report.status === "depends" ? "opacity-90" : undefined}
+                  className={
+                    report.status === "depends"
+                      ? "bg-muted/30"
+                      : "transition-shadow hover:shadow-raised"
+                  }
                 >
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <CardTitle className="text-base">{report.title}</CardTitle>
-                      <Badge variant={report.status === "ready" ? "secondary" : "outline"}>
+                      <Badge variant={report.status === "ready" ? "success" : "warning"}>
                         {report.status === "ready" ? "Ready" : "Depends"}
                       </Badge>
                     </div>
@@ -130,9 +135,7 @@ function ReportsCentre() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {report.status === "depends" ? (
-                      <p className="text-sm text-amber-700 dark:text-amber-400">
-                        {report.dependency}
-                      </p>
+                      <p className="text-sm text-warning-ink">{report.dependency}</p>
                     ) : report.runner === "link" && report.linkTo ? (
                       <Button asChild size="sm">
                         <Link to={report.linkTo}>Open</Link>
