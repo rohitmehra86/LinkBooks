@@ -99,7 +99,9 @@ function PaymentDocument() {
       .filter((b) => b.outstanding > 0);
   }, [billsQ.data]);
   const unallocated = pay?.unallocated_minor ?? 0;
-  const allocInvalid = Object.values(allocs).some((v) => tryParseMinor(v || "0", payCurrency) === null);
+  const allocInvalid = Object.values(allocs).some(
+    (v) => tryParseMinor(v || "0", payCurrency) === null,
+  );
   const allocTotal = Object.values(allocs).reduce(
     (n, v) => n + Number(minorOrZero(v || "0", payCurrency)),
     0,
@@ -232,7 +234,8 @@ function PaymentDocument() {
       {canAllocate && can("purchases.payment") ? (
         <section className="space-y-3 rounded-lg border border-border bg-background p-4">
           <h2 className="text-sm font-semibold">
-            Allocate the unallocated {fromMinorUnits(BigInt(unallocated), payCurrency)} {payCurrency}
+            Allocate the unallocated {fromMinorUnits(BigInt(unallocated), payCurrency)}{" "}
+            {payCurrency}
           </h2>
           {openBills.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -243,7 +246,10 @@ function PaymentDocument() {
               {openBills.map((b) => {
                 const checked = b.id in allocs;
                 return (
-                  <li key={b.id} className="flex flex-wrap items-center gap-3 rounded border px-3 py-2 text-sm">
+                  <li
+                    key={b.id}
+                    className="flex flex-wrap items-center gap-3 rounded border px-3 py-2 text-sm"
+                  >
                     <Checkbox
                       checked={checked}
                       onCheckedChange={(v) =>
@@ -294,7 +300,9 @@ function PaymentDocument() {
           ) : null}
           <Button
             size="sm"
-            disabled={allocateM.isPending || allocInvalid || allocTotal <= 0 || allocTotal > unallocated}
+            disabled={
+              allocateM.isPending || allocInvalid || allocTotal <= 0 || allocTotal > unallocated
+            }
             onClick={() => allocateM.mutate()}
           >
             Allocate

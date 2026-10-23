@@ -2,14 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Paperclip,
-  Printer,
-} from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Paperclip, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
@@ -88,11 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type BillSearch = { fromTab?: string; files?: boolean };
 
@@ -762,9 +751,7 @@ function BillDocumentWorkspace() {
                   }
                   onClick={() => authoriseMutation.mutate()}
                 >
-                  {authoriseMutation.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : null}
+                  {authoriseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
                   {bill.status === "awaiting_approval" ? "Approve & authorise" : "Authorise & post"}
                 </Button>
                 <Button
@@ -1033,7 +1020,10 @@ function BillDocumentWorkspace() {
 
               <Collapsible>
                 <CollapsibleTrigger asChild>
-                  <button type="button" className="text-sm font-medium underline-offset-2 hover:underline">
+                  <button
+                    type="button"
+                    className="text-sm font-medium underline-offset-2 hover:underline"
+                  >
                     Supplier address on this bill
                   </button>
                 </CollapsibleTrigger>
@@ -1099,11 +1089,7 @@ function BillDocumentWorkspace() {
                   {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
                   Save changes
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  asChild
-                >
+                <Button size="sm" variant="outline" asChild>
                   <Link to="/purchases/bills" search={backSearch}>
                     Cancel
                   </Link>
@@ -1219,7 +1205,11 @@ function BillDocumentWorkspace() {
                         {" · click to preview"}
                       </p>
                     </button>
-                    <Button size="sm" variant="outline" onClick={() => void downloadAttachment(a.id)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void downloadAttachment(a.id)}
+                    >
                       Download
                     </Button>
                   </li>
@@ -1292,7 +1282,9 @@ function BillDocumentWorkspace() {
                             <TableCell className="whitespace-nowrap align-top text-sm text-muted-foreground">
                               {formatHistoryTimestamp(row.at, company?.timezone || "UTC")}
                             </TableCell>
-                            <TableCell className="align-top text-sm font-medium">{row.user}</TableCell>
+                            <TableCell className="align-top text-sm font-medium">
+                              {row.user}
+                            </TableCell>
                             <TableCell className="align-top text-sm font-medium text-emerald-700 dark:text-emerald-400">
                               {row.action}
                             </TableCell>
@@ -1396,7 +1388,9 @@ function BillDocumentWorkspace() {
           {bill.status === "void" ? (
             <Alert>
               <AlertTitle>Voided</AlertTitle>
-              <AlertDescription>Historical read-only. Posted journals were reversed.</AlertDescription>
+              <AlertDescription>
+                Historical read-only. Posted journals were reversed.
+              </AlertDescription>
             </Alert>
           ) : null}
         </aside>

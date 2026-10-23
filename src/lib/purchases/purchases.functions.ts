@@ -429,7 +429,7 @@ async function runListBills(
   if (error) throw new Error(error.message);
 
   const billIds = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
-  let attachmentCounts: Record<string, number> = {};
+  const attachmentCounts: Record<string, number> = {};
   if (billIds.length) {
     const { data: atts } = await supabase
       .from("document_attachments" as never)
@@ -4022,7 +4022,9 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
 
     let payQ = context.supabase
       .from("supplier_payments" as never)
-      .select("id, payment_date, amount_minor, unallocated_minor, reference, status, currency_code" as never)
+      .select(
+        "id, payment_date, amount_minor, unallocated_minor, reference, status, currency_code" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
       .eq("status" as never, "paid" as never)
@@ -4061,9 +4063,15 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
     const cur = (c: string | null | undefined) => (c ?? baseCur).toUpperCase();
     const availableCurrencies = [
       ...new Set([
-        ...((billsAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
-        ...((paymentsAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
-        ...((creditNotesAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
+        ...((billsAll ?? []) as Array<{ currency_code: string | null }>).map((r) =>
+          cur(r.currency_code),
+        ),
+        ...((paymentsAll ?? []) as Array<{ currency_code: string | null }>).map((r) =>
+          cur(r.currency_code),
+        ),
+        ...((creditNotesAll ?? []) as Array<{ currency_code: string | null }>).map((r) =>
+          cur(r.currency_code),
+        ),
       ]),
     ];
     const statementCurrency =
@@ -4253,9 +4261,11 @@ export const listPaymentAccounts = createServerFn({ method: "GET" })
       .order("code" as never);
     if (error) throw new Error(error.message);
     const bankIds = await loadBankGlAccountIds(context.supabase, data.companyId);
-    return ((rows ?? []) as unknown as Array<
-      AccountCandidate & { code: string; name: string; currency_code: string | null }
-    >)
+    return (
+      (rows ?? []) as unknown as Array<
+        AccountCandidate & { code: string; name: string; currency_code: string | null }
+      >
+    )
       .filter((a) => isBankOrCashAccount(a, bankIds))
       .map((a) => ({
         id: a.id,

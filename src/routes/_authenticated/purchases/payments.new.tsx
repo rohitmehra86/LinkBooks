@@ -61,11 +61,13 @@ export function NewPayment() {
     enabled: Boolean(companyId),
     queryFn: () => fetchSuppliers({ data: { companyId: companyId!, includeInactive: true } }),
   });
-  const supplier = ((suppliersQ.data ?? []) as Array<{
-    id: string;
-    name: string;
-    default_currency: string | null;
-  }>).find((s) => s.id === contactId);
+  const supplier = (
+    (suppliersQ.data ?? []) as Array<{
+      id: string;
+      name: string;
+      default_currency: string | null;
+    }>
+  ).find((s) => s.id === contactId);
   // The payment currency defaults to the supplier's currency; it can be changed.
   const currency = (currencyOverride || supplier?.default_currency || baseCurrency).toUpperCase();
 
@@ -209,7 +211,11 @@ export function NewPayment() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Date</Label>
-            <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+            <Input
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Amount ({currency})</Label>
@@ -289,7 +295,10 @@ export function NewPayment() {
                 const outstanding = b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
                 const checked = alloc[b.id] !== undefined;
                 return (
-                  <div key={b.id} className="flex flex-wrap items-center gap-3 rounded border px-3 py-2 text-sm">
+                  <div
+                    key={b.id}
+                    className="flex flex-wrap items-center gap-3 rounded border px-3 py-2 text-sm"
+                  >
                     <Checkbox
                       checked={checked}
                       onCheckedChange={(v) => {
@@ -312,7 +321,8 @@ export function NewPayment() {
                     />
                     <div className="min-w-0 flex-1">
                       <p>
-                        {b.bill_date} · {b.supplier_invoice_number ?? b.bill_number ?? b.id.slice(0, 8)}
+                        {b.bill_date} ·{" "}
+                        {b.supplier_invoice_number ?? b.bill_number ?? b.id.slice(0, 8)}
                       </p>
                       <p className="text-muted-foreground">
                         Due {b.due_date} · Outstanding {fromMinorUnits(outstanding, currency)}

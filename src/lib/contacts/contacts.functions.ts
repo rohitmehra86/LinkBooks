@@ -250,7 +250,9 @@ export const upsertContact = createServerFn({ method: "POST" })
         website: (input.website ?? "").trim().slice(0, 200) || null,
         defaultCurrency: (input.defaultCurrency ?? "").trim().toUpperCase().slice(0, 3) || null,
         creditLimitMinor:
-          input.creditLimitMinor == null ? null : Math.max(0, Math.floor(Number(input.creditLimitMinor) || 0)),
+          input.creditLimitMinor == null
+            ? null
+            : Math.max(0, Math.floor(Number(input.creditLimitMinor) || 0)),
         billingAddressLine1: (input.billingAddressLine1 ?? "").trim().slice(0, 200) || null,
         billingCity: (input.billingCity ?? "").trim().slice(0, 100) || null,
         billingRegion: (input.billingRegion ?? "").trim().slice(0, 100) || null,
@@ -362,7 +364,8 @@ export const archiveContact = createServerFn({ method: "POST" })
       // Archived contacts drop out of pickers, so their open documents could no longer be settled.
       const { recv, pay } = await loadOpenDocs(context.supabase, data.companyId, data.contactId);
       const open = [...recv, ...pay].filter(
-        (d) => Number(d.total_minor) - Number(d.amount_paid_minor) - Number(d.amount_credited_minor) > 0,
+        (d) =>
+          Number(d.total_minor) - Number(d.amount_paid_minor) - Number(d.amount_credited_minor) > 0,
       ).length;
       if (open > 0) {
         throw new Error(
@@ -543,7 +546,14 @@ export const listContactGroups = createServerFn({ method: "GET" })
 export const upsertContactGroup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { companyId: string; id?: string; name: string; description?: string; color?: string; isActive?: boolean }) => {
+    (input: {
+      companyId: string;
+      id?: string;
+      name: string;
+      description?: string;
+      color?: string;
+      isActive?: boolean;
+    }) => {
       const name = (input.name ?? "").trim();
       if (!name) throw new Error("Group name required");
       return {
@@ -724,7 +734,10 @@ export const saveContactSettings = createServerFn({ method: "POST" })
         : "customer",
       accountNumberPrefix: (input.accountNumberPrefix ?? "C").trim().slice(0, 10) || "C",
       nextAccountNumber: Math.max(1, Math.floor(Number(input.nextAccountNumber ?? 1001) || 1001)),
-      defaultPaymentTermsDays: Math.max(0, Math.floor(Number(input.defaultPaymentTermsDays ?? 30) || 0)),
+      defaultPaymentTermsDays: Math.max(
+        0,
+        Math.floor(Number(input.defaultPaymentTermsDays ?? 30) || 0),
+      ),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -928,11 +941,14 @@ export const mergeContacts = createServerFn({ method: "POST" })
     await assertCompanyPermission(context.supabase, data.companyId, "contacts.manage");
 
     // Preferred path: one transaction over every table that references contacts.
-    const rpc = await context.supabase.rpc("merge_contacts" as never, {
-      _company_id: data.companyId,
-      _survivor_id: data.survivorId,
-      _merge_id: data.mergeId,
-    } as never);
+    const rpc = await context.supabase.rpc(
+      "merge_contacts" as never,
+      {
+        _company_id: data.companyId,
+        _survivor_id: data.survivorId,
+        _merge_id: data.mergeId,
+      } as never,
+    );
     if (!rpc.error) {
       const result = (rpc.data ?? {}) as { rows_moved?: number };
       return {

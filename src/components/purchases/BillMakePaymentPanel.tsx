@@ -69,8 +69,7 @@ export function BillMakePaymentPanel({
   const postPayment = useServerFn(createAndPostPayment);
 
   const today = new Date().toISOString().slice(0, 10);
-  const canPay =
-    ["authorised", "partly_paid"].includes(billStatus) && outstandingMinor > 0;
+  const canPay = ["authorised", "partly_paid"].includes(billStatus) && outstandingMinor > 0;
 
   const [amount, setAmount] = useState(() =>
     fromMinorUnits(BigInt(Math.max(0, outstandingMinor)), currency),
@@ -145,9 +144,7 @@ export function BillMakePaymentPanel({
     onSuccess: async (result) => {
       await invalidate();
       toast.success(
-        result.journalId
-          ? "Payment recorded — AP and bank journal posted"
-          : "Payment recorded",
+        result.journalId ? "Payment recorded — AP and bank journal posted" : "Payment recorded",
       );
       setReference("");
       setNotes("");
@@ -202,9 +199,7 @@ export function BillMakePaymentPanel({
                 <button
                   type="button"
                   className="text-xs text-primary underline-offset-2 hover:underline"
-                  onClick={() =>
-                    setAmount(fromMinorUnits(BigInt(outstandingMinor), currency))
-                  }
+                  onClick={() => setAmount(fromMinorUnits(BigInt(outstandingMinor), currency))}
                 >
                   Pay full balance
                 </button>

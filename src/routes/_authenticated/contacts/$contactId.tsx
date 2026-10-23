@@ -26,8 +26,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/_authenticated/contacts/$contactId")({
@@ -75,22 +88,24 @@ function ContactDetail() {
     queryFn: () => fetchTags({ data: { companyId: companyId! } }),
   });
 
-  const c = contactQ.data?.contact as {
-    name?: unknown;
-    kind?: unknown;
-    email?: unknown;
-    phone?: unknown;
-    tax_number?: unknown;
-    payment_terms_days?: unknown;
-    notes?: unknown;
-    account_number?: unknown;
-    legal_name?: unknown;
-    website?: unknown;
-    billing_address_line1?: unknown;
-    billing_city?: unknown;
-    billing_country?: unknown;
-    archived_at?: unknown;
-  } | undefined;
+  const c = contactQ.data?.contact as
+    | {
+        name?: unknown;
+        kind?: unknown;
+        email?: unknown;
+        phone?: unknown;
+        tax_number?: unknown;
+        payment_terms_days?: unknown;
+        notes?: unknown;
+        account_number?: unknown;
+        legal_name?: unknown;
+        website?: unknown;
+        billing_address_line1?: unknown;
+        billing_city?: unknown;
+        billing_country?: unknown;
+        archived_at?: unknown;
+      }
+    | undefined;
 
   const [name, setName] = useState("");
   const [kind, setKind] = useState("customer");
@@ -129,11 +144,15 @@ function ContactDetail() {
   }, [c]);
 
   useEffect(() => {
-    const g = (contactQ.data?.groups ?? []) as Array<{ group_id?: string; contact_groups?: { id: string } }>;
-    setSelectedGroups(
-      g.map((x) => x.group_id ?? x.contact_groups?.id).filter(Boolean) as string[],
-    );
-    const t = (contactQ.data?.tags ?? []) as Array<{ tag_id?: string; contact_tags?: { id: string } }>;
+    const g = (contactQ.data?.groups ?? []) as Array<{
+      group_id?: string;
+      contact_groups?: { id: string };
+    }>;
+    setSelectedGroups(g.map((x) => x.group_id ?? x.contact_groups?.id).filter(Boolean) as string[]);
+    const t = (contactQ.data?.tags ?? []) as Array<{
+      tag_id?: string;
+      contact_tags?: { id: string };
+    }>;
     setSelectedTags(t.map((x) => x.tag_id ?? x.contact_tags?.id).filter(Boolean) as string[]);
   }, [contactQ.data]);
 
@@ -206,7 +225,8 @@ function ContactDetail() {
   });
 
   const tagsM = useMutation({
-    mutationFn: () => saveTags({ data: { companyId: companyId!, contactId, tagIds: selectedTags } }),
+    mutationFn: () =>
+      saveTags({ data: { companyId: companyId!, contactId, tagIds: selectedTags } }),
     onSuccess: () => toast.success("Tags updated"),
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -299,8 +319,12 @@ function ContactDetail() {
             <Badge variant="outline">{kind}</Badge>
             {archived ? <Badge variant="secondary">Archived</Badge> : null}
           </div>
-          <p>{email || "No email"} · {phone || "No phone"}</p>
-          <p>Tax ID: {taxNumber || "—"} · Legal name: {legalName || "—"}</p>
+          <p>
+            {email || "No email"} · {phone || "No phone"}
+          </p>
+          <p>
+            Tax ID: {taxNumber || "—"} · Legal name: {legalName || "—"}
+          </p>
           <p>
             Billing: {[billingLine1, billingCity, billingCountry].filter(Boolean).join(", ") || "—"}
           </p>
@@ -371,8 +395,8 @@ function ContactDetail() {
             />
           </Field>
           <p className="text-xs text-muted-foreground">
-            Internal notes never appear on customer-facing documents automatically. Changing defaults
-            does not rewrite posted invoices or bills.
+            Internal notes never appear on customer-facing documents automatically. Changing
+            defaults does not rewrite posted invoices or bills.
           </p>
           <Button disabled={saveM.isPending || !name.trim()} onClick={() => saveM.mutate()}>
             Save changes
@@ -410,7 +434,10 @@ function ContactDetail() {
           ) : (
             <ul className="space-y-2 text-sm">
               {people.map((p) => (
-                <li key={p.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between rounded-md border px-3 py-2"
+                >
                   <span>
                     {p.first_name} {p.last_name}
                     {p.is_primary ? " · primary" : ""}
@@ -456,7 +483,12 @@ function ContactDetail() {
                   </label>
                 ))}
             </div>
-            <Button size="sm" className="mt-3" disabled={groupsM.isPending} onClick={() => groupsM.mutate()}>
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={groupsM.isPending}
+              onClick={() => groupsM.mutate()}
+            >
               Save groups
             </Button>
           </div>
@@ -479,7 +511,12 @@ function ContactDetail() {
                   </label>
                 ))}
             </div>
-            <Button size="sm" className="mt-3" disabled={tagsM.isPending} onClick={() => tagsM.mutate()}>
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={tagsM.isPending}
+              onClick={() => tagsM.mutate()}
+            >
               Save tags
             </Button>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -492,7 +529,10 @@ function ContactDetail() {
           {balQ.isPending ? (
             <LoadingState />
           ) : balQ.isError ? (
-            <ErrorState title="Could not load balances" description={friendlyAuthError(balQ.error)} />
+            <ErrorState
+              title="Could not load balances"
+              description={friendlyAuthError(balQ.error)}
+            />
           ) : (
             <>
               <h3 className="mb-2 text-sm text-muted-foreground">Sales invoices</h3>
@@ -603,7 +643,15 @@ function otherCurrencies(
   return `Also ${others.map((r) => `${fromMinorUnits(r.outstandingMinor, r.currency)} ${r.currency}`).join(", ")}`;
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string | undefined;
+}) {
   return (
     <div className="rounded-md border px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>

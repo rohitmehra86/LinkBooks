@@ -152,7 +152,9 @@ function CreditNoteDetail() {
     await qc.invalidateQueries({ queryKey: ["credits", companyId] });
   };
 
-  const allocInvalid = Object.values(allocs).some((v) => tryParseMinor(v || "0", currency) === null);
+  const allocInvalid = Object.values(allocs).some(
+    (v) => tryParseMinor(v || "0", currency) === null,
+  );
   const allocTotal = Object.values(allocs).reduce(
     (s, v) => s + Number(minorOrZero(v || "0", currency)),
     0,
@@ -200,7 +202,9 @@ function CreditNoteDetail() {
 
   const unallocateM = useMutation({
     mutationFn: (billId?: string) =>
-      doUnallocate({ data: { companyId: companyId!, creditNoteId, ...(billId ? { billId } : {}) } }),
+      doUnallocate({
+        data: { companyId: companyId!, creditNoteId, ...(billId ? { billId } : {}) },
+      }),
     onSuccess: async () => {
       await refresh();
       toast.success("Allocation removed — the bill balance is restored");
@@ -284,7 +288,12 @@ function CreditNoteDetail() {
           <div className="flex flex-wrap gap-2">
             {isDraft && !editing ? (
               <>
-                <Button size="sm" variant="outline" onClick={startEdit} disabled={!can("purchases.draft")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={startEdit}
+                  disabled={!can("purchases.draft")}
+                >
                   Edit
                 </Button>
                 <Button
@@ -361,7 +370,10 @@ function CreditNoteDetail() {
             </div>
           </div>
           {editLines.map((l, i) => (
-            <div key={i} className="grid gap-2 rounded border p-2 sm:grid-cols-[2fr_2fr_1fr_1fr_auto]">
+            <div
+              key={i}
+              className="grid gap-2 rounded border p-2 sm:grid-cols-[2fr_2fr_1fr_1fr_auto]"
+            >
               <Input
                 placeholder="Description"
                 value={l.description}
@@ -500,7 +512,10 @@ function CreditNoteDetail() {
           </div>
           <ul className="space-y-1 text-sm">
             {cn.purchase_credit_allocations.map((a) => (
-              <li key={a.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2">
+              <li
+                key={a.id}
+                className="flex items-center justify-between gap-2 rounded border px-3 py-2"
+              >
                 <Link
                   to="/purchases/bills/$billId"
                   params={{ billId: a.bill_id }}
@@ -539,7 +554,10 @@ function CreditNoteDetail() {
               {openBills.map((b) => {
                 const checked = b.id in allocs;
                 return (
-                  <li key={b.id} className="flex flex-wrap items-center gap-3 rounded border px-3 py-2">
+                  <li
+                    key={b.id}
+                    className="flex flex-wrap items-center gap-3 rounded border px-3 py-2"
+                  >
                     <Checkbox
                       checked={checked}
                       onCheckedChange={(v) => {
@@ -592,7 +610,9 @@ function CreditNoteDetail() {
           ) : null}
           <Button
             size="sm"
-            disabled={allocateM.isPending || allocInvalid || allocTotal > remaining || allocTotal <= 0}
+            disabled={
+              allocateM.isPending || allocInvalid || allocTotal > remaining || allocTotal <= 0
+            }
             onClick={() => allocateM.mutate()}
           >
             {allocateM.isPending ? <Loader2 className="size-4 animate-spin" /> : null}

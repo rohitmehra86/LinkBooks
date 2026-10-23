@@ -93,9 +93,15 @@ export function NewOrder() {
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (suppliersQ.isPending || accountsQ.isPending) return <LoadingState />;
 
-  const accounts = ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; is_postable: boolean; is_active: boolean }>).filter(
-    (a) => a.is_active && a.is_postable,
-  );
+  const accounts = (
+    (accountsQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      is_postable: boolean;
+      is_active: boolean;
+    }>
+  ).filter((a) => a.is_active && a.is_postable);
 
   return (
     <>

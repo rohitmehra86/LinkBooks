@@ -123,8 +123,7 @@ export function EmployeeExpensesPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (claimId: string) =>
-      doReject({ data: { companyId: companyId!, claimId } }),
+    mutationFn: (claimId: string) => doReject({ data: { companyId: companyId!, claimId } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["claims", companyId] });
       toast.success("Claim rejected (no ledger posting)");
@@ -205,13 +204,13 @@ export function EmployeeExpensesPage() {
               <SelectValue placeholder="Bank or cash account" />
             </SelectTrigger>
             <SelectContent>
-              {((paymentAccountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map(
-                (a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </SelectItem>
-                ),
-              )}
+              {(
+                (paymentAccountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>
+              ).map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.code} — {a.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -261,9 +260,7 @@ export function EmployeeExpensesPage() {
                 </TableCell>
                 <TableCell className="space-x-2 text-right">
                   {c.status === "submitted" && c.is_mine && can("expenses.approve") ? (
-                    <span className="text-xs text-muted-foreground">
-                      Needs another approver
-                    </span>
+                    <span className="text-xs text-muted-foreground">Needs another approver</span>
                   ) : null}
                   {c.status === "submitted" && !c.is_mine && can("expenses.approve") ? (
                     <>

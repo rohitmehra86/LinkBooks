@@ -64,9 +64,15 @@ export function NewCreditNote() {
   const netInvalid = tryParseMinor(net || "0", currency) === null;
   const taxInvalid = tryParseMinor(tax || "0", currency) === null;
 
-  const accounts = ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; is_postable: boolean; is_active: boolean }>).filter(
-    (a) => a.is_active && a.is_postable,
-  );
+  const accounts = (
+    (accountsQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      is_postable: boolean;
+      is_active: boolean;
+    }>
+  ).filter((a) => a.is_active && a.is_postable);
 
   const mutation = useMutation({
     mutationFn: (authorise: boolean) =>
@@ -103,7 +109,10 @@ export function NewCreditNote() {
 
   return (
     <>
-      <PageHeader title="New credit note" description="Reduce AP and reverse expense/tax on authorise." />
+      <PageHeader
+        title="New credit note"
+        description="Reduce AP and reverse expense/tax on authorise."
+      />
       <div className="grid max-w-lg gap-4">
         <div className="space-y-2">
           <Label>Supplier</Label>

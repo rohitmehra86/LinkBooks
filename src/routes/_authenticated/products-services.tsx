@@ -7,6 +7,9 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
+import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
+import { listTaxCodes } from "@/lib/tax/tax.functions";
+import { useCanDo } from "@/hooks/use-can";
 import {
   archiveProduct,
   listProducts,
@@ -78,6 +81,9 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
   const fetchAccounts = useServerFn(listAccounts);
   const saveProduct = useServerFn(upsertProduct);
   const doArchive = useServerFn(archiveProduct);
+  const fetchTaxCodes = useServerFn(listTaxCodes);
+  const canManage = useCanDo("products.manage");
+  const [limit, setLimit] = useState(100);
 
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("all");
@@ -100,10 +106,10 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
   });
 
   const productsQ = useQuery({
-    queryKey: ["products", companyId, q, kind, includeInactive],
+    queryKey: ["products", companyId, q, kind, includeInactive, limit],
     queryFn: () =>
       fetchProducts({
-        data: { companyId, q, kind, includeInactive, limit: 300 },
+        data: { companyId, q, kind, includeInactive, limit },
       }),
   });
   const accountsQ = useQuery({
@@ -111,21 +117,75 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
     queryFn: () => fetchAccounts({ data: { companyId } }),
   });
 
+  const taxCodesQ = useQuery({
+    queryKey: ["tax-codes", companyId],
+    queryFn: () => fetchTaxCodes({ data: { companyId } }),
+  });
+  // Pick a tax code by name; the item stores that code's current rate (basis points).
+  const taxChoices = useMemo(() => {
+    const rows = (taxCodesQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      is_active: boolean;
+      tax_rates: { rate_bps: number } | { rate_bps: number }[] | null;
+    }>;
+    const seen = new Set<string>();
+    return (
+      rows
+        .filter((t) => t.is_active)
+        .map((t) => {
+          const rate = Array.isArray(t.tax_rates) ? t.tax_rates[0] : t.tax_rates;
+          const bps = rate?.rate_bps ?? 0;
+          return {
+            key: String(bps),
+            code: t.code,
+            name: t.name,
+            bps,
+            label: `${t.code} — ${t.name} (${(bps / 100).toFixed(2)}%)`,
+          };
+        })
+        // One entry per rate: the item stores the rate, so two codes at 20% are the same choice.
+        .filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)))
+    );
+  }, [taxCodesQ.data]);
+  const salesPriceInvalid = tryParseMinor(form.salesPrice || "0", currency) === null;
+  const purchaseCostInvalid = tryParseMinor(form.purchaseCost || "0", currency) === null;
+
   const incomeAccounts = useMemo(
-    () => ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; account_type: string }>)
-      .filter((a) => a.account_type === "income"),
+    () =>
+      (
+        (accountsQ.data ?? []) as Array<{
+          id: string;
+          code: string;
+          name: string;
+          account_type: string;
+        }>
+      ).filter((a) => a.account_type === "income"),
     [accountsQ.data],
   );
   const expenseAccounts = useMemo(
-    () => ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; account_type: string }>)
-      .filter((a) => a.account_type === "expense"),
+    () =>
+      (
+        (accountsQ.data ?? []) as Array<{
+          id: string;
+          code: string;
+          name: string;
+          account_type: string;
+        }>
+      ).filter((a) => a.account_type === "expense"),
     [accountsQ.data],
   );
 
   const saveMut = useMutation({
     mutationFn: async () => {
-      const salesPriceMinor = Math.round(Number(form.salesPrice || 0) * 100);
-      const purchaseCostMinor = Math.round(Number(form.purchaseCost || 0) * 100);
+      // Integer minor units via the shared parser - never floats, and the currency's own decimals.
+      const salesPriceMinor = Number(
+        parseMinorOrThrow(form.salesPrice || "0", currency, "Sales price"),
+      );
+      const purchaseCostMinor = Number(
+        parseMinorOrThrow(form.purchaseCost || "0", currency, "Purchase cost"),
+      );
       if (!form.name.trim()) throw new Error("Name is required");
       const data: Parameters<typeof saveProduct>[0]["data"] = {
         companyId,
@@ -179,8 +239,8 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
       code: p.code ?? "",
       name: p.name,
       description: p.description ?? "",
-      salesPrice: (p.sales_price_minor / 100).toFixed(2),
-      purchaseCost: (p.purchase_cost_minor / 100).toFixed(2),
+      salesPrice: fromMinorUnits(BigInt(p.sales_price_minor), currency),
+      purchaseCost: fromMinorUnits(BigInt(p.purchase_cost_minor), currency),
       incomeAccountId: p.income_account_id ?? "",
       expenseAccountId: p.expense_account_id ?? "",
       salesTaxBps: String(p.sales_tax_rate_bps),
@@ -198,7 +258,7 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
         title="Products & Services"
         description="Catalogue defaults for sales and purchase lines. Stock valuation is not enabled — this is a non-inventory catalogue."
         actions={
-          <Button size="sm" onClick={openCreate}>
+          <Button size="sm" onClick={openCreate} disabled={!canManage}>
             <Plus className="size-4" />
             New item
           </Button>
@@ -207,8 +267,8 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
 
       <Alert className="mb-4">
         <AlertDescription>
-          Selecting an item on invoices/bills can use these defaults. No stock-on-hand or COGS inventory
-          engine is claimed.
+          Selecting an item on invoices/bills can use these defaults. No stock-on-hand or COGS
+          inventory engine is claimed.
         </AlertDescription>
       </Alert>
 
@@ -220,7 +280,9 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
           onChange={(e) => setQ(e.target.value)}
         />
         <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All kinds</SelectItem>
             <SelectItem value="service">Services</SelectItem>
@@ -281,7 +343,9 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
                     <TableCell>
                       <div className="font-medium">{p.name}</div>
                       {p.description ? (
-                        <div className="text-xs text-muted-foreground line-clamp-1">{p.description}</div>
+                        <div className="text-xs text-muted-foreground line-clamp-1">
+                          {p.description}
+                        </div>
                       ) : null}
                     </TableCell>
                     <TableCell className="capitalize">{p.kind.replace("_", " ")}</TableCell>
@@ -299,12 +363,18 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
                       )}
                     </TableCell>
                     <TableCell className="space-x-1 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canManage}
+                        onClick={() => openEdit(p)}
+                      >
                         Edit
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
+                        disabled={!canManage}
                         onClick={async () => {
                           try {
                             await doArchive({
@@ -328,6 +398,22 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
           </CardContent>
         </Card>
       )}
+      {rows.length >= limit && limit < 500 ? (
+        <div className="mt-3 flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setLimit((n) => Math.min(500, n + 100))}
+          >
+            Show more
+          </Button>
+        </div>
+      ) : null}
+      {rows.length >= 500 ? (
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          Showing the first 500 matches - search to narrow the list.
+        </p>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -338,7 +424,9 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
             <div className="grid gap-1">
               <Label>Kind</Label>
               <Select value={form.kind} onValueChange={(v) => setForm((f) => ({ ...f, kind: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="service">Service</SelectItem>
                   <SelectItem value="product">Product (non-stock)</SelectItem>
@@ -349,16 +437,25 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1">
                 <Label>Code / SKU</Label>
-                <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+                <Input
+                  value={form.code}
+                  onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                />
               </div>
               <div className="grid gap-1">
                 <Label>Unit</Label>
-                <Input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} />
+                <Input
+                  value={form.unit}
+                  onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+                />
               </div>
             </div>
             <div className="grid gap-1">
               <Label>Name</Label>
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
             </div>
             <div className="grid gap-1">
               <Label>Description</Label>
@@ -371,8 +468,8 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <div className="grid gap-1">
                 <Label>Sales price ({currency})</Label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  inputMode="decimal"
+                  aria-invalid={salesPriceInvalid}
                   value={form.salesPrice}
                   onChange={(e) => setForm((f) => ({ ...f, salesPrice: e.target.value }))}
                 />
@@ -380,8 +477,8 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <div className="grid gap-1">
                 <Label>Purchase cost ({currency})</Label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  inputMode="decimal"
+                  aria-invalid={purchaseCostInvalid}
                   value={form.purchaseCost}
                   onChange={(e) => setForm((f) => ({ ...f, purchaseCost: e.target.value }))}
                 />
@@ -391,13 +488,19 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <Label>Income account</Label>
               <Select
                 value={form.incomeAccountId || "none"}
-                onValueChange={(v) => setForm((f) => ({ ...f, incomeAccountId: v === "none" ? "" : v }))}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, incomeAccountId: v === "none" ? "" : v }))
+                }
               >
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {incomeAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} — {a.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -406,44 +509,87 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <Label>Expense account</Label>
               <Select
                 value={form.expenseAccountId || "none"}
-                onValueChange={(v) => setForm((f) => ({ ...f, expenseAccountId: v === "none" ? "" : v }))}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, expenseAccountId: v === "none" ? "" : v }))
+                }
               >
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {expenseAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} — {a.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1">
-                <Label>Sales tax (bps)</Label>
-                <Input
-                  type="number"
+                <Label>Sales tax</Label>
+                <TaxSelect
                   value={form.salesTaxBps}
-                  onChange={(e) => setForm((f) => ({ ...f, salesTaxBps: e.target.value }))}
+                  choices={taxChoices}
+                  onChange={(v) => setForm((f) => ({ ...f, salesTaxBps: v }))}
                 />
               </div>
               <div className="grid gap-1">
-                <Label>Purchase tax (bps)</Label>
-                <Input
-                  type="number"
+                <Label>Purchase tax</Label>
+                <TaxSelect
                   value={form.purchaseTaxBps}
-                  onChange={(e) => setForm((f) => ({ ...f, purchaseTaxBps: e.target.value }))}
+                  choices={taxChoices}
+                  onChange={(v) => setForm((f) => ({ ...f, purchaseTaxBps: v }))}
                 />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending || salesPriceInvalid || purchaseCostInvalid || !canManage}
+            >
               {saveMut.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function TaxSelect({
+  value,
+  choices,
+  onChange,
+}: {
+  value: string;
+  choices: Array<{ key: string; label: string; bps: number }>;
+  onChange: (bps: string) => void;
+}) {
+  const known = choices.some((c) => c.key === value);
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Select a tax code" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="0">No tax (0.00%)</SelectItem>
+        {choices
+          .filter((c) => c.key !== "0")
+          .map((c) => (
+            <SelectItem key={`${c.key}-${c.label}`} value={c.key}>
+              {c.label}
+            </SelectItem>
+          ))}
+        {!known && value !== "0" ? (
+          <SelectItem value={value}>Custom rate ({(Number(value) / 100).toFixed(2)}%)</SelectItem>
+        ) : null}
+      </SelectContent>
+    </Select>
   );
 }

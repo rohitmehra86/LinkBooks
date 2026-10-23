@@ -76,7 +76,10 @@ function DuplicatesPage() {
       ) : query.isError ? (
         <ErrorState title="Could not scan" description={friendlyAuthError(query.error)} />
       ) : (query.data ?? []).length === 0 ? (
-        <EmptyState title="No likely duplicates" description="No pairs scored high enough to review." />
+        <EmptyState
+          title="No likely duplicates"
+          description="No pairs scored high enough to review."
+        />
       ) : (
         <ul className="space-y-4">
           {(

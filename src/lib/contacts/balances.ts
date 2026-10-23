@@ -26,7 +26,8 @@ export function aggregateOutstanding(
   const map = new Map<string, CurrencyBalance>();
   for (const r of rows) {
     const currency = (r.currency_code ?? base).toUpperCase();
-    const out = Number(r.total_minor) - Number(r.amount_paid_minor) - Number(r.amount_credited_minor);
+    const out =
+      Number(r.total_minor) - Number(r.amount_paid_minor) - Number(r.amount_credited_minor);
     if (!(out > 0)) continue;
     const entry = map.get(currency) ?? { currency, outstandingMinor: 0, overdueMinor: 0 };
     entry.outstandingMinor += out;

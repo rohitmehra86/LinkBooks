@@ -19,8 +19,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_authenticated/contacts/")({
@@ -203,7 +216,12 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
       <div className="mb-6 max-w-xl rounded-md border p-4">
         <div className="mb-2 flex items-center justify-between">
           <Label>Quick add</Label>
-          <Button variant="ghost" size="sm" type="button" onClick={() => setShowAdvanced((v) => !v)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
             {showAdvanced ? "Hide" : "More fields"}
           </Button>
         </div>
@@ -285,9 +303,16 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
           {query.isPending ? (
             <LoadingState />
           ) : query.isError ? (
-            <ErrorState title="Could not load contacts" description={friendlyAuthError(query.error)} />
+            <ErrorState
+              title="Could not load contacts"
+              description={friendlyAuthError(query.error)}
+            />
           ) : (query.data ?? []).length === 0 ? (
-            <EmptyState icon={Users} title="No contacts" description="Add a contact above or import a CSV." />
+            <EmptyState
+              icon={Users}
+              title="No contacts"
+              description="Add a contact above or import a CSV."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -312,7 +337,9 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
                         {c.name}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{c.account_number ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {c.account_number ?? "—"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{c.kind}</Badge>
                     </TableCell>
@@ -324,7 +351,9 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
               </TableBody>
             </Table>
           )}
-          {!query.isPending && !query.isError && (page > 0 || (query.data ?? []).length === PAGE_SIZE) ? (
+          {!query.isPending &&
+          !query.isError &&
+          (page > 0 || (query.data ?? []).length === PAGE_SIZE) ? (
             <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
               <span>
                 Showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + (query.data ?? []).length}
@@ -364,7 +393,15 @@ function otherCurrencies(
   return `Also ${others.map((r) => `${fromMinorUnits(r.outstandingMinor, r.currency)} ${r.currency}`).join(", ")}`;
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string | undefined;
+}) {
   return (
     <div className="rounded-md border px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>

@@ -75,12 +75,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type BillsSearch = {
   tab?: BillsWorkspaceTab;
@@ -194,9 +189,11 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/")({
     ) as BillsWorkspaceTab;
     const out: BillsSearch = { tab };
     if (typeof s["q"] === "string" && s["q"]) out.q = s["q"];
-    if (typeof s["from"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["from"])) out.from = s["from"];
+    if (typeof s["from"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["from"]))
+      out.from = s["from"];
     if (typeof s["to"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["to"])) out.to = s["to"];
-    if (s["dateField"] === "due_date" || s["dateField"] === "bill_date") out.dateField = s["dateField"];
+    if (s["dateField"] === "due_date" || s["dateField"] === "bill_date")
+      out.dateField = s["dateField"];
     if (s["includeVoid"] === true || s["includeVoid"] === "1" || s["includeVoid"] === "true") {
       out.includeVoid = true;
     }
@@ -204,8 +201,10 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/")({
       out.overdueOnly = true;
     }
     if (typeof s["status"] === "string" && s["status"]) out.status = s["status"];
-    if (typeof s["page"] === "number" && Number.isFinite(s["page"])) out.page = Math.max(0, s["page"]);
-    if (typeof s["page"] === "string" && /^\d+$/.test(s["page"])) out.page = Math.max(0, Number(s["page"]));
+    if (typeof s["page"] === "number" && Number.isFinite(s["page"]))
+      out.page = Math.max(0, s["page"]);
+    if (typeof s["page"] === "string" && /^\d+$/.test(s["page"]))
+      out.page = Math.max(0, Number(s["page"]));
     if (typeof s["sortBy"] === "string" && s["sortBy"]) out.sortBy = s["sortBy"];
     if (s["sortDir"] === "asc" || s["sortDir"] === "desc") out.sortDir = s["sortDir"];
     return out;
@@ -432,7 +431,7 @@ function BillsWorkspace() {
       ),
   });
 
-  const rows = (billsQ.data?.rows ?? []) as BillRow[];
+  const rows = useMemo(() => (billsQ.data?.rows ?? []) as BillRow[], [billsQ.data]);
   const totalCount = billsQ.data?.totalCount ?? 0;
   const counts: Counts = summaryQ.data?.counts ?? {
     all: 0,
@@ -444,7 +443,9 @@ function BillsWorkspace() {
   };
 
   const visibleCols = useMemo(() => {
-    const order = prefs.columnOrder.length ? prefs.columnOrder : DEFAULT_BILLS_LIST_PREFS.columnOrder;
+    const order = prefs.columnOrder.length
+      ? prefs.columnOrder
+      : DEFAULT_BILLS_LIST_PREFS.columnOrder;
     const visible = new Set(prefs.visibleColumns.filter((c) => c !== "actions"));
     return order.filter((c) => c !== "actions" && visible.has(c));
   }, [prefs]);
@@ -560,10 +561,20 @@ function BillsWorkspace() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" disabled title="Document capture is not configured">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                title="Document capture is not configured"
+              >
                 Capture
               </Button>
-              <Button variant="outline" size="sm" disabled title="CSV import for bills is not configured">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                title="CSV import for bills is not configured"
+              >
                 Import
               </Button>
               <Button size="sm" asChild>
@@ -579,12 +590,22 @@ function BillsWorkspace() {
             <SummaryChip
               label="Outstanding AP"
               value={fromMinorUnits(BigInt(summaryQ.data?.outstandingMinor ?? 0), baseCurrency)}
-              hint={otherCurrencyHint(summaryQ.data?.totalsByCurrency, summaryQ.data?.baseCurrency ?? baseCurrency, "outstandingMinor", "Authorised & partly paid balances")}
+              hint={otherCurrencyHint(
+                summaryQ.data?.totalsByCurrency,
+                summaryQ.data?.baseCurrency ?? baseCurrency,
+                "outstandingMinor",
+                "Authorised & partly paid balances",
+              )}
             />
             <SummaryChip
               label="Overdue"
               value={fromMinorUnits(BigInt(summaryQ.data?.overdueMinor ?? 0), baseCurrency)}
-              hint={otherCurrencyHint(summaryQ.data?.totalsByCurrency, summaryQ.data?.baseCurrency ?? baseCurrency, "overdueMinor", "Past due with remaining balance")}
+              hint={otherCurrencyHint(
+                summaryQ.data?.totalsByCurrency,
+                summaryQ.data?.baseCurrency ?? baseCurrency,
+                "overdueMinor",
+                "Past due with remaining balance",
+              )}
               tone="warn"
             />
             <SummaryChip
@@ -679,7 +700,9 @@ function BillsWorkspace() {
                     onChange={(e) => setSearchDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        patchSearch(searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined });
+                        patchSearch(
+                          searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined },
+                        );
                       }
                     }}
                   />
@@ -710,7 +733,9 @@ function BillsWorkspace() {
                   value={fromDate}
                   onChange={(e) =>
                     patchSearch(
-                      e.target.value ? { from: e.target.value, page: 0 } : { page: 0, from: undefined },
+                      e.target.value
+                        ? { from: e.target.value, page: 0 }
+                        : { page: 0, from: undefined },
                     )
                   }
                 />
@@ -758,7 +783,9 @@ function BillsWorkspace() {
                 <Button
                   size="sm"
                   onClick={() =>
-                    patchSearch(searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined })
+                    patchSearch(
+                      searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined },
+                    )
                   }
                 >
                   Apply
@@ -904,9 +931,7 @@ function BillsWorkspace() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
               <span>
-                {billsQ.isPending
-                  ? "Loading…"
-                  : `${totalCount} bill${totalCount === 1 ? "" : "s"}`}
+                {billsQ.isPending ? "Loading…" : `${totalCount} bill${totalCount === 1 ? "" : "s"}`}
                 {!billsQ.isPending && rows.length > 0 ? (
                   <>
                     {" · "}
@@ -983,13 +1008,20 @@ function BillsWorkspace() {
                                 else setSelected(new Set());
                               }}
                             />
-                          ) : col === "bill_date" || col === "due_date" || col === "total" || col === "status" ? (
+                          ) : col === "bill_date" ||
+                            col === "due_date" ||
+                            col === "total" ||
+                            col === "status" ? (
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 hover:underline"
                               onClick={() => {
                                 const key =
-                                  col === "total" ? "total_minor" : col === "status" ? "status" : col;
+                                  col === "total"
+                                    ? "total_minor"
+                                    : col === "status"
+                                      ? "status"
+                                      : col;
                                 patchSearch({
                                   sortBy: key,
                                   sortDir: sortBy === key && sortDir === "desc" ? "asc" : "desc",
@@ -1089,7 +1121,8 @@ function BillsWorkspace() {
                                   <TableCell key={col}>
                                     <span
                                       className={cn(
-                                        b.days_overdue > 0 && "font-medium text-amber-700 dark:text-amber-400",
+                                        b.days_overdue > 0 &&
+                                          "font-medium text-amber-700 dark:text-amber-400",
                                       )}
                                     >
                                       {b.due_date || "—"}
@@ -1120,7 +1153,10 @@ function BillsWorkspace() {
                                 return (
                                   <TableCell key={col} className="text-right tabular-nums">
                                     {b.status === "draft" || b.status === "awaiting_approval" ? (
-                                      <span className="text-muted-foreground" title="Unposted — not AP">
+                                      <span
+                                        className="text-muted-foreground"
+                                        title="Unposted — not AP"
+                                      >
                                         —
                                       </span>
                                     ) : (
@@ -1151,7 +1187,9 @@ function BillsWorkspace() {
                                 );
                               case "account_number":
                                 return (
-                                  <TableCell key={col}>{b.contacts?.account_number ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.contacts?.account_number ?? "—"}
+                                  </TableCell>
                                 );
                               case "bill_number":
                                 return (
@@ -1161,7 +1199,9 @@ function BillsWorkspace() {
                                 );
                               case "supplier_invoice":
                                 return (
-                                  <TableCell key={col}>{b.supplier_invoice_number ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.supplier_invoice_number ?? "—"}
+                                  </TableCell>
                                 );
                               case "approval_status":
                                 return <TableCell key={col}>{approvalStatusOf(b)}</TableCell>;
@@ -1178,7 +1218,9 @@ function BillsWorkspace() {
                               case "exchange_rate":
                                 return (
                                   <TableCell key={col} className="tabular-nums">
-                                    {b.fx_rate_to_base != null ? Number(b.fx_rate_to_base).toFixed(6) : "—"}
+                                    {b.fx_rate_to_base != null
+                                      ? Number(b.fx_rate_to_base).toFixed(6)
+                                      : "—"}
                                   </TableCell>
                                 );
                               case "tax":
@@ -1195,11 +1237,15 @@ function BillsWorkspace() {
                                 );
                               case "created_at":
                                 return (
-                                  <TableCell key={col}>{b.created_at?.slice(0, 10) ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.created_at?.slice(0, 10) ?? "—"}
+                                  </TableCell>
                                 );
                               case "updated_at":
                                 return (
-                                  <TableCell key={col}>{b.updated_at?.slice(0, 10) ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.updated_at?.slice(0, 10) ?? "—"}
+                                  </TableCell>
                                 );
                               default:
                                 return <TableCell key={col}>—</TableCell>;
@@ -1251,11 +1297,6 @@ function otherCurrencyHint(
     .join(", ")}`;
 }
 
-function csv(v: string) {
-  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
-  return v;
-}
-
 function SummaryChip({
   label,
   value,
@@ -1293,7 +1334,11 @@ function PreviewBody({
   tab: BillsWorkspaceTab;
 }) {
   if (!bill) {
-    return <p className="mt-4 text-sm text-muted-foreground">Bill not on this page — open the full document.</p>;
+    return (
+      <p className="mt-4 text-sm text-muted-foreground">
+        Bill not on this page — open the full document.
+      </p>
+    );
   }
   const cur = bill.currency_code || currency;
   return (
@@ -1447,7 +1492,9 @@ function RecurringPane({
           </Table>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">Amounts use organisation currency ({currency}).</p>
+      <p className="text-xs text-muted-foreground">
+        Amounts use organisation currency ({currency}).
+      </p>
     </div>
   );
 }

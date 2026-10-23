@@ -6,10 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
-import {
-  listPaymentAccounts,
-  saveAndPostExpense,
-} from "@/lib/purchases/purchases.functions";
+import { listPaymentAccounts, saveAndPostExpense } from "@/lib/purchases/purchases.functions";
 import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";

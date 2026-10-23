@@ -59,9 +59,7 @@ function ExpenseDetail() {
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (query.isPending) return <LoadingState />;
   if (query.isError) {
-    return (
-      <ErrorState title="Expense not found" description={friendlyAuthError(query.error)} />
-    );
+    return <ErrorState title="Expense not found" description={friendlyAuthError(query.error)} />;
   }
 
   const e = query.data as {
@@ -125,9 +123,7 @@ function ExpenseDetail() {
         {e.reference ? <p>Ref {e.reference}</p> : null}
         {e.memo ? <p>{e.memo}</p> : null}
         {e.posted_journal_id ? (
-          <p className="font-mono text-xs text-muted-foreground">
-            Journal {e.posted_journal_id}
-          </p>
+          <p className="font-mono text-xs text-muted-foreground">Journal {e.posted_journal_id}</p>
         ) : (
           <p className="text-muted-foreground">Not posted yet (draft).</p>
         )}

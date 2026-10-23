@@ -114,11 +114,16 @@ export const upsertProduct = createServerFn({ method: "POST" })
         description: (input.description ?? "").trim().slice(0, 2000) || null,
         salesPriceMinor: Math.max(0, Math.floor(Number(input.salesPriceMinor) || 0)),
         purchaseCostMinor: Math.max(0, Math.floor(Number(input.purchaseCostMinor) || 0)),
-        incomeAccountId: input.incomeAccountId ? assertUuid(input.incomeAccountId, "income account") : null,
+        incomeAccountId: input.incomeAccountId
+          ? assertUuid(input.incomeAccountId, "income account")
+          : null,
         expenseAccountId: input.expenseAccountId
           ? assertUuid(input.expenseAccountId, "expense account")
           : null,
-        salesTaxRateBps: Math.min(10000, Math.max(0, Math.floor(Number(input.salesTaxRateBps) || 0))),
+        salesTaxRateBps: Math.min(
+          10000,
+          Math.max(0, Math.floor(Number(input.salesTaxRateBps) || 0)),
+        ),
         purchaseTaxRateBps: Math.min(
           10000,
           Math.max(0, Math.floor(Number(input.purchaseTaxRateBps) || 0)),
@@ -142,7 +147,11 @@ export const upsertProduct = createServerFn({ method: "POST" })
         .eq("id" as never, accountId as never)
         .maybeSingle();
       if (acctErr) throw new Error(acctErr.message);
-      const a = acct as { account_type: string; is_active: boolean; archived_at: string | null } | null;
+      const a = acct as {
+        account_type: string;
+        is_active: boolean;
+        archived_at: string | null;
+      } | null;
       const problem = productAccountProblem(role, a?.account_type, data.kind);
       if (problem) throw new Error(problem);
       if (a && (!a.is_active || a.archived_at)) throw new Error(`The ${role} account is inactive`);

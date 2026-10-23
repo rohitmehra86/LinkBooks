@@ -12,7 +12,14 @@ import { EntityCombobox } from "@/components/common/EntityCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/purchases/statements")({
   head: () => ({ meta: [{ title: "Supplier statements — LinkBooks" }] }),
@@ -125,7 +132,10 @@ function Statements() {
         </div>
       ) : null}
       {!contactId ? (
-        <EmptyState title="Choose a supplier" description="Select a supplier to view their statement." />
+        <EmptyState
+          title="Choose a supplier"
+          description="Select a supplier to view their statement."
+        />
       ) : stmtQ.isPending ? (
         <LoadingState />
       ) : stmtQ.isError ? (
@@ -138,8 +148,7 @@ function Statements() {
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
             <span>
-              Open bills{" "}
-              <strong>{fromMinorUnits(stmtQ.data!.openBalanceMinor, currency)}</strong>
+              Open bills <strong>{fromMinorUnits(stmtQ.data!.openBalanceMinor, currency)}</strong>
             </span>
             <span>
               Unapplied credits{" "}
@@ -191,17 +200,19 @@ function Statements() {
             </TableHeader>
             <TableBody>
               {(
-                (stmtQ.data as {
-                  lines?: Array<{
-                    date: string;
-                    type: string;
-                    id: string;
-                    reference: string | null;
-                    debit_minor: number;
-                    credit_minor: number;
-                    balance_minor: number;
-                  }>;
-                }).lines ?? []
+                (
+                  stmtQ.data as {
+                    lines?: Array<{
+                      date: string;
+                      type: string;
+                      id: string;
+                      reference: string | null;
+                      debit_minor: number;
+                      credit_minor: number;
+                      balance_minor: number;
+                    }>;
+                  }
+                ).lines ?? []
               ).map((l) => (
                 <TableRow key={`${l.type}-${l.id}`}>
                   <TableCell>{l.date}</TableCell>

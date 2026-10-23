@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { aggregateOutstanding } from "@/lib/contacts/balances";
 
-const row = (currency: string | null, total: number, paid = 0, credited = 0, due: string | null = null) => ({
+const row = (
+  currency: string | null,
+  total: number,
+  paid = 0,
+  credited = 0,
+  due: string | null = null,
+) => ({
   currency_code: currency,
   total_minor: total,
   amount_paid_minor: paid,
