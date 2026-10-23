@@ -3987,7 +3987,11 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       from?: string;
       to?: string;
       asOf?: string;
+      currencyCode?: string;
     }) => ({
+      currencyCode: /^[A-Za-z]{3}$/.test(input.currencyCode ?? "")
+        ? (input.currencyCode as string).toUpperCase()
+        : null,
       companyId: assertUuid(input.companyId),
       contactId: assertUuid(input.contactId, "supplier"),
       from: input.from && /^\d{4}-\d{2}-\d{2}$/.test(input.from) ? input.from : null,
@@ -4013,12 +4017,12 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       .order("bill_date" as never);
     if (data.from) billQ = billQ.gte("bill_date" as never, data.from as never);
     if (data.to) billQ = billQ.lte("bill_date" as never, data.to as never);
-    const { data: bills, error } = await billQ;
+    const { data: billsAll, error } = await billQ;
     if (error) throw new Error(error.message);
 
     let payQ = context.supabase
       .from("supplier_payments" as never)
-      .select("id, payment_date, amount_minor, unallocated_minor, reference, status" as never)
+      .select("id, payment_date, amount_minor, unallocated_minor, reference, status, currency_code" as never)
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
       .eq("status" as never, "paid" as never)
@@ -4026,13 +4030,13 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       .order("payment_date" as never);
     if (data.from) payQ = payQ.gte("payment_date" as never, data.from as never);
     if (data.to) payQ = payQ.lte("payment_date" as never, data.to as never);
-    const { data: payments, error: pErr } = await payQ;
+    const { data: paymentsAll, error: pErr } = await payQ;
     if (pErr) throw new Error(pErr.message);
 
     let cnQ = context.supabase
       .from("purchase_credit_notes" as never)
       .select(
-        "id, credit_date, credit_number, status, total_minor, amount_allocated_minor" as never,
+        "id, credit_date, credit_number, status, total_minor, amount_allocated_minor, currency_code" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
@@ -4042,32 +4046,64 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       .order("credit_date" as never);
     if (data.from) cnQ = cnQ.gte("credit_date" as never, data.from as never);
     if (data.to) cnQ = cnQ.lte("credit_date" as never, data.to as never);
-    const { data: creditNotes, error: cErr } = await cnQ;
+    const { data: creditNotesAll, error: cErr } = await cnQ;
     if (cErr) throw new Error(cErr.message);
+
+    // A statement is in ONE currency: amounts in different currencies are never netted together.
+    const baseCur = await (async () => {
+      const { data: co } = await context.supabase
+        .from("companies")
+        .select("base_currency")
+        .eq("id", data.companyId)
+        .maybeSingle();
+      return (co?.base_currency ?? "GBP").toUpperCase();
+    })();
+    const cur = (c: string | null | undefined) => (c ?? baseCur).toUpperCase();
+    const availableCurrencies = [
+      ...new Set([
+        ...((billsAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
+        ...((paymentsAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
+        ...((creditNotesAll ?? []) as Array<{ currency_code: string | null }>).map((r) => cur(r.currency_code)),
+      ]),
+    ];
+    const statementCurrency =
+      data.currencyCode ??
+      (availableCurrencies.includes(baseCur) ? baseCur : (availableCurrencies[0] ?? baseCur));
+    const bills = ((billsAll ?? []) as Array<{ currency_code: string | null }>).filter(
+      (r) => cur(r.currency_code) === statementCurrency,
+    ) as typeof billsAll;
+    const payments = ((paymentsAll ?? []) as Array<{ currency_code: string | null }>).filter(
+      (r) => cur(r.currency_code) === statementCurrency,
+    ) as typeof paymentsAll;
+    const creditNotes = ((creditNotesAll ?? []) as Array<{ currency_code: string | null }>).filter(
+      (r) => cur(r.currency_code) === statementCurrency,
+    ) as typeof creditNotesAll;
 
     // Opening balance: everything dated before the statement period starts (P-24).
     let openingBalanceMinor = 0;
     if (data.from) {
       const sumCol = (rows: unknown, col: string) =>
-        ((rows ?? []) as Array<Record<string, number>>).reduce((n, r) => n + Number(r[col] ?? 0), 0);
+        ((rows ?? []) as Array<Record<string, number | string | null>>)
+          .filter((r) => cur(r["currency_code"] as string | null) === statementCurrency)
+          .reduce((n, r) => n + Number(r[col] ?? 0), 0);
       const [priorBills, priorPays, priorCns] = await Promise.all([
         context.supabase
           .from("purchase_bills" as never)
-          .select("total_minor" as never)
+          .select("total_minor, currency_code" as never)
           .eq("company_id" as never, data.companyId as never)
           .eq("contact_id" as never, data.contactId as never)
           .not("status" as never, "in" as never, "(void,draft)" as never)
           .lt("bill_date" as never, data.from as never),
         context.supabase
           .from("supplier_payments" as never)
-          .select("amount_minor" as never)
+          .select("amount_minor, currency_code" as never)
           .eq("company_id" as never, data.companyId as never)
           .eq("contact_id" as never, data.contactId as never)
           .eq("status" as never, "paid" as never)
           .lt("payment_date" as never, data.from as never),
         context.supabase
           .from("purchase_credit_notes" as never)
-          .select("total_minor" as never)
+          .select("total_minor, currency_code" as never)
           .eq("company_id" as never, data.companyId as never)
           .eq("contact_id" as never, data.contactId as never)
           .not("status" as never, "in" as never, "(void,draft)" as never)
@@ -4184,6 +4220,8 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
 
     return {
       asOf: data.asOf,
+      currencyCode: statementCurrency,
+      availableCurrencies,
       bills: rows,
       payments: payments ?? [],
       creditNotes: creditNotes ?? [],

@@ -22,12 +22,13 @@ export const Route = createFileRoute("/_authenticated/purchases/statements")({
 function Statements() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
+  const baseCurrency = company?.base_currency ?? "GBP";
   const fetchSuppliers = useServerFn(listSuppliers);
   const fetchStatement = useServerFn(getSupplierStatement);
   const [contactId, setContactId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [currencyChoice, setCurrencyChoice] = useState("");
 
   const suppliersQ = useQuery({
     queryKey: ["suppliers", companyId],
@@ -35,7 +36,7 @@ function Statements() {
     queryFn: () => fetchSuppliers({ data: { companyId: companyId! } }),
   });
   const stmtQ = useQuery({
-    queryKey: ["supplier-statement", companyId, contactId, from, to],
+    queryKey: ["supplier-statement", companyId, contactId, from, to, currencyChoice],
     enabled: Boolean(companyId && contactId),
     queryFn: () =>
       fetchStatement({
@@ -44,6 +45,7 @@ function Statements() {
           contactId,
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
+          ...(currencyChoice ? { currencyCode: currencyChoice } : {}),
         },
       }),
   });
@@ -56,6 +58,12 @@ function Statements() {
       })),
     [suppliersQ.data],
   );
+
+  const currency = (
+    (stmtQ.data as { currencyCode?: string } | undefined)?.currencyCode ?? baseCurrency
+  ).toUpperCase();
+  const availableCurrencies =
+    (stmtQ.data as { availableCurrencies?: string[] } | undefined)?.availableCurrencies ?? [];
 
   const supplierName =
     ((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).find((s) => s.id === contactId)
@@ -80,7 +88,10 @@ function Statements() {
           <EntityCombobox
             options={supplierOptions}
             value={contactId}
-            onChange={setContactId}
+            onChange={(id) => {
+              setContactId(id);
+              setCurrencyChoice("");
+            }}
             placeholder="Search suppliers"
             allowClear={false}
           />
@@ -94,6 +105,25 @@ function Statements() {
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>
+      {availableCurrencies.length > 1 ? (
+        <div className="mb-4 flex items-center gap-2 text-sm">
+          <Label>Currency</Label>
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={currency}
+            onChange={(e) => setCurrencyChoice(e.target.value)}
+          >
+            {availableCurrencies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <span className="text-muted-foreground">
+            Each currency has its own statement; they are never added together.
+          </span>
+        </div>
+      ) : null}
       {!contactId ? (
         <EmptyState title="Choose a supplier" description="Select a supplier to view their statement." />
       ) : stmtQ.isPending ? (
@@ -130,7 +160,16 @@ function Statements() {
               </strong>
             </span>
             <span>
-              Closing (activity){" "}
+              Opening balance{" "}
+              <strong>
+                {fromMinorUnits(
+                  (stmtQ.data as { openingBalanceMinor?: number }).openingBalanceMinor ?? 0,
+                  currency,
+                )}
+              </strong>
+            </span>
+            <span>
+              Closing balance{" "}
               <strong>
                 {fromMinorUnits(
                   (stmtQ.data as { closingBalanceMinor?: number }).closingBalanceMinor ?? 0,
