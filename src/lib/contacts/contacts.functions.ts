@@ -2,8 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
-import { invoiceOutstanding } from "@/lib/sales/line-helpers";
-import { billOutstanding } from "@/lib/purchases/line-math";
+import { isMissingFunctionError } from "@/lib/purchases/db-safety";
+import { aggregateOutstanding } from "@/lib/contacts/balances";
+import { buildIlikeOr } from "@/lib/purchases/search-terms";
 import {
   buildContactsCsv,
   contactImportTemplateCsv,
@@ -13,6 +14,40 @@ import {
 
 const CONTACT_SELECT =
   "id, name, email, phone, tax_number, payment_terms_days, is_active, kind, created_at, updated_at, account_number, legal_name, website, default_currency, credit_limit_minor, notes, billing_address_line1, billing_city, billing_country, archived_at";
+
+type OpenDocClient = Parameters<typeof assertCompanyMember>[0];
+
+/** All open (authorised / partly paid) invoices and bills - not a capped "latest N" sample. */
+async function loadOpenDocs(supabase: OpenDocClient, companyId: string, contactId: string | null) {
+  const cols = "currency_code, total_minor, amount_paid_minor, amount_credited_minor, due_date";
+  const load = async (table: string) => {
+    const rows: Array<{
+      currency_code: string | null;
+      total_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      due_date: string | null;
+    }> = [];
+    for (let from = 0; ; from += 1000) {
+      let q = supabase
+        .from(table as never)
+        .select(cols as never)
+        .eq("company_id" as never, companyId as never)
+        .in("status" as never, ["authorised", "partly_paid"] as never)
+        .order("id" as never)
+        .range(from, from + 999);
+      if (contactId) q = q.eq("contact_id" as never, contactId as never);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as unknown as typeof rows;
+      rows.push(...page);
+      if (page.length < 1000 || rows.length >= 50_000) break;
+    }
+    return rows;
+  };
+  const [recv, pay] = await Promise.all([load("sales_invoices"), load("purchase_bills")]);
+  return { recv, pay };
+}
 
 export const listContacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -41,8 +76,16 @@ export const listContacts = createServerFn({ method: "GET" })
       .from("contacts" as never)
       .select(CONTACT_SELECT as never)
       .eq("company_id" as never, data.companyId as never)
-      .order("name" as never)
       .range(data.offset, data.offset + data.limit - 1);
+
+    // One primary sort, chosen by the view (C-02).
+    if (data.view === "recent") {
+      q = q.order("created_at" as never, { ascending: false });
+    } else if (data.view === "updated") {
+      q = q.order("updated_at" as never, { ascending: false });
+    } else {
+      q = q.order("name" as never);
+    }
 
     if (data.view === "archived") {
       q = q.not("archived_at" as never, "is" as never, null as never);
@@ -60,18 +103,11 @@ export const listContacts = createServerFn({ method: "GET" })
       q = q.eq("kind" as never, "both" as never);
     }
 
-    if (data.view === "recent") {
-      q = q.order("created_at" as never, { ascending: false });
-    } else if (data.view === "updated") {
-      q = q.order("updated_at" as never, { ascending: false });
-    }
-
-    if (data.q) {
-      const term = `%${data.q}%`;
-      q = q.or(
-        `name.ilike.${term},email.ilike.${term},phone.ilike.${term},account_number.ilike.${term},tax_number.ilike.${term},legal_name.ilike.${term}` as never,
-      );
-    }
+    const search = buildIlikeOr(
+      ["name", "email", "phone", "account_number", "tax_number", "legal_name"],
+      data.q,
+    );
+    if (search) q = q.or(search as never);
 
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
@@ -93,67 +129,27 @@ export const getContactsDirectorySummary = createServerFn({ method: "GET" })
       .eq("is_active" as never, true as never)
       .is("archived_at" as never, null as never);
 
-    const { data: invoices, error: iErr } = await context.supabase
-      .from("sales_invoices" as never)
-      .select("status, total_minor, amount_paid_minor, amount_credited_minor, due_date" as never)
-      .eq("company_id" as never, data.companyId as never)
-      .in("status" as never, ["authorised", "partly_paid"] as never)
-      .limit(5000);
-    if (iErr) throw new Error(iErr.message);
-
-    const { data: bills, error: bErr } = await context.supabase
-      .from("purchase_bills" as never)
-      .select("status, total_minor, amount_paid_minor, amount_credited_minor, due_date" as never)
-      .eq("company_id" as never, data.companyId as never)
-      .in("status" as never, ["authorised", "partly_paid"] as never)
-      .limit(5000);
-    if (bErr) throw new Error(bErr.message);
-
+    const { data: company } = await context.supabase
+      .from("companies")
+      .select("base_currency")
+      .eq("id", data.companyId)
+      .maybeSingle();
+    const baseCurrency = (company?.base_currency ?? "GBP").toUpperCase();
+    const { recv, pay } = await loadOpenDocs(context.supabase, data.companyId, null);
     const today = new Date().toISOString().slice(0, 10);
-    let receivable = 0;
-    let overdueRecv = 0;
-    for (const i of (invoices ?? []) as Array<{
-      total_minor: number;
-      amount_paid_minor: number;
-      amount_credited_minor: number;
-      due_date: string | null;
-    }>) {
-      const o = Number(
-        invoiceOutstanding({
-          total_minor: i.total_minor,
-          amount_paid_minor: i.amount_paid_minor,
-          amount_credited_minor: i.amount_credited_minor,
-        }),
-      );
-      receivable += o;
-      if (o > 0 && i.due_date && i.due_date < today) overdueRecv += o;
-    }
-
-    let payable = 0;
-    let overduePay = 0;
-    for (const b of (bills ?? []) as Array<{
-      total_minor: number;
-      amount_paid_minor: number;
-      amount_credited_minor: number;
-      due_date: string | null;
-    }>) {
-      const o = Number(
-        billOutstanding({
-          total_minor: b.total_minor,
-          amount_paid_minor: b.amount_paid_minor,
-          amount_credited_minor: b.amount_credited_minor,
-        }),
-      );
-      payable += o;
-      if (o > 0 && b.due_date && b.due_date < today) overduePay += o;
-    }
+    const r = aggregateOutstanding(recv, today, baseCurrency);
+    const p = aggregateOutstanding(pay, today, baseCurrency);
 
     return {
       activeContactCount: activeCount ?? 0,
-      receivableMinor: receivable,
-      payableMinor: payable,
-      overdueReceivableMinor: overdueRecv,
-      overduePayableMinor: overduePay,
+      baseCurrency,
+      // Headline figures are base-currency only; other currencies are listed separately.
+      receivableMinor: r.base.outstandingMinor,
+      payableMinor: p.base.outstandingMinor,
+      overdueReceivableMinor: r.base.overdueMinor,
+      overduePayableMinor: p.base.overdueMinor,
+      receivableByCurrency: r.byCurrency,
+      payableByCurrency: p.byCurrency,
     };
   });
 
@@ -362,6 +358,18 @@ export const archiveContact = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "contacts.manage");
+    if (!data.restore) {
+      // Archived contacts drop out of pickers, so their open documents could no longer be settled.
+      const { recv, pay } = await loadOpenDocs(context.supabase, data.companyId, data.contactId);
+      const open = [...recv, ...pay].filter(
+        (d) => Number(d.total_minor) - Number(d.amount_paid_minor) - Number(d.amount_credited_minor) > 0,
+      ).length;
+      if (open > 0) {
+        throw new Error(
+          `This contact has ${open} open invoice${open === 1 ? "" : "s"} or bill${open === 1 ? "" : "s"}. Settle or void them before archiving.`,
+        );
+      }
+    }
     const { error } = await context.supabase
       .from("contacts" as never)
       .update({
@@ -408,56 +416,28 @@ export const getContactBalances = createServerFn({ method: "GET" })
       .limit(100);
     if (bErr) throw new Error(bErr.message);
 
+    const { data: company } = await context.supabase
+      .from("companies")
+      .select("base_currency")
+      .eq("id", data.companyId)
+      .maybeSingle();
+    const baseCurrency = (company?.base_currency ?? "GBP").toUpperCase();
     const today = new Date().toISOString().slice(0, 10);
-    let receivable = 0;
-    let overdueRecv = 0;
-    for (const i of (invoices ?? []) as Array<{
-      status: string;
-      total_minor: number;
-      amount_paid_minor: number;
-      amount_credited_minor: number;
-      due_date: string | null;
-    }>) {
-      if (!["authorised", "partly_paid"].includes(i.status)) continue;
-      const o = Number(
-        invoiceOutstanding({
-          total_minor: i.total_minor,
-          amount_paid_minor: i.amount_paid_minor,
-          amount_credited_minor: i.amount_credited_minor,
-        }),
-      );
-      receivable += o;
-      if (o > 0 && i.due_date && i.due_date < today) overdueRecv += o;
-    }
-
-    let payable = 0;
-    let overduePay = 0;
-    for (const b of (bills ?? []) as Array<{
-      status: string;
-      total_minor: number;
-      amount_paid_minor: number;
-      amount_credited_minor: number;
-      due_date: string | null;
-    }>) {
-      if (!["authorised", "partly_paid"].includes(b.status)) continue;
-      const o = Number(
-        billOutstanding({
-          total_minor: b.total_minor,
-          amount_paid_minor: b.amount_paid_minor,
-          amount_credited_minor: b.amount_credited_minor,
-        }),
-      );
-      payable += o;
-      if (o > 0 && b.due_date && b.due_date < today) overduePay += o;
-    }
+    // Totals come from ALL open documents, not the 100 most recent shown in the lists.
+    const { recv, pay } = await loadOpenDocs(context.supabase, data.companyId, data.contactId);
+    const r = aggregateOutstanding(recv, today, baseCurrency);
+    const p = aggregateOutstanding(pay, today, baseCurrency);
 
     return {
       invoices: invoices ?? [],
       bills: bills ?? [],
-      receivableMinor: receivable,
-      payableMinor: payable,
-      overdueReceivableMinor: overdueRecv,
-      overduePayableMinor: overduePay,
+      baseCurrency,
+      receivableMinor: r.base.outstandingMinor,
+      payableMinor: p.base.outstandingMinor,
+      overdueReceivableMinor: r.base.overdueMinor,
+      overduePayableMinor: p.base.overdueMinor,
+      receivableByCurrency: r.byCurrency,
+      payableByCurrency: p.byCurrency,
     };
   });
 
@@ -856,8 +836,22 @@ export const importContactsCsv = createServerFn({ method: "POST" })
         skipped++;
         continue;
       }
-      let kind = (r[idx("kind")] ?? "customer").trim().toLowerCase();
-      if (!["customer", "supplier", "both", "employee"].includes(kind)) kind = "customer";
+      const kind = (r[idx("kind")] ?? "customer").trim().toLowerCase() || "customer";
+      if (!["customer", "supplier", "both", "employee"].includes(kind)) {
+        failed++;
+        errors.push({
+          row: i + 2,
+          message: `Invalid kind "${kind}" - use customer, supplier, both or employee`,
+        });
+        continue;
+      }
+      const termsRaw = (r[idx("payment_terms_days")] ?? "").trim();
+      const terms = termsRaw === "" ? 30 : Number(termsRaw);
+      if (!Number.isInteger(terms) || terms < 0 || terms > 3650) {
+        failed++;
+        errors.push({ row: i + 2, message: `Invalid payment terms "${termsRaw}"` });
+        continue;
+      }
       const { error } = await context.supabase.from("contacts" as never).insert({
         company_id: data.companyId,
         name,
@@ -865,7 +859,7 @@ export const importContactsCsv = createServerFn({ method: "POST" })
         email: (r[idx("email")] ?? "").trim().slice(0, 200) || null,
         phone: (r[idx("phone")] ?? "").trim().slice(0, 60) || null,
         tax_number: (r[idx("tax_number")] ?? "").trim().slice(0, 60) || null,
-        payment_terms_days: Math.max(0, Number(r[idx("payment_terms_days")] ?? 30) || 30),
+        payment_terms_days: terms,
         account_number: (r[idx("account_number")] ?? "").trim().slice(0, 40) || null,
         notes: (r[idx("notes")] ?? "").trim().slice(0, 4000) || null,
         is_active: true,
@@ -933,63 +927,114 @@ export const mergeContacts = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "contacts.manage");
 
-    const load = async (id: string) => {
-      const { data: row } = await context.supabase
+    // Preferred path: one transaction over every table that references contacts.
+    const rpc = await context.supabase.rpc("merge_contacts" as never, {
+      _company_id: data.companyId,
+      _survivor_id: data.survivorId,
+      _merge_id: data.mergeId,
+    } as never);
+    if (!rpc.error) {
+      const result = (rpc.data ?? {}) as { rows_moved?: number };
+      return {
+        survivorId: data.survivorId,
+        mergedId: data.mergeId,
+        rowsMoved: Number(result.rows_moved ?? 0),
+        atomic: true,
+      };
+    }
+    if (!isMissingFunctionError(rpc.error)) throw new Error(rpc.error.message);
+
+    // Fallback until the migration is applied: checked updates by row id, undone if one fails.
+    const exists = async (id: string) => {
+      const { data: row, error } = await context.supabase
         .from("contacts" as never)
-        .select("id, company_id" as never)
+        .select("id" as never)
         .eq("id" as never, id as never)
         .eq("company_id" as never, data.companyId as never)
         .maybeSingle();
-      return row as { id: string; company_id: string } | null;
+      if (error) throw new Error(error.message);
+      return Boolean(row);
     };
-    const survivor = await load(data.survivorId);
-    const merge = await load(data.mergeId);
-    if (!survivor || !merge) throw new Error("Both contacts must exist in this organisation");
-
-    const tables = [
-      "sales_invoices",
-      "sales_quotes",
-      "sales_credit_notes",
-      "sales_receipts",
-      "purchase_bills",
-      "purchase_credit_notes",
-      "purchase_payments",
-    ] as const;
-
-    for (const table of tables) {
-      const { error } = await context.supabase
-        .from(table as never)
-        .update({ contact_id: data.survivorId } as never)
-        .eq("company_id" as never, data.companyId as never)
-        .eq("contact_id" as never, data.mergeId as never);
-      if (error && !error.message.includes("does not exist") && error.code !== "42P01") {
-        // Some tables may not exist in all envs — ignore missing-relation style
-        if (error.code !== "PGRST205") throw new Error(`${table}: ${error.message}`);
-      }
+    if (!(await exists(data.survivorId)) || !(await exists(data.mergeId))) {
+      throw new Error("Both contacts must exist in this organisation");
     }
 
-    await context.supabase
-      .from("contact_people" as never)
-      .update({ contact_id: data.survivorId } as never)
-      .eq("contact_id" as never, data.mergeId as never)
-      .eq("company_id" as never, data.companyId as never);
-    await context.supabase
-      .from("contact_addresses" as never)
-      .update({ contact_id: data.survivorId } as never)
-      .eq("contact_id" as never, data.mergeId as never)
-      .eq("company_id" as never, data.companyId as never);
-
-    const { error: archErr } = await context.supabase
-      .from("contacts" as never)
-      .update({
-        is_active: false,
-        archived_at: new Date().toISOString(),
-        notes: `Merged into ${data.survivorId}`,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("id" as never, data.mergeId as never)
-      .eq("company_id" as never, data.companyId as never);
-    if (archErr) throw new Error(archErr.message);
-
-    return { survivorId: data.survivorId, mergedId: data.mergeId };
+    const targets: Array<[string, string]> = [
+      ["sales_invoices", "contact_id"],
+      ["sales_quotes", "contact_id"],
+      ["sales_credit_notes", "contact_id"],
+      ["sales_receipts", "contact_id"],
+      ["sales_recurring_invoices", "contact_id"],
+      ["purchase_bills", "contact_id"],
+      ["purchase_credit_notes", "contact_id"],
+      ["purchase_orders", "contact_id"],
+      ["purchase_expenses", "contact_id"],
+      ["supplier_payments", "contact_id"],
+      ["recurring_bills", "contact_id"],
+      ["recurring_templates", "contact_id"],
+      ["money_documents", "contact_id"],
+      ["projects", "contact_id"],
+      ["purchase_bill_lines", "customer_contact_id"],
+      ["contact_people", "contact_id"],
+      ["contact_addresses", "contact_id"],
+    ];
+    const moved: Array<{ table: string; column: string; ids: string[] }> = [];
+    const undo = async () => {
+      for (const m of moved.reverse()) {
+        if (m.ids.length === 0) continue;
+        await context.supabase
+          .from(m.table as never)
+          .update({ [m.column]: data.mergeId } as never)
+          .in("id" as never, m.ids as never);
+      }
+    };
+    try {
+      for (const [table, column] of targets) {
+        const { data: found, error: findErr } = await context.supabase
+          .from(table as never)
+          .select("id" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq(column as never, data.mergeId as never);
+        if (findErr) throw new Error(`${table}: ${findErr.message}`);
+        const ids = ((found ?? []) as unknown as Array<{ id: string }>).map((r) => r.id);
+        if (ids.length === 0) continue;
+        const { error: upErr } = await context.supabase
+          .from(table as never)
+          .update({ [column]: data.survivorId } as never)
+          .in("id" as never, ids as never);
+        if (upErr) throw new Error(`${table}: ${upErr.message}`);
+        moved.push({ table, column, ids });
+      }
+      const { data: notesRow } = await context.supabase
+        .from("contacts" as never)
+        .select("notes" as never)
+        .eq("id" as never, data.mergeId as never)
+        .eq("company_id" as never, data.companyId as never)
+        .maybeSingle();
+      const priorNotes = ((notesRow as { notes: string | null } | null)?.notes ?? "").trim();
+      const note = `Merged into ${data.survivorId} on ${new Date().toISOString().slice(0, 10)}`;
+      const { error: archErr } = await context.supabase
+        .from("contacts" as never)
+        .update({
+          is_active: false,
+          archived_at: new Date().toISOString(),
+          notes: priorNotes ? `${priorNotes}\n${note}` : note,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq("id" as never, data.mergeId as never)
+        .eq("company_id" as never, data.companyId as never);
+      if (archErr) throw new Error(archErr.message);
+    } catch (e) {
+      await undo();
+      throw new Error(
+        `Merge failed and was undone: ${e instanceof Error ? e.message : "unknown error"}`,
+      );
+    }
+    // Group / tag links are left on the archived contact in this fallback (they can clash).
+    return {
+      survivorId: data.survivorId,
+      mergedId: data.mergeId,
+      rowsMoved: moved.reduce((n, m) => n + m.ids.length, 0),
+      atomic: false,
+    };
   });
