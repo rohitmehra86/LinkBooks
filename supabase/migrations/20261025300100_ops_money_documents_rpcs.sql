@@ -78,7 +78,9 @@ BEGIN
   SELECT id INTO _id FROM public.accounts
   WHERE company_id = _company_id AND code = _code AND is_active AND archived_at IS NULL;
   IF _id IS NULL THEN
+    PERFORM set_config('linkbooks.trusted', 'on', true);
     PERFORM public.seed_fx_accounts(_company_id);
+    PERFORM set_config('linkbooks.trusted', 'off', true);
     SELECT id INTO _id FROM public.accounts
     WHERE company_id = _company_id AND code = _code AND is_active AND archived_at IS NULL;
   END IF;
