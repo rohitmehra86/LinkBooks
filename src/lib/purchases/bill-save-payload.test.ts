@@ -94,7 +94,10 @@ describe("bill editor round trip", () => {
   });
 
   it("uses rate 1 for base-currency bills and demands a rate for foreign ones", () => {
-    const base = billEditorStateFromBill({ ...bill, currency_code: "GBP", fx_rate_to_base: null }, "GBP");
+    const base = billEditorStateFromBill(
+      { ...bill, currency_code: "GBP", fx_rate_to_base: null },
+      "GBP",
+    );
     expect(resolveFxRate(base, "GBP")).toBe(1);
     const foreign = billEditorStateFromBill({ ...bill, fx_rate_to_base: null }, "GBP");
     expect(() => resolveFxRate(foreign, "GBP")).toThrow(/exchange rate/i);
@@ -103,7 +106,12 @@ describe("bill editor round trip", () => {
   it("accepts thousands separators typed into amounts", () => {
     const state = billEditorStateFromBill(bill, "GBP");
     state.lines[0]!.unitPrice = "1,234.50";
-    const payload = buildBillSavePayload({ companyId: "co", billId: "b1", state, baseCurrency: "GBP" });
+    const payload = buildBillSavePayload({
+      companyId: "co",
+      billId: "b1",
+      state,
+      baseCurrency: "GBP",
+    });
     expect(payload.lines[0]!.unitPriceMinor).toBe(123450);
   });
 

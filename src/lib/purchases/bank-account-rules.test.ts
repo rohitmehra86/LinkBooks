@@ -21,7 +21,12 @@ describe("isBankOrCashAccount", () => {
   });
 
   it("rejects receivables, fixed assets and other plain assets", () => {
-    expect(isBankOrCashAccount(acc({ account_kind: "current_asset", subtype: "current_asset" }), new Set())).toBe(false);
+    expect(
+      isBankOrCashAccount(
+        acc({ account_kind: "current_asset", subtype: "current_asset" }),
+        new Set(),
+      ),
+    ).toBe(false);
     expect(isBankOrCashAccount(acc({ account_kind: "fixed_asset" }), new Set())).toBe(false);
   });
 

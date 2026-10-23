@@ -245,8 +245,12 @@ export function buildBillSavePayload(args: {
       description: l.description,
       accountId: l.accountId,
       quantity: Number(l.quantity),
-      unitPriceMinor: Number(parseMinorOrThrow(l.unitPrice || "0", currency, `Line ${i + 1} unit price`)),
-      discountMinor: Number(parseMinorOrThrow(l.discount || "0", currency, `Line ${i + 1} discount`)),
+      unitPriceMinor: Number(
+        parseMinorOrThrow(l.unitPrice || "0", currency, `Line ${i + 1} unit price`),
+      ),
+      discountMinor: Number(
+        parseMinorOrThrow(l.discount || "0", currency, `Line ${i + 1} discount`),
+      ),
       taxRateBps: Number(l.taxRateBps || 0),
       productId: l.productId || null,
       taxCodeId: l.taxCodeId || null,
@@ -264,7 +268,10 @@ export function billEditorSnapshot(state: BillEditorState): string {
   return JSON.stringify(state);
 }
 
-export function isBillEditorDirty(current: BillEditorState, baselineSnapshot: string | null): boolean {
+export function isBillEditorDirty(
+  current: BillEditorState,
+  baselineSnapshot: string | null,
+): boolean {
   if (baselineSnapshot === null) return false;
   return billEditorSnapshot(current) !== baselineSnapshot;
 }

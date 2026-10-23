@@ -153,7 +153,8 @@ export async function postSupplierPayment(
   },
 ): Promise<string> {
   const ap = await requireAccountByCode(supabase, args.company_id, "2000");
-  const amount = typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
+  const amount =
+    typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Payment amount must be positive");
 
   const { journalId } = await postJournal(supabase, {

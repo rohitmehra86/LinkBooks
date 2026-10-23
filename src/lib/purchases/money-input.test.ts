@@ -8,7 +8,20 @@ import {
 
 describe("tryParseMinor", () => {
   it("never throws on in-progress input", () => {
-    for (const v of ["12.", "-", " ", "", ".", "abc", "1,2", "1..2", "--5", "1e5", null, undefined]) {
+    for (const v of [
+      "12.",
+      "-",
+      " ",
+      "",
+      ".",
+      "abc",
+      "1,2",
+      "1..2",
+      "--5",
+      "1e5",
+      null,
+      undefined,
+    ]) {
       expect(() => tryParseMinor(v as never, "GBP")).not.toThrow();
     }
   });

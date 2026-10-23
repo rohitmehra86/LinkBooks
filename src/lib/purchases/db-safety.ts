@@ -38,11 +38,14 @@ export async function replaceBillLines(
   rows: BillLineRow[],
   priorRows: BillLineRow[] | null,
 ): Promise<void> {
-  const rpc = await supabase.rpc("replace_purchase_bill_lines" as never, {
-    _company_id: companyId,
-    _bill_id: billId,
-    _lines: rows,
-  } as never);
+  const rpc = await supabase.rpc(
+    "replace_purchase_bill_lines" as never,
+    {
+      _company_id: companyId,
+      _bill_id: billId,
+      _lines: rows,
+    } as never,
+  );
   if (!rpc.error) return;
   if (!isMissingFunctionError(rpc.error)) throw new Error(rpc.error.message);
 

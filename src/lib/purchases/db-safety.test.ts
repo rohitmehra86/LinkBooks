@@ -6,7 +6,9 @@ describe("isMissingFunctionError", () => {
     expect(isMissingFunctionError({ code: "PGRST202", message: "x" })).toBe(true);
     expect(isMissingFunctionError({ code: "42883", message: "x" })).toBe(true);
     expect(
-      isMissingFunctionError({ message: "Could not find the function public.foo(a) in the schema cache" }),
+      isMissingFunctionError({
+        message: "Could not find the function public.foo(a) in the schema cache",
+      }),
     ).toBe(true);
   });
 

@@ -57,9 +57,9 @@ describe("due date calculation", () => {
   });
 
   it("due on receipt equals bill date", () => {
-    expect(
-      calculateDueDate("2026-03-01", { days: 0, calculation_method: "due_on_receipt" }),
-    ).toBe("2026-03-01");
+    expect(calculateDueDate("2026-03-01", { days: 0, calculation_method: "due_on_receipt" })).toBe(
+      "2026-03-01",
+    );
   });
 
   it("days after month end", () => {
@@ -92,10 +92,7 @@ describe("tax calculation modes", () => {
   });
 
   it("none zeros tax even when rate provided", () => {
-    const line = computeBillLine(
-      { quantity: 2, unitPriceMinor: 5000, taxRateBps: 2000 },
-      "none",
-    );
+    const line = computeBillLine({ quantity: 2, unitPriceMinor: 5000, taxRateBps: 2000 }, "none");
     expect(line.net_minor).toBe(10000n);
     expect(line.tax_minor).toBe(0n);
     expect(line.gross_minor).toBe(10000n);

@@ -58,7 +58,11 @@ describe("assertAllocationsAllowed", () => {
 
   it("rejects another supplier's bill", () => {
     expect(() =>
-      assertAllocationsAllowed([bill({ contact_id: "c2" })], [{ billId: bill().id, amountMinor: 1 }], ctx),
+      assertAllocationsAllowed(
+        [bill({ contact_id: "c2" })],
+        [{ billId: bill().id, amountMinor: 1 }],
+        ctx,
+      ),
     ).toThrow(/different supplier/);
   });
 
