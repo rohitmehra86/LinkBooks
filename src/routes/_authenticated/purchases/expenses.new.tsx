@@ -6,8 +6,9 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
-import { saveAndPostExpense } from "@/lib/purchases/purchases.functions";
-import { toMinorUnits } from "@/lib/accounting/money";
+import { listPaymentAccounts, saveAndPostExpense } from "@/lib/purchases/purchases.functions";
+import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
+import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,9 @@ export function NewExpense() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fetchAccounts = useServerFn(listAccounts);
+  const fetchPaymentAccounts = useServerFn(listPaymentAccounts);
   const saveExpense = useServerFn(saveAndPostExpense);
+  const canPost = useCanDo("purchases.authorise");
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
   const today = new Date().toISOString().slice(0, 10);
@@ -53,9 +56,17 @@ export function NewExpense() {
   const expenseAccounts = accounts.filter(
     (a) => a.is_active && a.is_postable && a.account_type === "expense",
   );
-  const bankAccounts = accounts.filter(
-    (a) => a.is_active && a.is_postable && (a.code === "1000" || a.account_type === "asset"),
-  );
+  // Bank / cash accounts only - receivables, VAT and fixed assets are not valid "paid from" accounts.
+  const paymentAccountsQ = useQuery({
+    queryKey: ["payment-accounts", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchPaymentAccounts({ data: { companyId: companyId! } }),
+  });
+  const bankAccounts = (paymentAccountsQ.data ?? []) as Array<{
+    id: string;
+    code: string;
+    name: string;
+  }>;
 
   const [payeeName, setPayeeName] = useState("");
   const [expenseDate, setExpenseDate] = useState(today);
@@ -65,6 +76,8 @@ export function NewExpense() {
   const [tax, setTax] = useState("0.00");
   const [reference, setReference] = useState("");
   const [memo, setMemo] = useState("");
+  const amountInvalid = tryParseMinor(amount || "0", currency) === null;
+  const taxInvalid = tryParseMinor(tax || "0", currency) === null;
 
   const mutation = useMutation({
     mutationFn: (post: boolean) =>
@@ -76,8 +89,8 @@ export function NewExpense() {
           expenseAccountId,
           paymentAccountId,
           currencyCode: currency,
-          netMinor: Number(toMinorUnits(amount || "0", currency)),
-          taxMinor: Number(toMinorUnits(tax || "0", currency)),
+          netMinor: Number(parseMinorOrThrow(amount || "0", currency, "Net amount")),
+          taxMinor: Number(parseMinorOrThrow(tax || "0", currency, "Tax")),
           reference,
           memo,
           post,
@@ -92,7 +105,7 @@ export function NewExpense() {
   });
 
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
-  if (accountsQ.isPending) return <LoadingState />;
+  if (accountsQ.isPending || paymentAccountsQ.isPending) return <LoadingState />;
 
   return (
     <>
@@ -147,11 +160,21 @@ export function NewExpense() {
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Net ({currency})</Label>
-            <Input value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input
+              value={amount}
+              inputMode="decimal"
+              aria-invalid={amountInvalid}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Tax ({currency})</Label>
-            <Input value={tax} onChange={(e) => setTax(e.target.value)} />
+            <Input
+              value={tax}
+              inputMode="decimal"
+              aria-invalid={taxInvalid}
+              onChange={(e) => setTax(e.target.value)}
+            />
           </div>
         </div>
         <div className="space-y-2">
@@ -166,12 +189,17 @@ export function NewExpense() {
           <Button
             size="sm"
             variant="outline"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || amountInvalid || taxInvalid}
             onClick={() => mutation.mutate(false)}
           >
             Save draft
           </Button>
-          <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate(true)}>
+          <Button
+            size="sm"
+            disabled={mutation.isPending || amountInvalid || taxInvalid || !canPost}
+            title={canPost ? undefined : "You do not have permission to post expenses"}
+            onClick={() => mutation.mutate(true)}
+          >
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             Save & post
           </Button>

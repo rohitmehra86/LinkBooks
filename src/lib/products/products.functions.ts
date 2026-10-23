@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
+import { productAccountProblem } from "@/lib/products/product-rules";
+import { buildIlikeOr } from "@/lib/purchases/search-terms";
 
 export type ProductRow = {
   id: string;
@@ -19,6 +21,10 @@ export type ProductRow = {
   is_active: boolean;
   created_at: string;
 };
+
+function productWriteError(error: { code?: string | null; message: string }): string {
+  return error.code === "23505" ? "Another item already uses this code" : error.message;
+}
 
 export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -49,9 +55,8 @@ export const listProducts = createServerFn({ method: "GET" })
       .limit(data.limit);
     if (!data.includeInactive) q = q.eq("is_active" as never, true as never);
     if (data.kind !== "all") q = q.eq("kind" as never, data.kind as never);
-    if (data.q) {
-      q = q.or(`name.ilike.%${data.q}%,code.ilike.%${data.q}%,description.ilike.%${data.q}%` as never);
-    }
+    const search = buildIlikeOr(["name", "code", "description"], data.q);
+    if (search) q = q.or(search as never);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return (rows ?? []) as ProductRow[];
@@ -109,11 +114,16 @@ export const upsertProduct = createServerFn({ method: "POST" })
         description: (input.description ?? "").trim().slice(0, 2000) || null,
         salesPriceMinor: Math.max(0, Math.floor(Number(input.salesPriceMinor) || 0)),
         purchaseCostMinor: Math.max(0, Math.floor(Number(input.purchaseCostMinor) || 0)),
-        incomeAccountId: input.incomeAccountId ? assertUuid(input.incomeAccountId, "income account") : null,
+        incomeAccountId: input.incomeAccountId
+          ? assertUuid(input.incomeAccountId, "income account")
+          : null,
         expenseAccountId: input.expenseAccountId
           ? assertUuid(input.expenseAccountId, "expense account")
           : null,
-        salesTaxRateBps: Math.min(10000, Math.max(0, Math.floor(Number(input.salesTaxRateBps) || 0))),
+        salesTaxRateBps: Math.min(
+          10000,
+          Math.max(0, Math.floor(Number(input.salesTaxRateBps) || 0)),
+        ),
         purchaseTaxRateBps: Math.min(
           10000,
           Math.max(0, Math.floor(Number(input.purchaseTaxRateBps) || 0)),
@@ -125,6 +135,27 @@ export const upsertProduct = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "products.manage");
+    for (const [role, accountId] of [
+      ["income", data.incomeAccountId],
+      ["expense", data.expenseAccountId],
+    ] as const) {
+      if (!accountId) continue;
+      const { data: acct, error: acctErr } = await context.supabase
+        .from("accounts" as never)
+        .select("account_type, is_active, archived_at" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, accountId as never)
+        .maybeSingle();
+      if (acctErr) throw new Error(acctErr.message);
+      const a = acct as {
+        account_type: string;
+        is_active: boolean;
+        archived_at: string | null;
+      } | null;
+      const problem = productAccountProblem(role, a?.account_type, data.kind);
+      if (problem) throw new Error(problem);
+      if (a && (!a.is_active || a.archived_at)) throw new Error(`The ${role} account is inactive`);
+    }
     const payload = {
       company_id: data.companyId,
       kind: data.kind,
@@ -150,7 +181,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
         .eq("company_id" as never, data.companyId as never)
         .select("id")
         .single();
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(productWriteError(error));
       return { id: (row as { id: string }).id };
     }
     const { data: row, error } = await context.supabase
@@ -158,7 +189,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
       .insert(payload as never)
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(productWriteError(error));
     return { id: (row as { id: string }).id };
   });
 

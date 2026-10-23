@@ -5,11 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { listAccounts } from "@/lib/accounting/accounting.functions";
-import {
-  createAndPostPayment,
-} from "@/lib/purchases/purchases.functions";
-import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
+import { createAndPostPayment, listPaymentAccounts } from "@/lib/purchases/purchases.functions";
+import { fromMinorUnits } from "@/lib/accounting/money";
+import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -67,12 +65,11 @@ export function BillMakePaymentPanel({
   outstandingMinor,
 }: Props) {
   const qc = useQueryClient();
-  const fetchAccounts = useServerFn(listAccounts);
+  const fetchAccounts = useServerFn(listPaymentAccounts);
   const postPayment = useServerFn(createAndPostPayment);
 
   const today = new Date().toISOString().slice(0, 10);
-  const canPay =
-    ["authorised", "partly_paid"].includes(billStatus) && outstandingMinor > 0;
+  const canPay = ["authorised", "partly_paid"].includes(billStatus) && outstandingMinor > 0;
 
   const [amount, setAmount] = useState(() =>
     fromMinorUnits(BigInt(Math.max(0, outstandingMinor)), currency),
@@ -88,26 +85,25 @@ export function BillMakePaymentPanel({
   }, [outstandingMinor, currency, billId]);
 
   const accountsQ = useQuery({
-    queryKey: ["accounts", companyId],
+    queryKey: ["payment-accounts", companyId],
     enabled: Boolean(companyId) && canPay,
     queryFn: () => fetchAccounts({ data: { companyId } }),
   });
 
-  const bankOptions = useMemo(() => {
-    const rows = (accountsQ.data ?? []) as Array<{
-      id: string;
-      code: string;
-      name: string;
-      account_type: string;
-      is_postable: boolean;
-      is_active: boolean;
-    }>;
-    return rows
-      .filter((a) => a.is_active && a.is_postable && a.account_type === "asset")
-      .map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }));
-  }, [accountsQ.data]);
+  // Bank / cash accounts only (the server enforces the same rule).
+  const bankOptions = useMemo(
+    () =>
+      ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map((a) => ({
+        value: a.id,
+        label: `${a.code} — ${a.name}`,
+      })),
+    [accountsQ.data],
+  );
 
-  const amountMinor = Number(toMinorUnits(amount || "0", currency));
+  // Never throws while typing: invalid text is reported, not crashed on (P-03).
+  const parsedMinor = tryParseMinor(amount || "0", currency);
+  const amountInvalid = parsedMinor === null;
+  const amountMinor = parsedMinor === null ? 0 : Number(parsedMinor);
   const overpay = amountMinor > outstandingMinor;
 
   const invalidate = async () => {
@@ -124,6 +120,7 @@ export function BillMakePaymentPanel({
       if (!canPay) throw new Error("This bill cannot accept payments");
       if (!bankAccountId) throw new Error("Select a bank or cash account");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) throw new Error("Payment date required");
+      const amountMinor = Number(parseMinorOrThrow(amount || "0", currency, "Payment amount"));
       if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
         throw new Error("Enter a payment amount greater than zero");
       }
@@ -147,9 +144,7 @@ export function BillMakePaymentPanel({
     onSuccess: async (result) => {
       await invalidate();
       toast.success(
-        result.journalId
-          ? "Payment recorded — AP and bank journal posted"
-          : "Payment recorded",
+        result.journalId ? "Payment recorded — AP and bank journal posted" : "Payment recorded",
       );
       setReference("");
       setNotes("");
@@ -190,9 +185,13 @@ export function BillMakePaymentPanel({
                 inputMode="decimal"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                aria-invalid={overpay}
+                aria-invalid={overpay || amountInvalid}
               />
-              {overpay ? (
+              {amountInvalid ? (
+                <p className="text-xs text-destructive">
+                  Enter a number, e.g. 1,250.00 (max {currency} decimal places)
+                </p>
+              ) : overpay ? (
                 <p className="text-xs text-destructive">
                   Max {fromMinorUnits(BigInt(outstandingMinor), currency)}
                 </p>
@@ -200,9 +199,7 @@ export function BillMakePaymentPanel({
                 <button
                   type="button"
                   className="text-xs text-primary underline-offset-2 hover:underline"
-                  onClick={() =>
-                    setAmount(fromMinorUnits(BigInt(outstandingMinor), currency))
-                  }
+                  onClick={() => setAmount(fromMinorUnits(BigInt(outstandingMinor), currency))}
                 >
                   Pay full balance
                 </button>
@@ -252,7 +249,7 @@ export function BillMakePaymentPanel({
             <Button
               size="sm"
               className="bg-emerald-700 text-white hover:bg-emerald-800"
-              disabled={payM.isPending || overpay || accountsQ.isPending}
+              disabled={payM.isPending || overpay || amountInvalid || accountsQ.isPending}
               onClick={() => payM.mutate()}
             >
               {payM.isPending ? <Loader2 className="mr-1 size-4 animate-spin" /> : null}

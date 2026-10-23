@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import {
   authoriseBill,
+  exportBillsCsv,
   getBillsWorkspaceSummary,
   listBills,
   listRecurringBills,
@@ -33,6 +34,7 @@ import {
   type BillsListWorkspacePrefs,
 } from "@/lib/settings/ui-preferences.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
+import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { cn } from "@/lib/utils";
 import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
@@ -73,12 +75,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type BillsSearch = {
   tab?: BillsWorkspaceTab;
@@ -192,9 +189,11 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/")({
     ) as BillsWorkspaceTab;
     const out: BillsSearch = { tab };
     if (typeof s["q"] === "string" && s["q"]) out.q = s["q"];
-    if (typeof s["from"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["from"])) out.from = s["from"];
+    if (typeof s["from"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["from"]))
+      out.from = s["from"];
     if (typeof s["to"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s["to"])) out.to = s["to"];
-    if (s["dateField"] === "due_date" || s["dateField"] === "bill_date") out.dateField = s["dateField"];
+    if (s["dateField"] === "due_date" || s["dateField"] === "bill_date")
+      out.dateField = s["dateField"];
     if (s["includeVoid"] === true || s["includeVoid"] === "1" || s["includeVoid"] === "true") {
       out.includeVoid = true;
     }
@@ -202,8 +201,10 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/")({
       out.overdueOnly = true;
     }
     if (typeof s["status"] === "string" && s["status"]) out.status = s["status"];
-    if (typeof s["page"] === "number" && Number.isFinite(s["page"])) out.page = Math.max(0, s["page"]);
-    if (typeof s["page"] === "string" && /^\d+$/.test(s["page"])) out.page = Math.max(0, Number(s["page"]));
+    if (typeof s["page"] === "number" && Number.isFinite(s["page"]))
+      out.page = Math.max(0, s["page"]);
+    if (typeof s["page"] === "string" && /^\d+$/.test(s["page"]))
+      out.page = Math.max(0, Number(s["page"]));
     if (typeof s["sortBy"] === "string" && s["sortBy"]) out.sortBy = s["sortBy"];
     if (s["sortDir"] === "asc" || s["sortDir"] === "desc") out.sortDir = s["sortDir"];
     return out;
@@ -264,12 +265,35 @@ function BillsWorkspace() {
   const fetchPrefs = useServerFn(getBillsListPrefs);
   const persistPrefs = useServerFn(saveBillsListPrefs);
   const doAuthorise = useServerFn(authoriseBill);
+  const doExport = useServerFn(exportBillsCsv);
+  const { can } = useCan();
   const doSubmit = useServerFn(submitBillForApproval);
   const doSetRecurring = useServerFn(setRecurringBillActive);
 
   useEffect(() => {
     setSearchDraft(q);
   }, [q]);
+
+  // A selection must never survive a change of tab / filter / page, or bulk actions would hit
+  // bills the user can no longer see (P-20).
+  const filterKey = [
+    tab,
+    q,
+    fromDate,
+    toDate,
+    dateField,
+    includeVoid,
+    overdueOnly,
+    statusFilter,
+    page,
+  ].join("|");
+  const lastFilterKey = useRef(filterKey);
+  useEffect(() => {
+    if (lastFilterKey.current !== filterKey) {
+      lastFilterKey.current = filterKey;
+      setSelected(new Set());
+    }
+  }, [filterKey]);
 
   const prefsQ = useQuery({
     queryKey: ["bills-list-prefs", companyId],
@@ -361,35 +385,53 @@ function BillsWorkspace() {
     await qc.invalidateQueries({ queryKey: ["bills-workspace-summary", companyId] });
   };
 
-  const bulkAuthoriseM = useMutation({
-    mutationFn: async (ids: string[]) => {
-      for (const billId of ids) {
-        await doAuthorise({ data: { companyId: companyId!, billId } });
+  /** Run an action per bill; one failure does not stop the others and each result is reported. */
+  const runBulk = async (
+    ids: string[],
+    action: (billId: string) => Promise<unknown>,
+    verb: string,
+  ) => {
+    const failed: Array<{ id: string; message: string }> = [];
+    let ok = 0;
+    for (const billId of ids) {
+      try {
+        await action(billId);
+        ok += 1;
+      } catch (e) {
+        failed.push({ id: billId, message: friendlyAuthError(e) });
       }
-    },
-    onSuccess: async () => {
-      setSelected(new Set());
-      await invalidateBills();
-      toast.success("Selected bills authorised");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
+    }
+    await invalidateBills();
+    // Keep only the bills that failed selected so they can be retried.
+    setSelected(new Set(failed.map((f) => f.id)));
+    const label = (id: string) => {
+      const row = rows.find((r) => r.id === id);
+      return row?.display_reference || row?.contacts?.name || id.slice(0, 8);
+    };
+    if (ok > 0) toast.success(`${ok} bill${ok === 1 ? "" : "s"} ${verb}`);
+    for (const f of failed.slice(0, 5)) toast.error(`${label(f.id)}: ${f.message}`);
+    if (failed.length > 5) toast.error(`${failed.length - 5} more bills failed`);
+  };
+
+  const bulkAuthoriseM = useMutation({
+    mutationFn: (ids: string[]) =>
+      runBulk(
+        ids,
+        (billId) => doAuthorise({ data: { companyId: companyId!, billId } }),
+        "authorised",
+      ),
   });
 
   const bulkSubmitM = useMutation({
-    mutationFn: async (ids: string[]) => {
-      for (const billId of ids) {
-        await doSubmit({ data: { companyId: companyId!, billId } });
-      }
-    },
-    onSuccess: async () => {
-      setSelected(new Set());
-      await invalidateBills();
-      toast.success("Submitted for approval");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
+    mutationFn: (ids: string[]) =>
+      runBulk(
+        ids,
+        (billId) => doSubmit({ data: { companyId: companyId!, billId } }),
+        "submitted for approval",
+      ),
   });
 
-  const rows = (billsQ.data?.rows ?? []) as BillRow[];
+  const rows = useMemo(() => (billsQ.data?.rows ?? []) as BillRow[], [billsQ.data]);
   const totalCount = billsQ.data?.totalCount ?? 0;
   const counts: Counts = summaryQ.data?.counts ?? {
     all: 0,
@@ -401,7 +443,9 @@ function BillsWorkspace() {
   };
 
   const visibleCols = useMemo(() => {
-    const order = prefs.columnOrder.length ? prefs.columnOrder : DEFAULT_BILLS_LIST_PREFS.columnOrder;
+    const order = prefs.columnOrder.length
+      ? prefs.columnOrder
+      : DEFAULT_BILLS_LIST_PREFS.columnOrder;
     const visible = new Set(prefs.visibleColumns.filter((c) => c !== "actions"));
     return order.filter((c) => c !== "actions" && visible.has(c));
   }, [prefs]);
@@ -417,17 +461,18 @@ function BillsWorkspace() {
     });
   };
 
+  // Page totals per currency - different currencies are never added together (P-21).
   const pageTotals = useMemo(() => {
-    let total = 0;
-    let paid = 0;
-    let balance = 0;
+    const byCurrency = new Map<string, { total: number; balance: number }>();
     for (const b of rows) {
-      total += b.document_total_minor;
-      paid += b.amount_paid_minor;
-      balance += b.balance_due_minor;
+      const cur = (b.currency_code || baseCurrency).toUpperCase();
+      const entry = byCurrency.get(cur) ?? { total: 0, balance: 0 };
+      entry.total += b.document_total_minor;
+      entry.balance += b.balance_due_minor;
+      byCurrency.set(cur, entry);
     }
-    return { total, paid, balance };
-  }, [rows]);
+    return [...byCurrency.entries()].map(([currency, v]) => ({ currency, ...v }));
+  }, [rows, baseCurrency]);
 
   const toggleColumn = (col: BillsListColumnId) => {
     const essential: BillsListColumnId[] = ["supplier", "reference", "status"];
@@ -442,72 +487,40 @@ function BillsWorkspace() {
     savePrefsM.mutate({ visibleColumns: next });
   };
 
-  const exportCsv = () => {
-    const headers = visibleCols.filter((c) => c !== "select" && c !== "actions");
-    const lines = [
-      headers.map((h) => COLUMN_LABELS[h]).join(","),
-      ...rows.map((b) =>
-        headers
-          .map((h) => {
-            const cur = b.currency_code || baseCurrency;
-            switch (h) {
-              case "supplier":
-                return csv(b.contacts?.name ?? "");
-              case "reference":
-                return csv(b.display_reference ?? "");
-              case "bill_date":
-                return b.bill_date;
-              case "due_date":
-                return b.due_date;
-              case "status":
-                return statusLabel(b.status);
-              case "total":
-                return fromMinorUnits(BigInt(b.document_total_minor), cur);
-              case "paid":
-                return fromMinorUnits(BigInt(b.amount_paid_minor), cur);
-              case "balance":
-                return fromMinorUnits(BigInt(b.balance_due_minor), cur);
-              case "attachments":
-                return String(b.attachment_count);
-              case "account_number":
-                return csv(b.contacts?.account_number ?? "");
-              case "bill_number":
-                return csv(b.bill_number ?? "");
-              case "supplier_invoice":
-                return csv(b.supplier_invoice_number ?? "");
-              case "approval_status":
-                return csv(approvalStatusOf(b));
-              case "payment_status":
-                return csv(paymentStatusOf(b));
-              case "days_overdue":
-                return String(b.days_overdue);
-              case "currency":
-                return cur;
-              case "exchange_rate":
-                return b.fx_rate_to_base != null ? String(b.fx_rate_to_base) : "";
-              case "tax":
-                return fromMinorUnits(BigInt(b.tax_minor), cur);
-              case "credited":
-                return fromMinorUnits(BigInt(b.amount_credited_minor), cur);
-              case "created_at":
-                return b.created_at.slice(0, 10);
-              case "updated_at":
-                return b.updated_at.slice(0, 10);
-              default:
-                return "";
-            }
-          })
-          .join(","),
-      ),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bills-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  // Export every bill that matches the current filters, not just the visible page (P-23).
+  const exportM = useMutation({
+    mutationFn: () =>
+      doExport({
+        data: {
+          companyId: companyId!,
+          tab,
+          ...(q ? { q } : {}),
+          ...(fromDate ? { fromDate } : {}),
+          ...(toDate ? { toDate } : {}),
+          dateField,
+          includeVoid,
+          overdueOnly,
+          ...(statusFilter ? { status: statusFilter } : {}),
+          sortBy,
+          sortDir,
+        },
+      }),
+    onSuccess: (result) => {
+      const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bills-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        result.truncated
+          ? `Exported the first ${result.rowCount} of ${result.totalCount} bills - narrow the filters to export the rest`
+          : `Exported ${result.rowCount} bill${result.rowCount === 1 ? "" : "s"}`,
+      );
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
 
   if (!companyId) {
     return <EmptyState title="No organisation" description="Select a company to manage bills." />;
@@ -548,10 +561,20 @@ function BillsWorkspace() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" disabled title="Document capture is not configured">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                title="Document capture is not configured"
+              >
                 Capture
               </Button>
-              <Button variant="outline" size="sm" disabled title="CSV import for bills is not configured">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                title="CSV import for bills is not configured"
+              >
                 Import
               </Button>
               <Button size="sm" asChild>
@@ -567,12 +590,22 @@ function BillsWorkspace() {
             <SummaryChip
               label="Outstanding AP"
               value={fromMinorUnits(BigInt(summaryQ.data?.outstandingMinor ?? 0), baseCurrency)}
-              hint="Authorised & partly paid balances"
+              hint={otherCurrencyHint(
+                summaryQ.data?.totalsByCurrency,
+                summaryQ.data?.baseCurrency ?? baseCurrency,
+                "outstandingMinor",
+                "Authorised & partly paid balances",
+              )}
             />
             <SummaryChip
               label="Overdue"
               value={fromMinorUnits(BigInt(summaryQ.data?.overdueMinor ?? 0), baseCurrency)}
-              hint="Past due with remaining balance"
+              hint={otherCurrencyHint(
+                summaryQ.data?.totalsByCurrency,
+                summaryQ.data?.baseCurrency ?? baseCurrency,
+                "overdueMinor",
+                "Past due with remaining balance",
+              )}
               tone="warn"
             />
             <SummaryChip
@@ -667,7 +700,9 @@ function BillsWorkspace() {
                     onChange={(e) => setSearchDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        patchSearch(searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined });
+                        patchSearch(
+                          searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined },
+                        );
                       }
                     }}
                   />
@@ -698,7 +733,9 @@ function BillsWorkspace() {
                   value={fromDate}
                   onChange={(e) =>
                     patchSearch(
-                      e.target.value ? { from: e.target.value, page: 0 } : { page: 0, from: undefined },
+                      e.target.value
+                        ? { from: e.target.value, page: 0 }
+                        : { page: 0, from: undefined },
                     )
                   }
                 />
@@ -746,7 +783,9 @@ function BillsWorkspace() {
                 <Button
                   size="sm"
                   onClick={() =>
-                    patchSearch(searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined })
+                    patchSearch(
+                      searchDraft ? { q: searchDraft, page: 0 } : { page: 0, q: undefined },
+                    )
                   }
                 >
                   Apply
@@ -837,7 +876,12 @@ function BillsWorkspace() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportM.mutate()}
+                  disabled={!rows.length || exportM.isPending}
+                >
                   <Download className="mr-1 size-4" />
                   Export
                 </Button>
@@ -851,7 +895,7 @@ function BillsWorkspace() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={bulkSubmitM.isPending}
+                    disabled={bulkSubmitM.isPending || !can("purchases.draft")}
                     onClick={() => bulkSubmitM.mutate([...selected])}
                   >
                     Submit for approval
@@ -860,7 +904,12 @@ function BillsWorkspace() {
                 {(tab === "drafts" || tab === "for_approval" || tab === "all") && (
                   <Button
                     size="sm"
-                    disabled={bulkAuthoriseM.isPending}
+                    disabled={bulkAuthoriseM.isPending || !can("purchases.authorise")}
+                    title={
+                      can("purchases.authorise")
+                        ? undefined
+                        : "You do not have permission to authorise bills"
+                    }
                     onClick={() => bulkAuthoriseM.mutate([...selected])}
                   >
                     {bulkAuthoriseM.isPending ? (
@@ -882,15 +931,18 @@ function BillsWorkspace() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
               <span>
-                {billsQ.isPending
-                  ? "Loading…"
-                  : `${totalCount} bill${totalCount === 1 ? "" : "s"}`}
+                {billsQ.isPending ? "Loading…" : `${totalCount} bill${totalCount === 1 ? "" : "s"}`}
                 {!billsQ.isPending && rows.length > 0 ? (
                   <>
                     {" · "}
-                    Page total {fromMinorUnits(BigInt(pageTotals.total), baseCurrency)}
-                    {" · "}
-                    Balance {fromMinorUnits(BigInt(pageTotals.balance), baseCurrency)}
+                    {pageTotals.map((t, i) => (
+                      <span key={t.currency}>
+                        {i > 0 ? " · " : ""}
+                        Page total {fromMinorUnits(BigInt(t.total), t.currency)} {t.currency}
+                        {" · "}
+                        Balance {fromMinorUnits(BigInt(t.balance), t.currency)} {t.currency}
+                      </span>
+                    ))}
                   </>
                 ) : null}
               </span>
@@ -956,13 +1008,20 @@ function BillsWorkspace() {
                                 else setSelected(new Set());
                               }}
                             />
-                          ) : col === "bill_date" || col === "due_date" || col === "total" || col === "status" ? (
+                          ) : col === "bill_date" ||
+                            col === "due_date" ||
+                            col === "total" ||
+                            col === "status" ? (
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 hover:underline"
                               onClick={() => {
                                 const key =
-                                  col === "total" ? "total_minor" : col === "status" ? "status" : col;
+                                  col === "total"
+                                    ? "total_minor"
+                                    : col === "status"
+                                      ? "status"
+                                      : col;
                                 patchSearch({
                                   sortBy: key,
                                   sortDir: sortBy === key && sortDir === "desc" ? "asc" : "desc",
@@ -1062,7 +1121,8 @@ function BillsWorkspace() {
                                   <TableCell key={col}>
                                     <span
                                       className={cn(
-                                        b.days_overdue > 0 && "font-medium text-amber-700 dark:text-amber-400",
+                                        b.days_overdue > 0 &&
+                                          "font-medium text-amber-700 dark:text-amber-400",
                                       )}
                                     >
                                       {b.due_date || "—"}
@@ -1093,7 +1153,10 @@ function BillsWorkspace() {
                                 return (
                                   <TableCell key={col} className="text-right tabular-nums">
                                     {b.status === "draft" || b.status === "awaiting_approval" ? (
-                                      <span className="text-muted-foreground" title="Unposted — not AP">
+                                      <span
+                                        className="text-muted-foreground"
+                                        title="Unposted — not AP"
+                                      >
                                         —
                                       </span>
                                     ) : (
@@ -1124,7 +1187,9 @@ function BillsWorkspace() {
                                 );
                               case "account_number":
                                 return (
-                                  <TableCell key={col}>{b.contacts?.account_number ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.contacts?.account_number ?? "—"}
+                                  </TableCell>
                                 );
                               case "bill_number":
                                 return (
@@ -1134,7 +1199,9 @@ function BillsWorkspace() {
                                 );
                               case "supplier_invoice":
                                 return (
-                                  <TableCell key={col}>{b.supplier_invoice_number ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.supplier_invoice_number ?? "—"}
+                                  </TableCell>
                                 );
                               case "approval_status":
                                 return <TableCell key={col}>{approvalStatusOf(b)}</TableCell>;
@@ -1151,7 +1218,9 @@ function BillsWorkspace() {
                               case "exchange_rate":
                                 return (
                                   <TableCell key={col} className="tabular-nums">
-                                    {b.fx_rate_to_base != null ? Number(b.fx_rate_to_base).toFixed(6) : "—"}
+                                    {b.fx_rate_to_base != null
+                                      ? Number(b.fx_rate_to_base).toFixed(6)
+                                      : "—"}
                                   </TableCell>
                                 );
                               case "tax":
@@ -1168,11 +1237,15 @@ function BillsWorkspace() {
                                 );
                               case "created_at":
                                 return (
-                                  <TableCell key={col}>{b.created_at?.slice(0, 10) ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.created_at?.slice(0, 10) ?? "—"}
+                                  </TableCell>
                                 );
                               case "updated_at":
                                 return (
-                                  <TableCell key={col}>{b.updated_at?.slice(0, 10) ?? "—"}</TableCell>
+                                  <TableCell key={col}>
+                                    {b.updated_at?.slice(0, 10) ?? "—"}
+                                  </TableCell>
                                 );
                               default:
                                 return <TableCell key={col}>—</TableCell>;
@@ -1210,9 +1283,18 @@ function BillsWorkspace() {
   );
 }
 
-function csv(v: string) {
-  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
-  return v;
+/** "Base currency only" hint plus any other-currency balances, never summed together. */
+function otherCurrencyHint(
+  totals: Array<{ currency: string; outstandingMinor: number; overdueMinor: number }> | undefined,
+  base: string,
+  field: "outstandingMinor" | "overdueMinor",
+  fallback: string,
+): string {
+  const others = (totals ?? []).filter((t) => t.currency !== base.toUpperCase() && t[field] > 0);
+  if (!others.length) return `${fallback} (${base})`;
+  return `${fallback} (${base}). Also ${others
+    .map((t) => `${fromMinorUnits(BigInt(t[field]), t.currency)} ${t.currency}`)
+    .join(", ")}`;
 }
 
 function SummaryChip({
@@ -1252,7 +1334,11 @@ function PreviewBody({
   tab: BillsWorkspaceTab;
 }) {
   if (!bill) {
-    return <p className="mt-4 text-sm text-muted-foreground">Bill not on this page — open the full document.</p>;
+    return (
+      <p className="mt-4 text-sm text-muted-foreground">
+        Bill not on this page — open the full document.
+      </p>
+    );
   }
   const cur = bill.currency_code || currency;
   return (
@@ -1406,7 +1492,9 @@ function RecurringPane({
           </Table>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">Amounts use organisation currency ({currency}).</p>
+      <p className="text-xs text-muted-foreground">
+        Amounts use organisation currency ({currency}).
+      </p>
     </div>
   );
 }

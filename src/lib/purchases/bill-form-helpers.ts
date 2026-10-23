@@ -21,7 +21,10 @@ export function endOfMonthIso(isoDate: string): string {
   return last.toISOString().slice(0, 10);
 }
 
-export function calculateDueDate(billDate: string, term: PaymentTermCalc | null | undefined): string {
+export function calculateDueDate(
+  billDate: string,
+  term: PaymentTermCalc | null | undefined,
+): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(billDate)) throw new Error("Invalid bill date");
   if (!term) return billDate;
   const method = term.calculation_method ?? "days_after_bill_date";
@@ -153,7 +156,9 @@ export function validateAttachmentFile(input: {
     return { ok: false, error: "Max file size: 20 MB" };
   }
   const ext = extensionOf(input.fileName);
-  if (!ATTACHMENT_ACCEPT_EXTENSIONS.includes(ext as (typeof ATTACHMENT_ACCEPT_EXTENSIONS)[number])) {
+  if (
+    !ATTACHMENT_ACCEPT_EXTENSIONS.includes(ext as (typeof ATTACHMENT_ACCEPT_EXTENSIONS)[number])
+  ) {
     return { ok: false, error: `Unsupported file type .${ext || "(none)"}` };
   }
   const ct = (input.contentType ?? "").toLowerCase().split(";")[0]?.trim() ?? "";
