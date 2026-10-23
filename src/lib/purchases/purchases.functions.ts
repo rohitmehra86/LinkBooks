@@ -10,6 +10,7 @@ import {
   nextBillStatus,
 } from "@/lib/purchases/status";
 import { buildIlikeOr, ilikePattern } from "@/lib/purchases/search-terms";
+import { isBankOrCashAccount, type AccountCandidate } from "@/lib/purchases/bank-account-rules";
 import { dueDateFromBillDate, impliedDiscountMinor } from "@/lib/purchases/po-convert";
 import { describeBillEdits, type BillEditSnapshot } from "@/lib/purchases/bill-history";
 import { type RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
@@ -4042,6 +4043,43 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
     const { data: creditNotes, error: cErr } = await cnQ;
     if (cErr) throw new Error(cErr.message);
 
+    // Opening balance: everything dated before the statement period starts (P-24).
+    let openingBalanceMinor = 0;
+    if (data.from) {
+      const sumCol = (rows: unknown, col: string) =>
+        ((rows ?? []) as Array<Record<string, number>>).reduce((n, r) => n + Number(r[col] ?? 0), 0);
+      const [priorBills, priorPays, priorCns] = await Promise.all([
+        context.supabase
+          .from("purchase_bills" as never)
+          .select("total_minor" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("contact_id" as never, data.contactId as never)
+          .not("status" as never, "in" as never, "(void,draft)" as never)
+          .lt("bill_date" as never, data.from as never),
+        context.supabase
+          .from("supplier_payments" as never)
+          .select("amount_minor" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("contact_id" as never, data.contactId as never)
+          .eq("status" as never, "paid" as never)
+          .lt("payment_date" as never, data.from as never),
+        context.supabase
+          .from("purchase_credit_notes" as never)
+          .select("total_minor" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("contact_id" as never, data.contactId as never)
+          .not("status" as never, "in" as never, "(void,draft)" as never)
+          .lt("credit_date" as never, data.from as never),
+      ]);
+      if (priorBills.error) throw new Error(priorBills.error.message);
+      if (priorPays.error) throw new Error(priorPays.error.message);
+      if (priorCns.error) throw new Error(priorCns.error.message);
+      openingBalanceMinor =
+        sumCol(priorBills.data, "total_minor") -
+        sumCol(priorPays.data, "amount_minor") -
+        sumCol(priorCns.data, "total_minor");
+    }
+
     type TimelineRow = {
       date: string;
       type: "bill" | "payment" | "credit_note";
@@ -4105,7 +4143,7 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       });
     }
     timeline.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
-    let running = 0;
+    let running = openingBalanceMinor;
     const lines = timeline.map((t) => {
       running += t.debit_minor - t.credit_minor;
       return { ...t, balance_minor: running };
@@ -4148,11 +4186,43 @@ export const getSupplierStatement = createServerFn({ method: "GET" })
       payments: payments ?? [],
       creditNotes: creditNotes ?? [],
       lines,
+      openingBalanceMinor,
       closingBalanceMinor: running,
       openBalanceMinor: open.reduce((s, r) => s + r.outstanding_minor, 0),
       unappliedCreditMinor: unappliedCredits,
       unappliedPaymentMinor: unappliedPayments,
     };
+  });
+
+// ---- Paid-from accounts ----
+
+export const listPaymentAccounts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string }) => ({ companyId: assertUuid(input.companyId) }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { data: rows, error } = await context.supabase
+      .from("accounts" as never)
+      .select(
+        "id, code, name, account_type, is_active, is_postable, archived_at, account_kind, subtype, is_payment_enabled, currency_code" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .eq("account_type" as never, "asset" as never)
+      .eq("is_active" as never, true as never)
+      .eq("is_postable" as never, true as never)
+      .order("code" as never);
+    if (error) throw new Error(error.message);
+    const bankIds = await loadBankGlAccountIds(context.supabase, data.companyId);
+    return ((rows ?? []) as unknown as Array<
+      AccountCandidate & { code: string; name: string; currency_code: string | null }
+    >)
+      .filter((a) => isBankOrCashAccount(a, bankIds))
+      .map((a) => ({
+        id: a.id,
+        code: a.code,
+        name: a.name,
+        currency_code: a.currency_code ?? null,
+      }));
   });
 
 // ---- Payment terms ----
