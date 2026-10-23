@@ -74,9 +74,21 @@ DECLARE
 BEGIN
   SELECT base_currency INTO _base FROM public.companies WHERE id = _company;
   _ccy := upper(COALESCE(NULLIF(_p->>'currency_code', ''), _base));
-  _fx := COALESCE(NULLIF(_p->>'fx_rate_to_base', '')::NUMERIC, 1);
-  IF _ccy = upper(_base) THEN _fx := 1; END IF;
-  IF _fx <= 0 THEN RAISE EXCEPTION 'Exchange rate must be positive'; END IF;
+  _fx := NULLIF(_p->>'fx_rate_to_base', '')::NUMERIC;
+  IF _ccy = upper(_base) THEN
+    _fx := 1;
+  ELSIF _fx IS NULL THEN
+    -- No rate given: settle at the rate of the first bill being paid (no FX effect), else the stored rate table.
+    SELECT b.fx_rate_to_base INTO _fx
+    FROM jsonb_array_elements(COALESCE(_p->'allocations', '[]'::JSONB)) e
+    JOIN public.purchase_bills b ON b.id = (e->>'bill_id')::UUID AND b.company_id = _company
+    WHERE b.fx_rate_to_base IS NOT NULL
+    LIMIT 1;
+    IF _fx IS NULL THEN
+      _fx := public.lookup_fx_rate_to_base(_company, _ccy::CHAR(3), _date);
+    END IF;
+  END IF;
+  IF _fx IS NULL OR _fx <= 0 THEN RAISE EXCEPTION 'Exchange rate must be positive'; END IF;
 
   -- Idempotent replay
   IF _idem IS NOT NULL THEN

@@ -52,6 +52,8 @@ export function NewPayment() {
   const [paymentDate, setPaymentDate] = useState(today);
   const [amount, setAmount] = useState("0.00");
   const [reference, setReference] = useState("");
+  const [fxRate, setFxRate] = useState("");
+  const [idempotencyKey] = useState(() => `pay-${crypto.randomUUID()}`);
   const [alloc, setAlloc] = useState<Record<string, string>>({});
   const [currencyOverride, setCurrencyOverride] = useState("");
   const [billLimit, setBillLimit] = useState(50);
@@ -161,6 +163,8 @@ export function NewPayment() {
           currencyCode: currency,
           amountMinor,
           reference,
+          fxRateToBase: currency !== baseCurrency && Number(fxRate) > 0 ? Number(fxRate) : null,
+          idempotencyKey,
           allocations,
         },
       });
@@ -260,6 +264,23 @@ export function NewPayment() {
             A payment can only be allocated to bills in its own currency.
           </p>
         </div>
+        {currency !== baseCurrency ? (
+          <div className="space-y-2">
+            <Label>
+              Exchange rate ({currency} → {baseCurrency}), optional
+            </Label>
+            <Input
+              value={fxRate}
+              inputMode="decimal"
+              placeholder="Leave blank to use the bill's rate"
+              onChange={(e) => setFxRate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              The difference to the rate the bill was booked at is posted as a realised exchange
+              gain or loss.
+            </p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <Label>Bank / cash account</Label>
           <EntityCombobox
