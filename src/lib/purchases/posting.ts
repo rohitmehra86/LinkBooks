@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { postJournal, reverseJournal } from "@/lib/accounting/posting-engine";
 import type { JournalLineDraft } from "@/lib/accounting/money";
-import { requireAccountByCode } from "@/lib/purchases/accounts";
+import { requireApControlAccount } from "@/lib/purchases/accounts";
 import { planReverseCharge } from "@/lib/tax/reverse-charge";
 
 type Client = SupabaseClient<Database>;
@@ -35,7 +35,7 @@ export async function postBillAuthorisation(
     fx_rate_to_base?: number;
   },
 ): Promise<string> {
-  const ap = await requireAccountByCode(supabase, args.company_id, "2000");
+  const ap = await requireApControlAccount(supabase, args.company_id);
   const { resolveInputTaxAccount } = await import("@/lib/tax/tax-accounts");
   const vatAcc = await resolveInputTaxAccount(supabase, args.company_id);
   const vat = { id: vatAcc.id };
@@ -190,7 +190,7 @@ export async function postSupplierPayment(
     memo?: string;
   },
 ): Promise<string> {
-  const ap = await requireAccountByCode(supabase, args.company_id, "2000");
+  const ap = await requireApControlAccount(supabase, args.company_id);
   const amount =
     typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Payment amount must be positive");
@@ -231,9 +231,11 @@ export async function postCreditNoteAuthorisation(
     currency_code: string;
     lines: BillLinePost[];
     memo?: string;
+    /** Same convention as bills: stored on the journal, amounts stay in the document currency. */
+    fx_rate_to_base?: number;
   },
 ): Promise<string> {
-  const ap = await requireAccountByCode(supabase, args.company_id, "2000");
+  const ap = await requireApControlAccount(supabase, args.company_id);
   const { resolveInputTaxAccount } = await import("@/lib/tax/tax-accounts");
   const vatAcc = await resolveInputTaxAccount(supabase, args.company_id);
   const vat = { id: vatAcc.id };
@@ -279,6 +281,7 @@ export async function postCreditNoteAuthorisation(
     source_id: args.credit_note_id,
     idempotency_key: `purchase_credit_note:${args.credit_note_id}:authorise`,
     ...(args.memo ? { memo: args.memo } : {}),
+    ...(args.fx_rate_to_base != null ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
     lines: journalLines,
   });
   return journalId;

@@ -66,6 +66,10 @@ export type BankTransferListRow = {
   from_name: string;
   to_name: string;
   created_at: string;
+  /** Set for cross-currency transfers (BK-10). */
+  to_amount_minor: number | null;
+  to_currency_code: string | null;
+  fx_difference_minor: number;
 };
 
 function isIsoDate(s: string): boolean {
@@ -466,13 +470,19 @@ export const createTransfer = createServerFn({ method: "POST" })
       transferDate: string;
       amountMinor: number;
       currencyCode: string;
+      /** Amount received in the destination account's currency (required when the currencies differ). */
+      toAmountMinor?: number | null;
       memo?: string;
     }) => {
       if (!isIsoDate(input.transferDate)) throw new Error("Transfer date must be YYYY-MM-DD");
       const amount = Math.round(Number(input.amountMinor));
       if (!Number.isSafeInteger(amount) || !(amount > 0))
         throw new Error("Transfer amount must be positive");
+      const toAmount = input.toAmountMinor == null ? null : Math.round(Number(input.toAmountMinor));
+      if (toAmount !== null && (!Number.isSafeInteger(toAmount) || !(toAmount > 0)))
+        throw new Error("Received amount must be positive");
       return {
+        toAmountMinor: toAmount,
         companyId: assertUuid(input.companyId),
         fromBankAccountId: assertUuid(input.fromBankAccountId),
         toBankAccountId: assertUuid(input.toBankAccountId),
@@ -492,8 +502,35 @@ export const createTransfer = createServerFn({ method: "POST" })
     const from = await loadBankAccount(supabase, data.companyId, data.fromBankAccountId);
     const to = await loadBankAccount(supabase, data.companyId, data.toBankAccountId);
     if (!from.is_active || !to.is_active) throw new Error("Both bank accounts must be active");
-    if (from.currency_code !== to.currency_code || from.currency_code !== data.currencyCode) {
-      throw new Error("Currency mismatch between accounts and transfer");
+    if (from.currency_code !== data.currencyCode) {
+      throw new Error("Transfer currency must be the source account's currency");
+    }
+    if (from.currency_code !== to.currency_code) {
+      // BK-10: two currencies, an amount on each side, and the difference posted to FX gain/loss.
+      if (data.toAmountMinor === null) {
+        throw new Error(`Enter the amount received in ${to.currency_code}`);
+      }
+      const fx = await tryRpc<{ id: string; journal_id: string }>(
+        supabase,
+        "create_bank_transfer_fx",
+        {
+          payload: {
+            company_id: data.companyId,
+            from_bank_account_id: data.fromBankAccountId,
+            to_bank_account_id: data.toBankAccountId,
+            transfer_date: data.transferDate,
+            from_amount_minor: data.amountMinor,
+            to_amount_minor: data.toAmountMinor,
+            memo: data.memo,
+          },
+        },
+      );
+      if (!fx.available) {
+        throw new Error(
+          `${DB_UPDATE_MESSAGE} (create_bank_transfer_fx). Cross-currency transfers need it.`,
+        );
+      }
+      return { id: fx.data.id, journalId: fx.data.journal_id };
     }
 
     // Preferred: one database transaction creates the journal and the transfer row together.
@@ -863,6 +900,31 @@ export const listBankTransfers = createServerFn({ method: "GET" })
       .order("id" as never, { ascending: false })
       .limit(100);
     if (error) throw new Error(error.message);
+    // FX columns (BK-10) are optional until the banking migration is applied.
+    const fxById = new Map<
+      string,
+      {
+        to_amount_minor: number | null;
+        to_currency_code: string | null;
+        fx_difference_minor: number;
+      }
+    >();
+    const fxRes = await supabase
+      .from("bank_transfers" as never)
+      .select("id, to_amount_minor, to_currency_code, fx_difference_minor" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .order("transfer_date" as never, { ascending: false })
+      .order("id" as never, { ascending: false })
+      .limit(100);
+    if (!fxRes.error) {
+      for (const r of (fxRes.data ?? []) as unknown as Array<Record<string, unknown>>) {
+        fxById.set(String(r["id"]), {
+          to_amount_minor: r["to_amount_minor"] == null ? null : Number(r["to_amount_minor"]),
+          to_currency_code: (r["to_currency_code"] as string | null) ?? null,
+          fx_difference_minor: Number(r["fx_difference_minor"] ?? 0),
+        });
+      }
+    } else if (!isMissingSchema(fxRes.error)) throw new Error(fxRes.error.message);
     const { data: accs } = await supabase
       .from("bank_accounts" as never)
       .select("id, name, currency_code" as never)
@@ -874,6 +936,9 @@ export const listBankTransfers = createServerFn({ method: "GET" })
     );
     return ((rows ?? []) as unknown as Array<Record<string, unknown>>).map((r) => ({
       ...(r as unknown as BankTransferListRow),
+      to_amount_minor: fxById.get(String(r["id"]))?.to_amount_minor ?? null,
+      to_currency_code: fxById.get(String(r["id"]))?.to_currency_code ?? null,
+      fx_difference_minor: fxById.get(String(r["id"]))?.fx_difference_minor ?? 0,
       from_name: names.get(String(r["from_bank_account_id"]))?.name ?? "Unknown account",
       to_name: names.get(String(r["to_bank_account_id"]))?.name ?? "Unknown account",
       currency_code: String(

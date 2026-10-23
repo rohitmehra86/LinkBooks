@@ -60,9 +60,14 @@ function PaymentsList() {
         title="Supplier payments"
         description="Full or partial payments allocated to authorised bills. Overpayments remain unallocated on the payment."
         actions={
-          <Button size="sm" asChild>
-            <Link to="/purchases/payments/new">New payment</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/purchases/payments/batch">Batch payment</Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/purchases/payments/new">New payment</Link>
+            </Button>
+          </div>
         }
       />
       {query.isPending ? (

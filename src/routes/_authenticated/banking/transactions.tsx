@@ -1,3 +1,4 @@
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -659,6 +660,9 @@ function BankTransactions() {
                                 Exclude
                               </Button>
                             </>
+                          ) : null}
+                          {t.status === "matched" ? (
+                            <ProjectTagControl lazy kind="bank_transaction" documentId={t.id} />
                           ) : null}
                           {t.status === "matched" ? (
                             canRedo ? (

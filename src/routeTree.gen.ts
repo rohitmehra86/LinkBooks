@@ -25,7 +25,9 @@ import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/h
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedProductsServicesRouteImport } from './routes/_authenticated/products-services'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedPurchasesRouteRouteImport } from './routes/_authenticated/purchases/route'
+import { Route as AuthenticatedRecurringJournalsRouteImport } from './routes/_authenticated/recurring-journals'
 import { Route as AuthenticatedSalesRouteRouteImport } from './routes/_authenticated/sales/route'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTaxRouteImport } from './routes/_authenticated/tax'
@@ -76,6 +78,7 @@ import { Route as AuthenticatedPurchasesOrdersIndexRouteImport } from './routes/
 import { Route as AuthenticatedPurchasesOrdersNewRouteImport } from './routes/_authenticated/purchases/orders.new'
 import { Route as AuthenticatedPurchasesPaymentsIndexRouteImport } from './routes/_authenticated/purchases/payments.index'
 import { Route as AuthenticatedPurchasesPaymentsPaymentIdRouteImport } from './routes/_authenticated/purchases/payments.$paymentId'
+import { Route as AuthenticatedPurchasesPaymentsBatchRouteImport } from './routes/_authenticated/purchases/payments.batch'
 import { Route as AuthenticatedPurchasesPaymentsNewRouteImport } from './routes/_authenticated/purchases/payments.new'
 import { Route as AuthenticatedSalesCreditNotesIndexRouteImport } from './routes/_authenticated/sales/credit-notes.index'
 import { Route as AuthenticatedSalesCreditNotesCreditNoteIdRouteImport } from './routes/_authenticated/sales/credit-notes.$creditNoteId'
@@ -181,10 +184,21 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedPurchasesRouteRoute =
   AuthenticatedPurchasesRouteRouteImport.update({
     id: '/purchases',
     path: '/purchases',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRecurringJournalsRoute =
+  AuthenticatedRecurringJournalsRouteImport.update({
+    id: '/recurring-journals',
+    path: '/recurring-journals',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSalesRouteRoute = AuthenticatedSalesRouteRouteImport.update({
@@ -482,6 +496,12 @@ const AuthenticatedPurchasesPaymentsPaymentIdRoute =
     path: '/payments/$paymentId',
     getParentRoute: () => AuthenticatedPurchasesRouteRoute,
   } as any)
+const AuthenticatedPurchasesPaymentsBatchRoute =
+  AuthenticatedPurchasesPaymentsBatchRouteImport.update({
+    id: '/payments/batch',
+    path: '/payments/batch',
+    getParentRoute: () => AuthenticatedPurchasesRouteRoute,
+  } as any)
 const AuthenticatedPurchasesPaymentsNewRoute =
   AuthenticatedPurchasesPaymentsNewRouteImport.update({
     id: '/payments/new',
@@ -627,6 +647,8 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/projects': typeof AuthenticatedProjectsRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
@@ -671,6 +693,7 @@ export interface FileRoutesByFullPath {
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRouteWithChildren
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -712,6 +735,8 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/projects': typeof AuthenticatedProjectsRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/': typeof AuthenticatedIndexRoute
@@ -757,6 +782,7 @@ export interface FileRoutesByTo {
   '/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
   '/sales/invoices/new': typeof AuthenticatedSalesInvoicesNewRoute
@@ -800,6 +826,8 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/products-services': typeof AuthenticatedProductsServicesRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/projects': typeof AuthenticatedProjectsRoute
+  '/_authenticated/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tax': typeof AuthenticatedTaxRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -845,6 +873,7 @@ export interface FileRoutesById {
   '/_authenticated/purchases/expenses/new': typeof AuthenticatedPurchasesExpensesNewRoute
   '/_authenticated/purchases/orders/new': typeof AuthenticatedPurchasesOrdersNewRoute
   '/_authenticated/purchases/payments/$paymentId': typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  '/_authenticated/purchases/payments/batch': typeof AuthenticatedPurchasesPaymentsBatchRoute
   '/_authenticated/purchases/payments/new': typeof AuthenticatedPurchasesPaymentsNewRoute
   '/_authenticated/sales/credit-notes/$creditNoteId': typeof AuthenticatedSalesCreditNotesCreditNoteIdRouteWithChildren
   '/_authenticated/sales/credit-notes/new': typeof AuthenticatedSalesCreditNotesNewRoute
@@ -892,6 +921,8 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/projects'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/banking/cash-coding'
@@ -936,6 +967,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
     | '/purchases/payments/$paymentId'
+    | '/purchases/payments/batch'
     | '/purchases/payments/new'
     | '/sales/credit-notes/$creditNoteId'
     | '/sales/credit-notes/new'
@@ -977,6 +1009,8 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/projects'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/'
@@ -1022,6 +1056,7 @@ export interface FileRouteTypes {
     | '/purchases/expenses/new'
     | '/purchases/orders/new'
     | '/purchases/payments/$paymentId'
+    | '/purchases/payments/batch'
     | '/purchases/payments/new'
     | '/sales/credit-notes/new'
     | '/sales/invoices/new'
@@ -1064,6 +1099,8 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/products-services'
     | '/_authenticated/profile'
+    | '/_authenticated/projects'
+    | '/_authenticated/recurring-journals'
     | '/_authenticated/settings'
     | '/_authenticated/tax'
     | '/_authenticated/'
@@ -1109,6 +1146,7 @@ export interface FileRouteTypes {
     | '/_authenticated/purchases/expenses/new'
     | '/_authenticated/purchases/orders/new'
     | '/_authenticated/purchases/payments/$paymentId'
+    | '/_authenticated/purchases/payments/batch'
     | '/_authenticated/purchases/payments/new'
     | '/_authenticated/sales/credit-notes/$creditNoteId'
     | '/_authenticated/sales/credit-notes/new'
@@ -1259,11 +1297,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/projects': {
+      id: '/_authenticated/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AuthenticatedProjectsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/purchases': {
       id: '/_authenticated/purchases'
       path: '/purchases'
       fullPath: '/purchases'
       preLoaderRoute: typeof AuthenticatedPurchasesRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/recurring-journals': {
+      id: '/_authenticated/recurring-journals'
+      path: '/recurring-journals'
+      fullPath: '/recurring-journals'
+      preLoaderRoute: typeof AuthenticatedRecurringJournalsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/sales': {
@@ -1616,6 +1668,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRouteImport
       parentRoute: typeof AuthenticatedPurchasesRouteRoute
     }
+    '/_authenticated/purchases/payments/batch': {
+      id: '/_authenticated/purchases/payments/batch'
+      path: '/payments/batch'
+      fullPath: '/purchases/payments/batch'
+      preLoaderRoute: typeof AuthenticatedPurchasesPaymentsBatchRouteImport
+      parentRoute: typeof AuthenticatedPurchasesRouteRoute
+    }
     '/_authenticated/purchases/payments/new': {
       id: '/_authenticated/purchases/payments/new'
       path: '/payments/new'
@@ -1834,6 +1893,7 @@ interface AuthenticatedPurchasesRouteRouteChildren {
   AuthenticatedPurchasesExpensesNewRoute: typeof AuthenticatedPurchasesExpensesNewRoute
   AuthenticatedPurchasesOrdersNewRoute: typeof AuthenticatedPurchasesOrdersNewRoute
   AuthenticatedPurchasesPaymentsPaymentIdRoute: typeof AuthenticatedPurchasesPaymentsPaymentIdRoute
+  AuthenticatedPurchasesPaymentsBatchRoute: typeof AuthenticatedPurchasesPaymentsBatchRoute
   AuthenticatedPurchasesPaymentsNewRoute: typeof AuthenticatedPurchasesPaymentsNewRoute
   AuthenticatedPurchasesBillsIndexRoute: typeof AuthenticatedPurchasesBillsIndexRoute
   AuthenticatedPurchasesCreditNotesIndexRoute: typeof AuthenticatedPurchasesCreditNotesIndexRoute
@@ -1866,6 +1926,8 @@ const AuthenticatedPurchasesRouteRouteChildren: AuthenticatedPurchasesRouteRoute
     AuthenticatedPurchasesOrdersNewRoute: AuthenticatedPurchasesOrdersNewRoute,
     AuthenticatedPurchasesPaymentsPaymentIdRoute:
       AuthenticatedPurchasesPaymentsPaymentIdRoute,
+    AuthenticatedPurchasesPaymentsBatchRoute:
+      AuthenticatedPurchasesPaymentsBatchRoute,
     AuthenticatedPurchasesPaymentsNewRoute:
       AuthenticatedPurchasesPaymentsNewRoute,
     AuthenticatedPurchasesBillsIndexRoute:
@@ -2007,6 +2069,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProductsServicesRoute: typeof AuthenticatedProductsServicesRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
+  AuthenticatedRecurringJournalsRoute: typeof AuthenticatedRecurringJournalsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTaxRoute: typeof AuthenticatedTaxRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -2038,6 +2102,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProductsServicesRoute: AuthenticatedProductsServicesRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
+  AuthenticatedRecurringJournalsRoute: AuthenticatedRecurringJournalsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTaxRoute: AuthenticatedTaxRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

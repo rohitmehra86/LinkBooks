@@ -53,7 +53,7 @@ export type ReportDef = {
     | "link"
     | "none";
   /** For runner "link": the existing screen that already does this job. */
-  linkTo?: "/banking/reconcile" | "/sales/statements" | "/purchases/statements";
+  linkTo?: "/banking/reconcile" | "/sales/statements" | "/purchases/statements" | "/projects";
 };
 
 export const REPORT_CATEGORIES: Array<{ id: ReportCategoryId; label: string }> = [
@@ -321,6 +321,16 @@ export const REPORT_CATALOG: ReportDef[] = [
     status: "ready",
     runner: "link",
     linkTo: "/purchases/statements",
+  },
+  {
+    id: "project-profitability",
+    title: "Project Profitability",
+    description: "Revenue, costs and profit per project from posted figures. Opens Projects.",
+    category: "management",
+    tags: ["project", "profit", "tracking"],
+    status: "ready",
+    runner: "link",
+    linkTo: "/projects",
   },
 ];
 

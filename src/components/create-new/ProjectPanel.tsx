@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 export function ProjectPanel() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
+  const qc = useQueryClient();
   const save = useServerFn(createProject);
   const fetchCustomers = useServerFn(listCustomers);
   const customersQ = useQuery({
@@ -46,9 +47,10 @@ export function ProjectPanel() {
           status: "active",
         },
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setError(null);
       toast.success("Project saved");
+      await qc.invalidateQueries({ queryKey: ["project-profitability", companyId] });
     },
     onError: (e) => setError(friendlyAuthError(e)),
   });

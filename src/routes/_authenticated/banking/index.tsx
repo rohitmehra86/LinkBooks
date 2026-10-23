@@ -15,6 +15,9 @@ import {
 } from "@/lib/banking/banking.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
+import { BankIntegrityBanner } from "@/components/banking/BankIntegrityBanner";
+import { BankAccountDetailsDialog } from "@/components/banking/BankAccountDetailsDialog";
+import { listBankAccountDetails } from "@/lib/banking/bank-ops.functions";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +60,13 @@ function BankingAccounts() {
   const qc = useQueryClient();
   const fetchSummaries = useServerFn(getBankAccountSummaries);
   const fetchGl = useServerFn(listAccounts);
+  const fetchDetails = useServerFn(listBankAccountDetails);
+  const detailsQ = useQuery({
+    queryKey: ["bank-account-details", companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => fetchDetails({ data: { companyId: companyId! } }),
+  });
+  const detailsById = new Map((detailsQ.data ?? []).map((d) => [d.bankAccountId, d]));
   const create = useServerFn(createBankAccount);
   const update = useServerFn(updateBankAccount);
 
@@ -137,6 +147,8 @@ function BankingAccounts() {
         }
       />
 
+      <BankIntegrityBanner />
+
       <Alert className="mb-6">
         <AlertDescription>
           Bank feeds: no provider is connected for this organisation. Use CSV import. An empty feed
@@ -206,6 +218,19 @@ function BankingAccounts() {
                         <dd className="numeric text-right">{fmt.money(diff, a.currencyCode)}</dd>
                       </>
                     ) : null}
+                    {detailsById.get(a.id)?.accountNumberMasked ||
+                    detailsById.get(a.id)?.ibanMasked ? (
+                      <>
+                        <dt className="text-muted-foreground">Account</dt>
+                        <dd className="text-right font-mono text-xs">
+                          {detailsById.get(a.id)?.sortCodeMasked
+                            ? `${detailsById.get(a.id)?.sortCodeMasked} `
+                            : ""}
+                          {detailsById.get(a.id)?.accountNumberMasked ??
+                            detailsById.get(a.id)?.ibanMasked}
+                        </dd>
+                      </>
+                    ) : null}
                     <dt className="text-muted-foreground">To review / matched</dt>
                     <dd className="text-right">
                       {a.uncategorisedCount} / {a.matchedCount}
@@ -257,6 +282,13 @@ function BankingAccounts() {
                         Rename
                       </Button>
                     )}
+                    <BankAccountDetailsDialog
+                      companyId={companyId}
+                      bankAccountId={a.id}
+                      accountName={a.name}
+                      currencyCode={a.currencyCode}
+                      details={detailsById.get(a.id)}
+                    />
                     {a.isActive ? (
                       <ConfirmButton
                         variant="ghost"

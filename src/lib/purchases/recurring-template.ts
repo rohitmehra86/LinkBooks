@@ -34,7 +34,9 @@ export function generatedDraftHeader(input: {
     due_date: doc.dueDate || input.nextDueDate,
     currency_code: input.currencyCode,
     status: "draft" as const,
-    supplier_invoice_number: doc.supplierInvoiceNumber || null,
+    // P-16: the supplier's own invoice number is different on every occurrence. Copying the template's
+    // number would collide with the unique (supplier, invoice number) index on the second run.
+    supplier_invoice_number: null,
     memo: doc.memo?.trim() || "Generated from recurring bill",
     tax_calculation: doc.taxCalculation || "exclusive",
     payment_term_id: doc.paymentTermId || null,

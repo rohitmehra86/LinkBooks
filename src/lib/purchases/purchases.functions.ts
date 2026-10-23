@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
+import { callSalesRpc, requireRpc } from "@/lib/sales/rpc";
 import { deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
 import { assertAllocationsAllowed, type AllocatableBill } from "@/lib/purchases/allocation";
 import {
@@ -38,7 +39,6 @@ import {
   postBillAuthorisation,
   postCreditNoteAuthorisation,
   postDirectExpense,
-  postSupplierPayment,
   voidPostedDocument,
 } from "@/lib/purchases/posting";
 import { applyReverseChargeToLines, loadTaxCodeInfo } from "@/lib/purchases/reverse-charge-lines";
@@ -998,22 +998,60 @@ export const getBillNeighbors = createServerFn({ method: "GET" })
   }))
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
-    const { data: rows, error } = await context.supabase
+    const { supabase } = context;
+    const { data: current, error: curErr } = await supabase
       .from("purchase_bills" as never)
       .select("id, bill_date" as never)
       .eq("company_id" as never, data.companyId as never)
-      .neq("status" as never, "void" as never)
-      .order("bill_date" as never, { ascending: false } as never)
-      .order("id" as never, { ascending: false } as never)
-      .limit(500);
-    if (error) throw new Error(error.message);
-    const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
-    const idx = ids.indexOf(data.billId);
+      .eq("id" as never, data.billId as never)
+      .maybeSingle();
+    if (curErr) throw new Error(curErr.message);
+    const here = current as { id: string; bill_date: string } | null;
+    if (!here) return { previousId: null, nextId: null, position: null, total: 0 };
+
+    // Keyset queries (bill_date desc, id desc): work for any bill, not only the latest 500.
+    const base = () =>
+      supabase
+        .from("purchase_bills" as never)
+        .select("id" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .neq("status" as never, "void" as never);
+    const [prev, next, before, total] = await Promise.all([
+      base()
+        .or(
+          `bill_date.gt.${here.bill_date},and(bill_date.eq.${here.bill_date},id.gt.${here.id})` as never,
+        )
+        .order("bill_date" as never, { ascending: true } as never)
+        .order("id" as never, { ascending: true } as never)
+        .limit(1),
+      base()
+        .or(
+          `bill_date.lt.${here.bill_date},and(bill_date.eq.${here.bill_date},id.lt.${here.id})` as never,
+        )
+        .order("bill_date" as never, { ascending: false } as never)
+        .order("id" as never, { ascending: false } as never)
+        .limit(1),
+      supabase
+        .from("purchase_bills" as never)
+        .select("id" as never, { count: "exact", head: true } as never)
+        .eq("company_id" as never, data.companyId as never)
+        .neq("status" as never, "void" as never)
+        .or(
+          `bill_date.gt.${here.bill_date},and(bill_date.eq.${here.bill_date},id.gt.${here.id})` as never,
+        ),
+      supabase
+        .from("purchase_bills" as never)
+        .select("id" as never, { count: "exact", head: true } as never)
+        .eq("company_id" as never, data.companyId as never)
+        .neq("status" as never, "void" as never),
+    ]);
+    for (const r of [prev, next, before, total]) if (r.error) throw new Error(r.error.message);
+    const idOf = (rows: unknown) => ((rows as Array<{ id: string }> | null) ?? [])[0]?.id ?? null;
     return {
-      previousId: idx > 0 ? ids[idx - 1]! : null,
-      nextId: idx >= 0 && idx < ids.length - 1 ? ids[idx + 1]! : null,
-      position: idx >= 0 ? idx + 1 : null,
-      total: ids.length,
+      previousId: idOf(prev.data),
+      nextId: idOf(next.data),
+      position: (before.count ?? 0) + 1,
+      total: total.count ?? 0,
     };
   });
 
@@ -1922,6 +1960,8 @@ export const getSupplierPayment = createServerFn({ method: "GET" })
     };
   });
 
+const SUPPLIER_PAYMENT_MIGRATION = "20261025300200_ops_purchases_payments_fx.sql";
+
 export const createAndPostPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -1932,8 +1972,11 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
       bankAccountId: string;
       currencyCode: string;
       amountMinor: number;
+      /** Rate to the base currency. Omitted: the rate of the bill being paid, else the stored rate. */
+      fxRateToBase?: number | null;
       reference?: string;
       memo?: string;
+      idempotencyKey?: string;
       allocations: Array<{ billId: string; amountMinor: number }>;
     }) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate)) throw new Error("Payment date required");
@@ -1952,6 +1995,8 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
           throw new Error("Allocation amounts must be positive integers");
         }
       }
+      const fx = input.fxRateToBase == null ? null : Number(input.fxRateToBase);
+      if (fx != null && !(fx > 0)) throw new Error("Exchange rate must be positive");
       return {
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
@@ -1959,191 +2004,123 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
         bankAccountId: assertUuid(input.bankAccountId, "bank account"),
         currencyCode: input.currencyCode.toUpperCase(),
         amountMinor,
+        fxRateToBase: fx,
         reference: (input.reference ?? "").trim().slice(0, 80) || null,
         memo: (input.memo ?? "").trim().slice(0, 500) || null,
+        idempotencyKey: (input.idempotencyKey ?? "").trim().slice(0, 100) || null,
         allocations,
         unallocatedMinor: amountMinor - allocated,
       };
     },
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
-    await requireBankAccount(supabase, data.companyId, data.bankAccountId);
-
-    // 1. Validate everything before writing anything.
-    const { data: supplier, error: supplierErr } = await supabase
-      .from("contacts" as never)
-      .select("id, name" as never)
-      .eq("id" as never, data.contactId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (supplierErr) throw new Error(supplierErr.message);
-    if (!supplier) throw new Error("Supplier not found in this organisation");
-
-    const billIds = [...new Set(data.allocations.map((a) => a.billId))];
-    let billRows: AllocatableBill[] = [];
-    if (billIds.length) {
-      const { data: rows, error } = await supabase
-        .from("purchase_bills" as never)
-        .select(
-          "id, status, contact_id, currency_code, total_minor, amount_paid_minor, amount_credited_minor" as never,
-        )
-        .eq("company_id" as never, data.companyId as never)
-        .in("id" as never, billIds as never);
-      if (error) throw new Error(error.message);
-      billRows = (rows ?? []) as unknown as AllocatableBill[];
-    }
-    assertAllocationsAllowed(billRows, data.allocations, {
-      contactId: data.contactId,
-      currencyCode: data.currencyCode,
-      kind: "payment",
-    });
-
-    // 2. Draft payment, then allocations. Every step is checked and undone on failure.
-    const { data: payment, error } = await supabase
-      .from("supplier_payments" as never)
-      .insert({
-        company_id: data.companyId,
-        contact_id: data.contactId,
-        payment_date: data.paymentDate,
-        bank_account_id: data.bankAccountId,
-        currency_code: data.currencyCode,
-        amount_minor: data.amountMinor,
-        unallocated_minor: data.unallocatedMinor,
-        reference: data.reference,
-        memo: data.memo,
-        status: "draft",
-        created_by: userId,
-      } as never)
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
-    const paymentId = (payment as { id: string }).id;
-
-    const discardDraftPayment = async () => {
-      await supabase
-        .from("supplier_payment_allocations" as never)
-        .delete()
-        .eq("company_id" as never, data.companyId as never)
-        .eq("payment_id" as never, paymentId as never);
-      await supabase
-        .from("supplier_payments" as never)
-        .delete()
-        .eq("company_id" as never, data.companyId as never)
-        .eq("id" as never, paymentId as never)
-        .is("posted_journal_id" as never, null as never);
-    };
-
-    if (data.allocations.length) {
-      const { error: aErr } = await supabase.from("supplier_payment_allocations" as never).insert(
-        data.allocations.map((a) => ({
-          company_id: data.companyId,
-          payment_id: paymentId,
-          bill_id: a.billId,
-          amount_minor: a.amountMinor,
-        })) as never,
-      );
-      if (aErr) {
-        await discardDraftPayment();
-        throw new Error(aErr.message);
-      }
-    }
-
-    // 3. Post the journal (idempotent per payment).
-    let journalId: string;
-    try {
-      journalId = await postSupplierPayment(supabase, {
-        company_id: data.companyId,
-        payment_id: paymentId,
-        payment_date: data.paymentDate,
-        currency_code: data.currencyCode,
-        bank_account_id: data.bankAccountId,
-        amount_minor: data.amountMinor,
-        ...(data.memo || data.reference ? { memo: (data.memo ?? data.reference) as string } : {}),
-      });
-    } catch (postError) {
-      await discardDraftPayment();
-      throw postError;
-    }
-
-    // 4. Apply to the bills with compare-and-set; undo everything (including the journal) on failure.
-    const applied: Array<{ billId: string; prev: BillSettlement }> = [];
-    const fullyPaidBillIds: string[] = [];
-    try {
-      for (const alloc of data.allocations) {
-        const prev = await adjustBillSettlement(
-          supabase,
-          data.companyId,
-          alloc.billId,
-          { paid: alloc.amountMinor },
-          nextBillStatus,
-        );
-        applied.push({ billId: alloc.billId, prev });
-      }
-      const { data: marked, error: markErr } = await supabase
-        .from("supplier_payments" as never)
-        .update({
-          status: "paid",
-          posted_journal_id: journalId,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("company_id" as never, data.companyId as never)
-        .eq("id" as never, paymentId as never)
-        .select("id");
-      if (markErr) throw new Error(markErr.message);
-      if (!marked || (marked as unknown[]).length === 0) {
-        throw new Error("The payment record could not be marked as posted");
-      }
-    } catch (applyError) {
-      for (const done of applied.reverse()) {
-        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
-      }
-      await voidPostedDocument(supabase, journalId, `supplier_payment:${paymentId}:rollback`).catch(
-        () => undefined,
-      );
-      await supabase
-        .from("supplier_payment_allocations" as never)
-        .delete()
-        .eq("company_id" as never, data.companyId as never)
-        .eq("payment_id" as never, paymentId as never);
-      await supabase
-        .from("supplier_payments" as never)
-        .update({
-          status: "void",
-          posted_journal_id: journalId,
-          memo: `Auto-reversed: ${(applyError as Error).message}`.slice(0, 500),
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("company_id" as never, data.companyId as never)
-        .eq("id" as never, paymentId as never);
-      throw new Error(
-        `The payment could not be completed and was reversed (${(applyError as Error).message}). Nothing was paid - please try again.`,
-      );
-    }
-    for (const done of applied) {
-      const alloc = data.allocations.find((a) => a.billId === done.billId);
-      if (!alloc) continue;
-      const after = nextBillStatus({
-        status: done.prev.status,
-        total_minor: billRows.find((b) => b.id === done.billId)?.total_minor ?? 0,
-        amount_paid_minor: done.prev.paid + alloc.amountMinor,
-        amount_credited_minor: done.prev.credited,
-      });
-      if (after === "paid") fullyPaidBillIds.push(done.billId);
-    }
-
-    await recordBillAudit(supabase, data.companyId, "supplier_payment.post", null, {
-      payment_id: paymentId,
-      journal_id: journalId,
-      amount_minor: data.amountMinor,
+    // One database transaction: validation, bill row locks, payment, allocations, bill settlement,
+    // the journal (with realised FX for foreign currency) and the link. Nothing is half-written.
+    const rpc = await callSalesRpc<{
+      id: string;
+      journal_id: string;
+      unallocated_minor: number;
+      realised_fx_minor: number;
+    }>(supabase, "record_supplier_payment", {
+      company_id: data.companyId,
+      contact_id: data.contactId,
       payment_date: data.paymentDate,
-      supplier_name: (supplier as { name?: string } | null)?.name ?? "",
-      bill_ids: data.allocations.map((a) => a.billId),
-      fully_paid_bill_ids: fullyPaidBillIds,
+      bank_account_id: data.bankAccountId,
+      currency_code: data.currencyCode,
+      fx_rate_to_base: data.fxRateToBase,
+      amount_minor: data.amountMinor,
+      reference: data.reference,
+      memo: data.memo,
+      idempotency_key: data.idempotencyKey,
+      allocations: data.allocations.map((a) => ({
+        bill_id: a.billId,
+        amount_minor: a.amountMinor,
+      })),
     });
+    const done = requireRpc(rpc, "record_supplier_payment", SUPPLIER_PAYMENT_MIGRATION);
+    return {
+      id: done.id,
+      journalId: done.journal_id,
+      unallocatedMinor: Number(done.unallocated_minor ?? data.unallocatedMinor),
+      realisedFxMinor: Number(done.realised_fx_minor ?? 0),
+    };
+  });
 
-    return { id: paymentId, journalId, unallocatedMinor: data.unallocatedMinor };
+/**
+ * Pay many bills in one go (batch payment). One bank account and date; one payment per supplier and
+ * currency. All payments post in a single transaction - if any bill is no longer payable, nothing posts.
+ */
+export const createBatchPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      paymentDate: string;
+      bankAccountId: string;
+      batchKey: string;
+      memo?: string;
+      payments: Array<{
+        contactId: string;
+        currencyCode: string;
+        fxRateToBase?: number | null;
+        reference?: string;
+        allocations: Array<{ billId: string; amountMinor: number }>;
+      }>;
+    }) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate)) throw new Error("Payment date required");
+      const batchKey = (input.batchKey ?? "").trim().slice(0, 80);
+      if (!batchKey) throw new Error("A batch key is required");
+      if (!input.payments?.length) throw new Error("Select at least one bill to pay");
+      if (input.payments.length > 100) throw new Error("A batch can contain at most 100 payments");
+      return {
+        companyId: assertUuid(input.companyId),
+        paymentDate: input.paymentDate,
+        bankAccountId: assertUuid(input.bankAccountId, "bank account"),
+        batchKey,
+        memo: (input.memo ?? "").trim().slice(0, 500) || null,
+        payments: input.payments.map((p) => {
+          const allocations = (p.allocations ?? []).map((a) => {
+            const amountMinor = Number(a.amountMinor);
+            if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
+              throw new Error("Allocation amounts must be positive integers");
+            }
+            return { bill_id: assertUuid(a.billId, "bill"), amount_minor: amountMinor };
+          });
+          if (!allocations.length) throw new Error("Every payment needs at least one bill");
+          const fx = p.fxRateToBase == null ? null : Number(p.fxRateToBase);
+          if (fx != null && !(fx > 0)) throw new Error("Exchange rate must be positive");
+          return {
+            contact_id: assertUuid(p.contactId, "supplier"),
+            currency_code: p.currencyCode.toUpperCase(),
+            fx_rate_to_base: fx,
+            reference: (p.reference ?? "").trim().slice(0, 80) || null,
+            allocations,
+          };
+        }),
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
+    const rpc = await callSalesRpc<{
+      count: number;
+      payments: Array<{ id: string; journal_id: string; realised_fx_minor: number }>;
+    }>(supabase, "record_supplier_payment_batch", {
+      company_id: data.companyId,
+      payment_date: data.paymentDate,
+      bank_account_id: data.bankAccountId,
+      batch_key: data.batchKey,
+      memo: data.memo,
+      payments: data.payments,
+    });
+    const done = requireRpc(rpc, "record_supplier_payment_batch", SUPPLIER_PAYMENT_MIGRATION);
+    return {
+      count: Number(done.count),
+      paymentIds: done.payments.map((p) => p.id),
+    };
   });
 
 /**
@@ -2152,120 +2129,30 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
  */
 export const reverseSupplierPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; paymentId: string; reason?: string }) => ({
-    companyId: assertUuid(input.companyId),
-    paymentId: assertUuid(input.paymentId, "payment"),
-    reason: (input.reason ?? "").trim().slice(0, 500) || null,
-  }))
+  .inputValidator(
+    (input: { companyId: string; paymentId: string; reason?: string; voidDate?: string }) => ({
+      companyId: assertUuid(input.companyId),
+      paymentId: assertUuid(input.paymentId, "payment"),
+      reason: (input.reason ?? "").trim().slice(0, 300) || null,
+      voidDate:
+        input.voidDate && /^\d{4}-\d{2}-\d{2}$/.test(input.voidDate) ? input.voidDate : null,
+    }),
+  )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
-
-    const { data: payment, error } = await supabase
-      .from("supplier_payments" as never)
-      .select("id, status, posted_journal_id, amount_minor, contact_id, memo, reference" as never)
-      .eq("id" as never, data.paymentId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!payment) throw new Error("Payment not found");
-    const p = payment as {
-      id: string;
-      status: string;
-      posted_journal_id: string | null;
-      amount_minor: number;
-      contact_id: string;
-      memo: string | null;
-      reference: string | null;
-    };
-    if (p.status === "void") throw new Error("Payment is already voided");
-    if (!p.posted_journal_id) throw new Error("Payment has no posted journal to reverse");
-
-    const { data: allocs, error: aErr } = await supabase
-      .from("supplier_payment_allocations" as never)
-      .select("id, bill_id, amount_minor" as never)
-      .eq("company_id" as never, data.companyId as never)
-      .eq("payment_id" as never, data.paymentId as never);
-    if (aErr) throw new Error(aErr.message);
-
-    const allocRows = (allocs ?? []) as Array<{ bill_id: string; amount_minor: number }>;
-
-    // Reverse the bill balances first (compare-and-set). If any bill cannot be restored, undo the
-    // ones already done and stop - the ledger has not been touched yet.
-    const restoredBills: Array<{ billId: string; prev: BillSettlement }> = [];
-    try {
-      for (const alloc of allocRows) {
-        const { data: billRow, error: billErr } = await supabase
-          .from("purchase_bills" as never)
-          .select("status" as never)
-          .eq("id" as never, alloc.bill_id as never)
-          .eq("company_id" as never, data.companyId as never)
-          .maybeSingle();
-        if (billErr) throw new Error(billErr.message);
-        if (!billRow || (billRow as { status: string }).status === "void") continue;
-        const prev = await adjustBillSettlement(
-          supabase,
-          data.companyId,
-          alloc.bill_id,
-          { paid: -Number(alloc.amount_minor) },
-          nextBillStatus,
-        );
-        restoredBills.push({ billId: alloc.bill_id, prev });
-      }
-    } catch (restoreError) {
-      for (const done of restoredBills.reverse()) {
-        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
-      }
-      throw restoreError;
-    }
-
-    let voidJournalId: string;
-    try {
-      voidJournalId = await voidPostedDocument(
-        supabase,
-        p.posted_journal_id,
-        `supplier_payment:${data.paymentId}:void`,
-      );
-    } catch (reverseError) {
-      for (const done of restoredBills.reverse()) {
-        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
-      }
-      throw reverseError;
-    }
-
-    const names = await lookupActorNames(supabase, [userId]);
-    const voidMemo = [
-      p.memo,
-      data.reason ? `Reversed: ${data.reason}` : "Reversed",
-      `by ${names.get(userId) ?? "a team member"}`,
-    ]
-      .filter(Boolean)
-      .join(" · ")
-      .slice(0, 500);
-
-    const { error: voidErr } = await supabase
-      .from("supplier_payments" as never)
-      .update({
-        status: "void",
-        memo: voidMemo,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("company_id" as never, data.companyId as never)
-      .eq("id" as never, data.paymentId as never);
-    if (voidErr) {
-      throw new Error(
-        `The payment was reversed in the ledger but its record could not be marked void (${voidErr.message}). Reload and try Reverse again - it will not post twice.`,
-      );
-    }
-
-    await recordBillAudit(supabase, data.companyId, "supplier_payment.reverse", null, {
-      payment_id: data.paymentId,
-      void_journal_id: voidJournalId,
-      reason: data.reason,
-      bill_ids: allocRows.map((a) => a.bill_id),
-    });
-
-    return { ok: true, voidJournalId };
+    const rpc = await callSalesRpc<{ id: string; void_journal_id: string }>(
+      supabase,
+      "reverse_supplier_payment",
+      {
+        company_id: data.companyId,
+        payment_id: data.paymentId,
+        reason: data.reason,
+        void_date: data.voidDate,
+      },
+    );
+    const done = requireRpc(rpc, "reverse_supplier_payment", SUPPLIER_PAYMENT_MIGRATION);
+    return { ok: true, voidJournalId: done.void_journal_id };
   });
 
 // ---- Credit notes (core) ----
@@ -2492,11 +2379,26 @@ async function authoriseCreditNoteInternal(
     });
   }
 
+  // Rate is optional: the column arrives with the ops purchases migration. Missing column = no rate.
+  const { data: fxRow, error: fxErr } = await supabase
+    .from("purchase_credit_notes" as never)
+    .select("fx_rate_to_base" as never)
+    .eq("company_id" as never, companyId as never)
+    .eq("id" as never, creditNoteId as never)
+    .maybeSingle();
+  if (fxErr && !/fx_rate_to_base|schema cache/i.test(fxErr.message)) throw new Error(fxErr.message);
+  const storedRate = Number(
+    (fxRow as { fx_rate_to_base?: number | string | null } | null)?.fx_rate_to_base,
+  );
+  const creditFx =
+    Number.isFinite(storedRate) && storedRate > 0 && storedRate !== 1 ? storedRate : null;
+
   const journalId = await postCreditNoteAuthorisation(supabase as never, {
     company_id: companyId,
     credit_note_id: creditNoteId,
     credit_date: credit.credit_date,
     currency_code: credit.currency_code,
+    ...(creditFx != null ? { fx_rate_to_base: creditFx } : {}),
     ...(credit.memo ? { memo: credit.memo } : {}),
     lines: [...credit.purchase_credit_note_lines]
       .sort((a, b) => a.line_no - b.line_no)
@@ -2563,11 +2465,18 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
       memo?: string;
       lines: CreditLineIn[];
       allocations?: Array<{ billId: string; amountMinor: number }>;
+      /** Rate to the base currency for a foreign-currency credit (blank/1 for base). */
+      fxRateToBase?: number | null;
       authorise: boolean;
     }) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.creditDate)) throw new Error("Credit date required");
       const lines = normaliseCreditLines(input.lines);
+      const fx = input.fxRateToBase == null ? null : Number(input.fxRateToBase);
+      if (fx !== null && (!Number.isFinite(fx) || !(fx > 0))) {
+        throw new Error("Exchange rate must be a positive number");
+      }
       return {
+        fxRateToBase: fx !== null && fx !== 1 ? fx : null,
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
         creditDate: input.creditDate,
@@ -2631,10 +2540,18 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
         total_minor: total,
         status: "draft",
         created_by: userId,
+        ...(data.fxRateToBase != null ? { fx_rate_to_base: data.fxRateToBase } : {}),
       } as never)
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (data.fxRateToBase != null && /fx_rate_to_base|schema cache/i.test(error.message)) {
+        throw new Error(
+          "Foreign-currency credit notes need a database update that has not been applied yet.",
+        );
+      }
+      throw new Error(error.message);
+    }
     const creditId = (cn as { id: string }).id;
     const { error: lineErr } = await supabase.from("purchase_credit_note_lines" as never).insert(
       data.lines.map((l, i) => ({

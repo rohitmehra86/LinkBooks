@@ -2,14 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
-import { postCustomerReceipt, voidPostedDocument } from "@/lib/sales/posting";
 import { callSalesRpc, requireRpc, type SalesClient } from "@/lib/sales/rpc";
-import { assertDepositAccount } from "@/lib/sales/ar-accounts";
-import {
-  validateReceiptAllocations,
-  deriveSalesInvoiceStatus,
-  type AllocatableInvoice,
-} from "@/lib/sales/allocation-rules";
 import {
   type ListQuery,
   assertReason,
@@ -375,190 +368,22 @@ export const recordReceipt = createServerFn({ method: "POST" })
         amount_minor: a.amountMinor,
       })),
     });
-    if (!rpc.missing) {
-      return {
-        id: rpc.data.receipt_id,
-        journalId: rpc.data.journal_id,
-        unallocatedMinor: Number(rpc.data.unallocated_minor),
-      };
-    }
-
-    // ---- fallback (RPC not deployed): validate FIRST, then write with compensation ----
-    await assertDepositAccount(supabase, data.companyId, data.bankAccountId);
-    const invoices = await loadAllocatable(
-      supabase,
-      data.companyId,
-      data.allocations.map((a) => a.invoiceId),
+    const done = requireRpc(
+      rpc,
+      "record_customer_receipt",
+      "20261024110200_sales_ar_receipt_credit_rpcs.sql",
     );
-    const { unallocatedMinor } = validateReceiptAllocations({
-      contactId: data.contactId,
-      currencyCode,
-      amountMinor: data.amountMinor,
-      allocations: data.allocations,
-      invoices,
-    });
-
-    const { data: inserted, error } = await supabase
-      .from("sales_receipts" as never)
-      .insert({
-        company_id: data.companyId,
-        contact_id: data.contactId,
-        receipt_date: data.receiptDate,
-        currency_code: currencyCode,
-        amount_minor: data.amountMinor,
-        unallocated_minor: data.amountMinor,
-        bank_account_id: data.bankAccountId,
-        reference: data.reference,
-        memo: data.memo,
-        status: "posted",
-        created_by: userId,
-      } as never)
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
-    const receiptId = (inserted as { id: string }).id;
-
-    const undo: Array<() => Promise<unknown>> = [];
-    const rollback = async (cause: unknown): Promise<never> => {
-      for (const fn of undo.reverse()) {
-        try {
-          await fn();
-        } catch {
-          /* best effort */
-        }
-      }
-      await supabase
-        .from("sales_receipts" as never)
-        .update({ status: "void", unallocated_minor: 0 } as never)
-        .eq("id" as never, receiptId as never);
-      throw cause instanceof Error ? cause : new Error("Receipt failed");
+    return {
+      id: done.receipt_id,
+      journalId: done.journal_id,
+      unallocatedMinor: Number(done.unallocated_minor),
     };
-
-    try {
-      const journalId = await postCustomerReceipt(supabase as never, {
-        company_id: data.companyId,
-        receipt_id: receiptId,
-        receipt_date: data.receiptDate,
-        currency_code: currencyCode,
-        fx_rate_to_base: fxRateToBase,
-        bank_account_id: data.bankAccountId,
-        amount_minor: data.amountMinor,
-        ...(data.memo ? { memo: data.memo } : {}),
-      });
-      undo.push(() =>
-        voidPostedDocument(supabase as never, journalId, `customer_receipt:${receiptId}:rollback`),
-      );
-      const { error: jErr } = await supabase
-        .from("sales_receipts" as never)
-        .update({ posted_journal_id: journalId } as never)
-        .eq("id" as never, receiptId as never);
-      if (jErr) throw new Error(jErr.message);
-
-      let remaining = data.amountMinor;
-      for (const alloc of data.allocations) {
-        const inv = invoices.get(alloc.invoiceId)!;
-        const { error: aErr } = await supabase.from("sales_receipt_allocations" as never).insert({
-          company_id: data.companyId,
-          receipt_id: receiptId,
-          invoice_id: alloc.invoiceId,
-          amount_minor: alloc.amountMinor,
-          created_by: userId,
-        } as never);
-        if (aErr) throw new Error(aErr.message);
-        undo.push(async () =>
-          supabase
-            .from("sales_receipt_allocations" as never)
-            .delete()
-            .eq("receipt_id" as never, receiptId as never)
-            .eq("invoice_id" as never, alloc.invoiceId as never),
-        );
-        const newPaid = inv.amountPaidMinor + alloc.amountMinor;
-        const status = deriveSalesInvoiceStatus({
-          totalMinor: inv.totalMinor,
-          amountPaidMinor: newPaid,
-          amountCreditedMinor: inv.amountCreditedMinor,
-        });
-        // Optimistic guard: only apply if nobody changed the invoice since we validated it.
-        const { data: bumped, error: bErr } = await supabase
-          .from("sales_invoices" as never)
-          .update({
-            amount_paid_minor: newPaid,
-            status,
-            updated_at: new Date().toISOString(),
-          } as never)
-          .eq("id" as never, alloc.invoiceId as never)
-          .eq("amount_paid_minor" as never, inv.amountPaidMinor as never)
-          .eq("amount_credited_minor" as never, inv.amountCreditedMinor as never)
-          .select("id");
-        if (bErr) throw new Error(bErr.message);
-        if (!bumped || (bumped as unknown[]).length === 0) {
-          throw new Error("An invoice changed while the receipt was being saved — please retry");
-        }
-        undo.push(async () =>
-          supabase
-            .from("sales_invoices" as never)
-            .update({
-              amount_paid_minor: inv.amountPaidMinor,
-              status: inv.status,
-            } as never)
-            .eq("id" as never, alloc.invoiceId as never),
-        );
-        remaining -= alloc.amountMinor;
-      }
-      const { error: uErr } = await supabase
-        .from("sales_receipts" as never)
-        .update({ unallocated_minor: remaining } as never)
-        .eq("id" as never, receiptId as never);
-      if (uErr) throw new Error(uErr.message);
-      return { id: receiptId, journalId, unallocatedMinor };
-    } catch (e) {
-      return rollback(e);
-    }
   });
 
 function addDays(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
-}
-
-async function loadAllocatable(
-  supabase: SalesClient,
-  companyId: string,
-  ids: string[],
-): Promise<Map<string, AllocatableInvoice>> {
-  const map = new Map<string, AllocatableInvoice>();
-  if (!ids.length) return map;
-  const { data, error } = await supabase
-    .from("sales_invoices" as never)
-    .select(
-      "id, invoice_number, status, contact_id, total_minor, amount_paid_minor, amount_credited_minor, currency_code" as never,
-    )
-    .eq("company_id" as never, companyId as never)
-    .in("id" as never, ids as never);
-  if (error) throw new Error(error.message);
-  for (const r of (data ?? []) as Array<{
-    id: string;
-    invoice_number: string | null;
-    status: string;
-    contact_id: string;
-    total_minor: number;
-    amount_paid_minor: number;
-    amount_credited_minor: number;
-    currency_code: string;
-  }>) {
-    map.set(r.id, {
-      id: r.id,
-      number: r.invoice_number,
-      contactId: r.contact_id,
-      currencyCode: r.currency_code,
-      status: r.status,
-      totalMinor: Number(r.total_minor),
-      amountPaidMinor: Number(r.amount_paid_minor),
-      amountCreditedMinor: Number(r.amount_credited_minor),
-    });
-  }
-  return map;
 }
 
 // ---- corrections (AR-05 / AR-21) — atomic RPCs only; a half-applied reversal is worse than none ----

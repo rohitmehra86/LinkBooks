@@ -19,6 +19,7 @@ vi.mock("@/lib/accounting/posting-engine", () => ({
 }));
 vi.mock("@/lib/purchases/accounts", () => ({
   requireAccountByCode: vi.fn(async () => ({ id: "ap", code: "2000" })),
+  requireApControlAccount: vi.fn(async () => ({ id: "ap", code: "2000" })),
 }));
 vi.mock("@/lib/tax/tax-accounts", () => ({
   resolveInputTaxAccount: vi.fn(async () => ({ id: "vat-in", source: "mapping" })),
