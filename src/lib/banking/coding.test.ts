@@ -15,12 +15,72 @@ const INPUT = "input-vat";
 const OUTPUT = "output-vat";
 
 const codes = new Map<string, CodingTaxCode>([
-  ["std", { id: "std", code: "S20", rateBps: 2000, treatment: "standard", taxAccountId: null, isRecoverable: true }],
-  ["zero", { id: "zero", code: "Z", rateBps: 0, treatment: "zero_rated", taxAccountId: null, isRecoverable: true }],
-  ["exempt", { id: "exempt", code: "EX", rateBps: 0, treatment: "exempt", taxAccountId: null, isRecoverable: true }],
-  ["nonrec", { id: "nonrec", code: "NR", rateBps: 2000, treatment: "standard", taxAccountId: null, isRecoverable: false }],
-  ["custom", { id: "custom", code: "C", rateBps: 1000, treatment: "reduced", taxAccountId: "custom-tax", isRecoverable: true }],
-  ["rc", { id: "rc", code: "RC", rateBps: 2000, treatment: "reverse_charge", taxAccountId: null, isRecoverable: true }],
+  [
+    "std",
+    {
+      id: "std",
+      code: "S20",
+      rateBps: 2000,
+      treatment: "standard",
+      taxAccountId: null,
+      isRecoverable: true,
+    },
+  ],
+  [
+    "zero",
+    {
+      id: "zero",
+      code: "Z",
+      rateBps: 0,
+      treatment: "zero_rated",
+      taxAccountId: null,
+      isRecoverable: true,
+    },
+  ],
+  [
+    "exempt",
+    {
+      id: "exempt",
+      code: "EX",
+      rateBps: 0,
+      treatment: "exempt",
+      taxAccountId: null,
+      isRecoverable: true,
+    },
+  ],
+  [
+    "nonrec",
+    {
+      id: "nonrec",
+      code: "NR",
+      rateBps: 2000,
+      treatment: "standard",
+      taxAccountId: null,
+      isRecoverable: false,
+    },
+  ],
+  [
+    "custom",
+    {
+      id: "custom",
+      code: "C",
+      rateBps: 1000,
+      treatment: "reduced",
+      taxAccountId: "custom-tax",
+      isRecoverable: true,
+    },
+  ],
+  [
+    "rc",
+    {
+      id: "rc",
+      code: "RC",
+      rateBps: 2000,
+      treatment: "reverse_charge",
+      taxAccountId: null,
+      isRecoverable: true,
+    },
+  ],
 ]);
 
 const base = {
@@ -31,10 +91,10 @@ const base = {
 };
 
 const sum = (lines: Array<{ debit_minor: bigint | number; credit_minor: bigint | number }>) =>
-  lines.reduce(
-    (a, l) => ({ d: a.d + BigInt(l.debit_minor), c: a.c + BigInt(l.credit_minor) }),
-    { d: 0n, c: 0n },
-  );
+  lines.reduce((a, l) => ({ d: a.d + BigInt(l.debit_minor), c: a.c + BigInt(l.credit_minor) }), {
+    d: 0n,
+    c: 0n,
+  });
 
 describe("planBankCoding", () => {
   it("money out, tax-inclusive 20%: net to expense, tax to INPUT account, gross out of bank", () => {
@@ -42,7 +102,9 @@ describe("planBankCoding", () => {
       ...base,
       statementAmountMinor: -12000n,
       treatment: "inclusive",
-      splits: [{ accountId: EXP, amountMinor: 12000n, taxCodeId: "std", description: "Stationery" }],
+      splits: [
+        { accountId: EXP, amountMinor: 12000n, taxCodeId: "std", description: "Stationery" },
+      ],
     });
     expect(p.direction).toBe("out");
     expect(p.netMinor).toBe(10000n);
@@ -133,7 +195,9 @@ describe("planBankCoding", () => {
       treatment: "inclusive",
       splits: [{ accountId: EXP, amountMinor: 11000n, taxCodeId: "custom" }],
     });
-    expect(p.lines.find((l) => l.account_id === "custom-tax")).toMatchObject({ debit_minor: 1000n });
+    expect(p.lines.find((l) => l.account_id === "custom-tax")).toMatchObject({
+      debit_minor: 1000n,
+    });
     expect(p.lines.find((l) => l.account_id === INPUT)).toBeUndefined();
   });
 
@@ -159,13 +223,23 @@ describe("planBankCoding", () => {
   it("rejects empty, zero, missing account, unknown or unsupported tax codes and missing tax accounts", () => {
     const common = { ...base, statementAmountMinor: -1000n, treatment: "inclusive" as const };
     expect(() => planBankCoding({ ...common, splits: [] })).toThrow(/at least one/);
-    expect(() => planBankCoding({ ...common, splits: [{ accountId: EXP, amountMinor: 0n }] })).toThrow(/greater than zero/);
-    expect(() => planBankCoding({ ...common, splits: [{ accountId: "", amountMinor: 1000n }] })).toThrow(/choose an account/);
     expect(() =>
-      planBankCoding({ ...common, splits: [{ accountId: EXP, amountMinor: 1000n, taxCodeId: "nope" }] }),
+      planBankCoding({ ...common, splits: [{ accountId: EXP, amountMinor: 0n }] }),
+    ).toThrow(/greater than zero/);
+    expect(() =>
+      planBankCoding({ ...common, splits: [{ accountId: "", amountMinor: 1000n }] }),
+    ).toThrow(/choose an account/);
+    expect(() =>
+      planBankCoding({
+        ...common,
+        splits: [{ accountId: EXP, amountMinor: 1000n, taxCodeId: "nope" }],
+      }),
     ).toThrow(/Unknown tax code/);
     expect(() =>
-      planBankCoding({ ...common, splits: [{ accountId: EXP, amountMinor: 1000n, taxCodeId: "rc" }] }),
+      planBankCoding({
+        ...common,
+        splits: [{ accountId: EXP, amountMinor: 1000n, taxCodeId: "rc" }],
+      }),
     ).toThrow(/Reverse-charge/);
     expect(() =>
       planBankCoding({
@@ -175,7 +249,11 @@ describe("planBankCoding", () => {
       }),
     ).toThrow(/No input tax account/);
     expect(() =>
-      planBankCoding({ ...common, statementAmountMinor: 0n, splits: [{ accountId: EXP, amountMinor: 1n }] }),
+      planBankCoding({
+        ...common,
+        statementAmountMinor: 0n,
+        splits: [{ accountId: EXP, amountMinor: 1n }],
+      }),
     ).toThrow(/zero/);
   });
 });

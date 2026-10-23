@@ -85,11 +85,13 @@ export function planBankCoding(input: CodingPlanInput): CodingPlan {
   if (input.statementAmountMinor === 0n) throw new CodingPlanError("Bank amount cannot be zero");
   if (input.splits.length === 0) throw new CodingPlanError("Add at least one coding line");
   const direction: "in" | "out" = input.statementAmountMinor > 0n ? "in" : "out";
-  const statementAbs = input.statementAmountMinor < 0n ? -input.statementAmountMinor : input.statementAmountMinor;
+  const statementAbs =
+    input.statementAmountMinor < 0n ? -input.statementAmountMinor : input.statementAmountMinor;
 
   for (const [i, s] of input.splits.entries()) {
     if (!s.accountId) throw new CodingPlanError(`Line ${i + 1}: choose an account`);
-    if (s.amountMinor <= 0n) throw new CodingPlanError(`Line ${i + 1}: amount must be greater than zero`);
+    if (s.amountMinor <= 0n)
+      throw new CodingPlanError(`Line ${i + 1}: amount must be greater than zero`);
   }
 
   const totals = computeSplitTotals(input.splits, input.treatment, input.taxCodes);
@@ -107,17 +109,22 @@ export function planBankCoding(input: CodingPlanInput): CodingPlan {
     const code = s.taxCodeId ? input.taxCodes.get(s.taxCodeId) : undefined;
     const r = totals.perSplit[i]!;
     if (code?.treatment === "reverse_charge") {
-      throw new CodingPlanError(`Reverse-charge tax code ${code.code} is not supported for bank coding`);
+      throw new CodingPlanError(
+        `Reverse-charge tax code ${code.code} is not supported for bank coding`,
+      );
     }
     const description = s.description?.trim() || input.memo?.trim() || undefined;
 
     // Tax that is not recoverable, or that does not belong on a tax control account, is part of the cost.
-    const postsToControl = code ? taxPostsToControlAccount(code.treatment, r.taxMinor) && code.isRecoverable : false;
+    const postsToControl = code
+      ? taxPostsToControlAccount(code.treatment, r.taxMinor) && code.isRecoverable
+      : false;
     let accountAmount = r.netMinor;
     if (r.taxMinor !== 0n) {
       if (postsToControl && code) {
         const taxAccountId =
-          code.taxAccountId ?? (direction === "out" ? input.inputTaxAccountId : input.outputTaxAccountId);
+          code.taxAccountId ??
+          (direction === "out" ? input.inputTaxAccountId : input.outputTaxAccountId);
         if (!taxAccountId) {
           throw new CodingPlanError(
             `No ${direction === "out" ? "input" : "output"} tax account is configured for tax code ${code.code}`,
@@ -128,7 +135,8 @@ export function planBankCoding(input: CodingPlanInput): CodingPlan {
         accountAmount += r.taxMinor;
       }
     }
-    if (accountAmount <= 0n) throw new CodingPlanError(`Line ${i + 1}: net amount must be greater than zero`);
+    if (accountAmount <= 0n)
+      throw new CodingPlanError(`Line ${i + 1}: net amount must be greater than zero`);
 
     accountLines.push({
       account_id: s.accountId,
@@ -154,7 +162,10 @@ export function planBankCoding(input: CodingPlanInput): CodingPlan {
     credit_minor: direction === "out" ? statementAbs : 0n,
   };
 
-  const lines = direction === "in" ? [bankLine, ...accountLines, ...taxLines] : [...accountLines, ...taxLines, bankLine];
+  const lines =
+    direction === "in"
+      ? [bankLine, ...accountLines, ...taxLines]
+      : [...accountLines, ...taxLines, bankLine];
   assertLinesBalance(lines);
   return {
     direction,
