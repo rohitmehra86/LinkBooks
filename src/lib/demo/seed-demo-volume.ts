@@ -284,7 +284,8 @@ export async function seedDemoVolumeData(
         .maybeSingle();
       if (exists) continue;
       const amount = i % 3 === 0 ? 10_000 + i * 250 : -(5_000 + (i % 50) * 100);
-      const status = i % 7 === 0 ? "reconciled" : i % 5 === 0 ? "matched" : "uncategorised";
+      // Always seed as uncategorised: matched/reconciled need a real journal and link (BK-05).
+      const status = "uncategorised";
       const { error } = await supabase.from("bank_transactions" as never).insert({
         company_id: companyId,
         bank_account_id: bankAccountId,

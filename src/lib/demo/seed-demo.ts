@@ -189,9 +189,9 @@ export async function seedDemoCompanyData(
   // Bank transactions (one bank account — unique gl_account_id constraint)
   if (bankAccountId) {
     const samples = [
-      { amount_minor: 1_200_000, txn_date: "2025-07-01", description: "ACME CONSULTING RECEIPT", status: "reconciled" },
-      { amount_minor: -480_000, txn_date: "2025-07-05", description: "OFFICE SUPPLIES PAYMENT", status: "reconciled" },
-      { amount_minor: -2_500, txn_date: "2025-12-15", description: "BANK SERVICE FEE", status: "matched" },
+      { amount_minor: 1_200_000, txn_date: "2025-07-01", description: "ACME CONSULTING RECEIPT", status: "uncategorised" },
+      { amount_minor: -480_000, txn_date: "2025-07-05", description: "OFFICE SUPPLIES PAYMENT", status: "uncategorised" },
+      { amount_minor: -2_500, txn_date: "2025-12-15", description: "BANK SERVICE FEE", status: "uncategorised" },
       { amount_minor: -4_200, txn_date: "2026-01-12", description: "UNKNOWN CARD PAYMENT", status: "uncategorised" },
       { amount_minor: -18_500, txn_date: "2026-01-18", description: "CLOUD HOSTING MONTHLY", status: "uncategorised" },
       { amount_minor: 350_000, txn_date: "2026-02-03", description: "BRIGHTSIDE PART PAYMENT", status: "uncategorised" },
