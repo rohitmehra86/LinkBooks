@@ -20,8 +20,8 @@ export const Route = createFileRoute("/auth")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { redirect?: string | undefined; mode?: "signin" | "signup" | undefined } => ({
-    redirect: typeof search['redirect'] === "string" ? (search['redirect'] as string) : undefined,
-    mode: search['mode'] === "signup" ? "signup" : undefined,
+    redirect: typeof search["redirect"] === "string" ? (search["redirect"] as string) : undefined,
+    mode: search["mode"] === "signup" ? "signup" : undefined,
   }),
   head: () => ({
     meta: [
@@ -91,8 +91,8 @@ function AuthPage() {
       }
       footer={
         <p className="text-xs leading-relaxed text-muted-foreground">
-          LinkBooks is in active development. Accounts are real and stored securely; the accounting
-          figures shown inside the app are still clearly-labelled demo data.
+          LinkBooks is in active development. Your account is stored securely and your organisation
+          data is kept separate from everyone else&apos;s.
         </p>
       }
     >
@@ -132,8 +132,8 @@ function SignInForm({
 
     const next: FieldErrors = {};
     const emailError = validateEmail(email);
-    if (emailError) next['email'] = emailError;
-    if (!password) next['password'] = "Password is required.";
+    if (emailError) next["email"] = emailError;
+    if (!password) next["password"] = "Password is required.";
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -167,19 +167,20 @@ function SignInForm({
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={Boolean(errors['email'])}
+          aria-invalid={Boolean(errors["email"])}
           placeholder="you@company.com"
         />
-        {errors['email'] ? <p className="text-xs text-destructive">{errors['email']}</p> : null}
+        {errors["email"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["email"]}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="signin-password">Password</Label>
-          <Link
-            to="/forgot-password"
-            className="text-xs font-medium text-primary hover:underline"
-          >
+          <Link to="/forgot-password" className="text-xs font-medium text-primary hover:underline">
             Forgot password?
           </Link>
         </div>
@@ -189,10 +190,12 @@ function SignInForm({
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          aria-invalid={Boolean(errors['password'])}
+          aria-invalid={Boolean(errors["password"])}
         />
-        {errors['password'] ? (
-          <p className="text-xs text-destructive">{errors['password']}</p>
+        {errors["password"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["password"]}
+          </p>
         ) : null}
       </div>
 
@@ -226,12 +229,12 @@ function SignUpForm({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
     setNotice(null);
 
     const next: FieldErrors = {};
-    if (fullName.trim().length < 2) next['fullName'] = "Please enter your full name.";
+    if (fullName.trim().length < 2) next["fullName"] = "Please enter your full name.";
     const emailError = validateEmail(email);
-    if (emailError) next['email'] = emailError;
+    if (emailError) next["email"] = emailError;
     const passwordError = validatePassword(password);
-    if (passwordError) next['password'] = passwordError;
-    if (confirm !== password) next['confirm'] = "Passwords do not match.";
+    if (passwordError) next["password"] = passwordError;
+    if (confirm !== password) next["confirm"] = "Passwords do not match.";
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -278,11 +281,13 @@ function SignUpForm({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
           autoComplete="name"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          aria-invalid={Boolean(errors['fullName'])}
+          aria-invalid={Boolean(errors["fullName"])}
           placeholder="Alex Morgan"
         />
-        {errors['fullName'] ? (
-          <p className="text-xs text-destructive">{errors['fullName']}</p>
+        {errors["fullName"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["fullName"]}
+          </p>
         ) : null}
       </div>
 
@@ -294,10 +299,14 @@ function SignUpForm({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={Boolean(errors['email'])}
+          aria-invalid={Boolean(errors["email"])}
           placeholder="you@company.com"
         />
-        {errors['email'] ? <p className="text-xs text-destructive">{errors['email']}</p> : null}
+        {errors["email"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["email"]}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -308,13 +317,15 @@ function SignUpForm({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          aria-invalid={Boolean(errors['password'])}
+          aria-invalid={Boolean(errors["password"])}
         />
         <p className="text-xs text-muted-foreground">
           At least 8 characters, including a letter and a number.
         </p>
-        {errors['password'] ? (
-          <p className="text-xs text-destructive">{errors['password']}</p>
+        {errors["password"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["password"]}
+          </p>
         ) : null}
       </div>
 
@@ -326,10 +337,12 @@ function SignUpForm({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          aria-invalid={Boolean(errors['confirm'])}
+          aria-invalid={Boolean(errors["confirm"])}
         />
-        {errors['confirm'] ? (
-          <p className="text-xs text-destructive">{errors['confirm']}</p>
+        {errors["confirm"] ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errors["confirm"]}
+          </p>
         ) : null}
       </div>
 

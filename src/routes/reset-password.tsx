@@ -70,8 +70,8 @@ function ResetPasswordPage() {
 
     const next: Record<string, string> = {};
     const passwordError = validatePassword(password);
-    if (passwordError) next['password'] = passwordError;
-    if (confirm !== password) next['confirm'] = "Passwords do not match.";
+    if (passwordError) next["password"] = passwordError;
+    if (confirm !== password) next["confirm"] = "Passwords do not match.";
     setFieldErrors(next);
     if (Object.keys(next).length > 0) return;
 
@@ -140,13 +140,15 @@ function ResetPasswordPage() {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={Boolean(fieldErrors['password'])}
+              aria-invalid={Boolean(fieldErrors["password"])}
             />
             <p className="text-xs text-muted-foreground">
               At least 8 characters, including a letter and a number.
             </p>
-            {fieldErrors['password'] ? (
-              <p className="text-xs text-destructive">{fieldErrors['password']}</p>
+            {fieldErrors["password"] ? (
+              <p role="alert" className="text-xs text-destructive">
+                {fieldErrors["password"]}
+              </p>
             ) : null}
           </div>
 
@@ -158,10 +160,12 @@ function ResetPasswordPage() {
               autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              aria-invalid={Boolean(fieldErrors['confirm'])}
+              aria-invalid={Boolean(fieldErrors["confirm"])}
             />
-            {fieldErrors['confirm'] ? (
-              <p className="text-xs text-destructive">{fieldErrors['confirm']}</p>
+            {fieldErrors["confirm"] ? (
+              <p role="alert" className="text-xs text-destructive">
+                {fieldErrors["confirm"]}
+              </p>
             ) : null}
           </div>
 
