@@ -54,6 +54,8 @@ import { Route as AuthenticatedSalesCustomersRouteImport } from './routes/_authe
 import { Route as AuthenticatedSalesRecurringRouteImport } from './routes/_authenticated/sales/recurring'
 import { Route as AuthenticatedSalesSettingsRouteImport } from './routes/_authenticated/sales/settings'
 import { Route as AuthenticatedSalesStatementsRouteImport } from './routes/_authenticated/sales/statements'
+import { Route as AuthenticatedBankingJournalJournalIdRouteImport } from './routes/_authenticated/banking/journal.$journalId'
+import { Route as AuthenticatedBankingReconciliationReportSessionIdRouteImport } from './routes/_authenticated/banking/reconciliation-report.$sessionId'
 import { Route as AuthenticatedPurchasesBillsIndexRouteImport } from './routes/_authenticated/purchases/bills.index'
 import { Route as AuthenticatedPurchasesBillsBillIdRouteImport } from './routes/_authenticated/purchases/bills.$billId'
 import { Route as AuthenticatedPurchasesBillsNewRouteImport } from './routes/_authenticated/purchases/bills.new'
@@ -336,6 +338,18 @@ const AuthenticatedSalesStatementsRoute =
     path: '/statements',
     getParentRoute: () => AuthenticatedSalesRouteRoute,
   } as any)
+const AuthenticatedBankingJournalJournalIdRoute =
+  AuthenticatedBankingJournalJournalIdRouteImport.update({
+    id: '/journal/$journalId',
+    path: '/journal/$journalId',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
+const AuthenticatedBankingReconciliationReportSessionIdRoute =
+  AuthenticatedBankingReconciliationReportSessionIdRouteImport.update({
+    id: '/reconciliation-report/$sessionId',
+    path: '/reconciliation-report/$sessionId',
+    getParentRoute: () => AuthenticatedBankingRouteRoute,
+  } as any)
 const AuthenticatedPurchasesBillsIndexRoute =
   AuthenticatedPurchasesBillsIndexRouteImport.update({
     id: '/bills/',
@@ -544,6 +558,8 @@ export interface FileRoutesByFullPath {
   '/purchases/': typeof AuthenticatedPurchasesIndexRoute
   '/reports/': typeof AuthenticatedReportsIndexRoute
   '/sales/': typeof AuthenticatedSalesIndexRoute
+  '/banking/journal/$journalId': typeof AuthenticatedBankingJournalJournalIdRoute
+  '/banking/reconciliation-report/$sessionId': typeof AuthenticatedBankingReconciliationReportSessionIdRoute
   '/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRouteWithChildren
   '/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
   '/purchases/credit-notes/$creditNoteId': typeof AuthenticatedPurchasesCreditNotesCreditNoteIdRoute
@@ -614,6 +630,8 @@ export interface FileRoutesByTo {
   '/purchases': typeof AuthenticatedPurchasesIndexRoute
   '/reports': typeof AuthenticatedReportsIndexRoute
   '/sales': typeof AuthenticatedSalesIndexRoute
+  '/banking/journal/$journalId': typeof AuthenticatedBankingJournalJournalIdRoute
+  '/banking/reconciliation-report/$sessionId': typeof AuthenticatedBankingReconciliationReportSessionIdRoute
   '/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRouteWithChildren
   '/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
   '/purchases/credit-notes/$creditNoteId': typeof AuthenticatedPurchasesCreditNotesCreditNoteIdRoute
@@ -689,6 +707,8 @@ export interface FileRoutesById {
   '/_authenticated/purchases/': typeof AuthenticatedPurchasesIndexRoute
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
   '/_authenticated/sales/': typeof AuthenticatedSalesIndexRoute
+  '/_authenticated/banking/journal/$journalId': typeof AuthenticatedBankingJournalJournalIdRoute
+  '/_authenticated/banking/reconciliation-report/$sessionId': typeof AuthenticatedBankingReconciliationReportSessionIdRoute
   '/_authenticated/purchases/bills/$billId': typeof AuthenticatedPurchasesBillsBillIdRouteWithChildren
   '/_authenticated/purchases/bills/new': typeof AuthenticatedPurchasesBillsNewRoute
   '/_authenticated/purchases/credit-notes/$creditNoteId': typeof AuthenticatedPurchasesCreditNotesCreditNoteIdRoute
@@ -764,6 +784,8 @@ export interface FileRouteTypes {
     | '/purchases/'
     | '/reports/'
     | '/sales/'
+    | '/banking/journal/$journalId'
+    | '/banking/reconciliation-report/$sessionId'
     | '/purchases/bills/$billId'
     | '/purchases/bills/new'
     | '/purchases/credit-notes/$creditNoteId'
@@ -834,6 +856,8 @@ export interface FileRouteTypes {
     | '/purchases'
     | '/reports'
     | '/sales'
+    | '/banking/journal/$journalId'
+    | '/banking/reconciliation-report/$sessionId'
     | '/purchases/bills/$billId'
     | '/purchases/bills/new'
     | '/purchases/credit-notes/$creditNoteId'
@@ -908,6 +932,8 @@ export interface FileRouteTypes {
     | '/_authenticated/purchases/'
     | '/_authenticated/reports/'
     | '/_authenticated/sales/'
+    | '/_authenticated/banking/journal/$journalId'
+    | '/_authenticated/banking/reconciliation-report/$sessionId'
     | '/_authenticated/purchases/bills/$billId'
     | '/_authenticated/purchases/bills/new'
     | '/_authenticated/purchases/credit-notes/$creditNoteId'
@@ -1261,6 +1287,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSalesStatementsRouteImport
       parentRoute: typeof AuthenticatedSalesRouteRoute
     }
+    '/_authenticated/banking/journal/$journalId': {
+      id: '/_authenticated/banking/journal/$journalId'
+      path: '/journal/$journalId'
+      fullPath: '/banking/journal/$journalId'
+      preLoaderRoute: typeof AuthenticatedBankingJournalJournalIdRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
+    '/_authenticated/banking/reconciliation-report/$sessionId': {
+      id: '/_authenticated/banking/reconciliation-report/$sessionId'
+      path: '/reconciliation-report/$sessionId'
+      fullPath: '/banking/reconciliation-report/$sessionId'
+      preLoaderRoute: typeof AuthenticatedBankingReconciliationReportSessionIdRouteImport
+      parentRoute: typeof AuthenticatedBankingRouteRoute
+    }
     '/_authenticated/purchases/bills/': {
       id: '/_authenticated/purchases/bills/'
       path: '/bills'
@@ -1463,6 +1503,8 @@ interface AuthenticatedBankingRouteRouteChildren {
   AuthenticatedBankingTransactionsRoute: typeof AuthenticatedBankingTransactionsRoute
   AuthenticatedBankingTransfersRoute: typeof AuthenticatedBankingTransfersRoute
   AuthenticatedBankingIndexRoute: typeof AuthenticatedBankingIndexRoute
+  AuthenticatedBankingJournalJournalIdRoute: typeof AuthenticatedBankingJournalJournalIdRoute
+  AuthenticatedBankingReconciliationReportSessionIdRoute: typeof AuthenticatedBankingReconciliationReportSessionIdRoute
 }
 
 const AuthenticatedBankingRouteRouteChildren: AuthenticatedBankingRouteRouteChildren =
@@ -1478,6 +1520,10 @@ const AuthenticatedBankingRouteRouteChildren: AuthenticatedBankingRouteRouteChil
       AuthenticatedBankingTransactionsRoute,
     AuthenticatedBankingTransfersRoute: AuthenticatedBankingTransfersRoute,
     AuthenticatedBankingIndexRoute: AuthenticatedBankingIndexRoute,
+    AuthenticatedBankingJournalJournalIdRoute:
+      AuthenticatedBankingJournalJournalIdRoute,
+    AuthenticatedBankingReconciliationReportSessionIdRoute:
+      AuthenticatedBankingReconciliationReportSessionIdRoute,
   }
 
 const AuthenticatedBankingRouteRouteWithChildren =

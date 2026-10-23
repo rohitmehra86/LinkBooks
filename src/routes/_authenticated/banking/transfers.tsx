@@ -1,22 +1,55 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { createTransfer, listBankAccounts, listBankTransfers, voidTransfer } from "@/lib/banking/banking.functions";
-import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
+import {
+  createTransfer,
+  listBankAccounts,
+  listBankTransfers,
+  voidTransfer,
+  type BankTransferListRow,
+} from "@/lib/banking/banking.functions";
+import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { ConfirmButton } from "@/components/banking/ConfirmButton";
+import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+type Search = { bankAccountId?: string; amount?: string; direction?: "in" | "out" };
 
 export const Route = createFileRoute("/_authenticated/banking/transfers")({
+  // Prefill from "Create transfer from this line": the statement line's account is the destination for money in
+  // and the source for money out.
+  validateSearch: (s: Record<string, unknown>): Search => {
+    const out: Search = {};
+    if (typeof s["bankAccountId"] === "string" && s["bankAccountId"])
+      out.bankAccountId = s["bankAccountId"];
+    if (typeof s["amount"] === "string" && s["amount"]) out.amount = s["amount"];
+    if (s["direction"] === "in" || s["direction"] === "out") out.direction = s["direction"];
+    return out;
+  },
   head: () => ({ meta: [{ title: "Transfers — LinkBooks" }] }),
   component: Transfers,
 });
@@ -24,18 +57,26 @@ export const Route = createFileRoute("/_authenticated/banking/transfers")({
 export function Transfers() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
+  const search = Route.useSearch();
   const today = new Date().toISOString().slice(0, 10);
   const qc = useQueryClient();
   const fetchAccounts = useServerFn(listBankAccounts);
   const fetchTransfers = useServerFn(listBankTransfers);
   const doTransfer = useServerFn(createTransfer);
   const doVoid = useServerFn(voidTransfer);
-  const [fromId, setFromId] = useState("");
-  const [toId, setToId] = useState("");
+  const [fromId, setFromId] = useState(
+    search.direction === "out" ? (search.bankAccountId ?? "") : "",
+  );
+  const [toId, setToId] = useState(search.direction === "in" ? (search.bankAccountId ?? "") : "");
   const [date, setDate] = useState(today);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(search.amount ?? "");
   const [memo, setMemo] = useState("");
+
+  useEffect(() => {
+    if (search.direction === "out" && search.bankAccountId) setFromId(search.bankAccountId);
+    if (search.direction === "in" && search.bankAccountId) setToId(search.bankAccountId);
+    if (search.amount) setAmount(search.amount);
+  }, [search.bankAccountId, search.direction, search.amount]);
 
   const accountsQ = useQuery({
     queryKey: ["bank-accounts", companyId],
@@ -48,22 +89,39 @@ export function Transfers() {
     queryFn: () => fetchTransfers({ data: { companyId: companyId! } }),
   });
 
+  const accounts = accountsQ.data ?? [];
+  const fromAcc = accounts.find((a) => a.id === fromId);
+  const toAcc = accounts.find((a) => a.id === toId);
+  const currency = fromAcc?.currency_code ?? company?.base_currency ?? "GBP";
+  const currencyMismatch = Boolean(
+    fromAcc && toAcc && fromAcc.currency_code !== toAcc.currency_code,
+  );
+  const amountMinor = moneyFieldMinor(amount, currency, { allowNegative: false });
+  const canPost =
+    Boolean(fromId && toId && fromId !== toId) &&
+    amountMinor !== null &&
+    amountMinor > 0n &&
+    !currencyMismatch;
+
   const mutation = useMutation({
-    mutationFn: () => doTransfer({
-      data: {
-        companyId: companyId!,
-        fromBankAccountId: fromId,
-        toBankAccountId: toId,
-        transferDate: date,
-        amountMinor: Number(toMinorUnits(amount || "0", currency)),
-        currencyCode: currency,
-        memo,
-      },
-    }),
-    onSuccess: async (r) => {
-      toast.success(`Transfer posted (journal ${r.journalId.slice(0, 8)}…). One journal only.`);
-      setAmount(""); setMemo("");
+    mutationFn: () =>
+      doTransfer({
+        data: {
+          companyId: companyId!,
+          fromBankAccountId: fromId,
+          toBankAccountId: toId,
+          transferDate: date,
+          amountMinor: Number(amountMinor),
+          currencyCode: currency,
+          memo,
+        },
+      }),
+    onSuccess: async () => {
+      toast.success("Transfer posted. One journal only.");
+      setAmount("");
+      setMemo("");
       await qc.invalidateQueries({ queryKey: ["bank-transfers", companyId] });
+      await qc.invalidateQueries({ queryKey: ["bank-account-summaries", companyId] });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -80,32 +138,72 @@ export function Transfers() {
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (accountsQ.isPending) return <LoadingState />;
 
-  const accounts = (accountsQ.data ?? []) as Array<{ id: string; name: string }>;
-
   return (
     <>
-      <PageHeader title="Transfers"
-        description="Moves money between bank/cash accounts with a single DR/CR journal. No duplicate ledger entries." />
+      <PageHeader
+        title="Transfers"
+        description="Moves money between your bank/cash accounts with a single DR/CR journal, so nothing is counted twice. Match the statement lines on both accounts to it afterwards."
+      />
       <div className="grid max-w-md gap-3">
-        <div className="space-y-1"><Label>From</Label>
+        <div className="space-y-1">
+          <Label>From</Label>
           <Select value={fromId} onValueChange={setFromId}>
-            <SelectTrigger><SelectValue placeholder="Source" /></SelectTrigger>
-            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            <SelectTrigger aria-label="From account">
+              <SelectValue placeholder="Source" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name} ({a.currency_code})
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label>To</Label>
+        <div className="space-y-1">
+          <Label>To</Label>
           <Select value={toId} onValueChange={setToId}>
-            <SelectTrigger><SelectValue placeholder="Destination" /></SelectTrigger>
-            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            <SelectTrigger aria-label="To account">
+              <SelectValue placeholder="Destination" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name} ({a.currency_code})
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label>Date</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div className="space-y-1"><Label>Amount</Label>
-          <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
-        <div className="space-y-1"><Label>Memo</Label>
-          <Input value={memo} onChange={(e) => setMemo(e.target.value)} /></div>
-        <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+        {currencyMismatch ? (
+          <p className="text-sm text-destructive">
+            These accounts are in different currencies. Cross-currency transfers are not supported
+            here.
+          </p>
+        ) : null}
+        <div className="space-y-1">
+          <Label>Date</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label>Amount ({currency})</Label>
+          <MoneyField
+            label="Transfer amount"
+            value={amount}
+            currency={currency}
+            options={{ allowNegative: false }}
+            onChange={setAmount}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label>Memo</Label>
+          <Input value={memo} maxLength={500} onChange={(e) => setMemo(e.target.value)} />
+        </div>
+        <Button
+          size="sm"
+          disabled={mutation.isPending || !canPost}
+          onClick={() => mutation.mutate()}
+        >
           {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null} Post transfer
         </Button>
       </div>
@@ -120,41 +218,38 @@ export function Transfers() {
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
-              <TableHead>Amount</TableHead>
+              <TableHead>From</TableHead>
+              <TableHead>To</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
               <TableHead>Memo</TableHead>
               <TableHead>Status</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(
-              (transfersQ.data ?? []) as Array<{
-                id: string;
-                transfer_date: string;
-                amount_minor: number;
-                memo: string | null;
-                status: string;
-              }>
-            ).map((t) => (
+            {(transfersQ.data as BankTransferListRow[]).map((t) => (
               <TableRow key={t.id}>
                 <TableCell>{t.transfer_date}</TableCell>
-                <TableCell>{fromMinorUnits(t.amount_minor, currency)}</TableCell>
+                <TableCell>{t.from_name}</TableCell>
+                <TableCell>{t.to_name}</TableCell>
+                <TableCell className="text-right font-mono">
+                  {fromMinorUnits(t.amount_minor, t.currency_code || currency)} {t.currency_code}
+                </TableCell>
                 <TableCell>{t.memo ?? "—"}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{t.status}</Badge>
                 </TableCell>
                 <TableCell>
                   {t.status === "posted" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
+                    <ConfirmButton
+                      title="Void this transfer?"
+                      description="A reversing journal is posted and the transfer is marked void."
+                      confirmLabel="Void"
                       disabled={voidM.isPending}
-                      onClick={() => {
-                        if (confirm("Void this transfer with a reversal journal?")) voidM.mutate(t.id);
-                      }}
+                      onConfirm={() => voidM.mutate(t.id)}
                     >
                       Void
-                    </Button>
+                    </ConfirmButton>
                   ) : null}
                 </TableCell>
               </TableRow>
