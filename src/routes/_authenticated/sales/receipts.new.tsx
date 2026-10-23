@@ -109,19 +109,26 @@ function ReceiptForm({
     setDatesReady(true);
   }, [datesReady, configQ.data, today, base]);
 
-  const deposits = (depositsQ.data ?? []) as Array<{ id: string; code: string; name: string }>;
+  const deposits = useMemo(
+    () => (depositsQ.data ?? []) as Array<{ id: string; code: string; name: string }>,
+    [depositsQ.data],
+  );
   useEffect(() => {
     if (!bankAccountId && deposits.length === 1) setBankAccountId(deposits[0]!.id);
   }, [deposits, bankAccountId]);
 
-  const open = (openQ.data ?? []) as Array<{
-    id: string;
-    invoice_number: string | null;
-    invoice_date: string;
-    due_date: string;
-    currency_code: string;
-    outstanding_minor: number;
-  }>;
+  const open = useMemo(
+    () =>
+      (openQ.data ?? []) as Array<{
+        id: string;
+        invoice_number: string | null;
+        invoice_date: string;
+        due_date: string;
+        currency_code: string;
+        outstanding_minor: number;
+      }>,
+    [openQ.data],
+  );
 
   // "Record receipt" from an invoice page: preselect that invoice, its currency and its balance.
   useEffect(() => {

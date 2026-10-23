@@ -220,11 +220,15 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
     setSourceApplied(true);
   }, [sourceApplied, sourceInvQ.data]);
 
-  const customers = (customersQ.data ?? []) as Array<{
-    id: string;
-    name: string;
-    payment_terms_days: number | null;
-  }>;
+  const customers = useMemo(
+    () =>
+      (customersQ.data ?? []) as Array<{
+        id: string;
+        name: string;
+        payment_terms_days: number | null;
+      }>,
+    [customersQ.data],
+  );
   const customerOptions = useMemo(
     () => customers.map((c) => ({ value: c.id, label: c.name })),
     [customers],
