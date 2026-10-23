@@ -334,9 +334,10 @@ export async function seedDemoCompanyData(
     tax: 60_000,
     total: 360_000,
     paid: 0,
-    status: "authorised",
+    // Draft until authorised via posting engine — no orphan AR without a journal.
+    status: "draft",
     accountId: revenueId,
-    description: "Strategy workshop (overdue sample)",
+    description: "Strategy workshop (draft sample)",
   });
   documents += await upsertDemoInvoice(supabase, {
     companyId,
@@ -764,6 +765,7 @@ export async function seedDemoCompanyData(
 
   // Authoritative ledger via PostingEngine (unchanged totals)
   let journalsPosted = 0;
+  const journalByKey = new Map<string, string>();
   for (const spec of DEMO_JOURNAL_SPECS) {
     const lines = spec.lines.map((l) => {
       const account_id = byCode.get(l.code);
@@ -781,23 +783,35 @@ export async function seedDemoCompanyData(
       if (l.description) line.description = l.description;
       return line;
     });
+    const idem = `${spec.key}:${companyId}`;
     try {
-      await postJournal(supabase, {
+      const { journalId } = await postJournal(supabase, {
         company_id: companyId,
         journal_date: spec.date,
         memo: spec.memo,
         currency_code: DEMO_CURRENCY,
         fx_rate_to_base: 1,
         source_type: spec.source_type,
-        idempotency_key: `${spec.key}:${companyId}`,
+        idempotency_key: idem,
         lines,
       });
+      journalByKey.set(spec.key, journalId);
       journalsPosted += 1;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!/idempoten|already|duplicate/i.test(msg)) throw e;
+      const { data: existing } = await supabase
+        .from("journals" as never)
+        .select("id" as never)
+        .eq("company_id" as never, companyId as never)
+        .eq("idempotency_key" as never, idem as never)
+        .maybeSingle();
+      if (existing) journalByKey.set(spec.key, (existing as { id: string }).id);
     }
   }
+
+  // Link canonical documents to their posted journals so AR/AP ageing matches the GL.
+  await linkDemoDocumentsToJournals(supabase, companyId, journalByKey);
 
   await supabase.rpc("record_audit_event" as never, {
     _company_id: companyId,
@@ -1012,4 +1026,61 @@ async function upsertDemoBill(
     tax_rate_bps: 2000,
   } as never);
   return 1;
+}
+
+/** Map canonical demo docs to journals created from DEMO_JOURNAL_SPECS. */
+async function linkDemoDocumentsToJournals(
+  supabase: Client,
+  companyId: string,
+  journalByKey: Map<string, string>,
+) {
+  const invoiceLinks: Array<{ number: string; key: string }> = [
+    { number: "INV-1001", key: "demo:inv-1001" },
+    { number: "INV-1002", key: "demo:inv-1002" },
+  ];
+  for (const link of invoiceLinks) {
+    const jid = journalByKey.get(link.key);
+    if (!jid) continue;
+    await supabase
+      .from("sales_invoices" as never)
+      .update({ posted_journal_id: jid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("invoice_number" as never, link.number as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const billLinks: Array<{ number: string; key: string }> = [
+    { number: "BILL-2001", key: "demo:bill-2001" },
+    { number: "BILL-2002", key: "demo:bill-2002" },
+  ];
+  for (const link of billLinks) {
+    const jid = journalByKey.get(link.key);
+    if (!jid) continue;
+    await supabase
+      .from("purchase_bills" as never)
+      .update({ posted_journal_id: jid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("bill_number" as never, link.number as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const creditJid = journalByKey.get("demo:scn-1");
+  if (creditJid) {
+    await supabase
+      .from("sales_credit_notes" as never)
+      .update({ posted_journal_id: creditJid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("credit_number" as never, "SCN-1" as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const receiptJid = journalByKey.get("demo:rcp-1001");
+  if (receiptJid) {
+    await supabase
+      .from("sales_receipts" as never)
+      .update({ posted_journal_id: receiptJid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("reference" as never, "RCP-1001" as never)
+      .is("posted_journal_id" as never, null as never);
+  }
 }

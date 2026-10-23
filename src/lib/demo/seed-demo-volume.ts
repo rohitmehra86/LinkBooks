@@ -146,9 +146,9 @@ export async function seedDemoVolumeData(
     if (!error) products += 1;
   }
 
-  // ~120 invoice shells for list/perf. Must stay draft or paid-without-journal so
-  // AR ageing (posted_journal_id only) never mixes UI shells into the subledger.
-  const statuses = ["draft", "draft", "draft", "paid", "draft", "draft"] as const;
+  // ~120 invoice shells for list/perf. Draft-only — never authorised/paid without a
+  // posted_journal_id, so AR ageing and open-balance UI cannot diverge from the GL.
+  const statuses = ["draft", "draft", "draft", "draft", "draft", "draft"] as const;
   for (let i = 0; i < 120; i++) {
     const num = `INV-V${String(2000 + i).padStart(4, "0")}`;
     const { data: exists } = await supabase
@@ -210,8 +210,8 @@ export async function seedDemoVolumeData(
     invoices += 1;
   }
 
-  // ~80 bill shells — draft/paid only (no authorised without posted_journal_id)
-  const billStatuses = ["draft", "draft", "paid", "draft", "draft"] as const;
+  // ~80 bill shells — draft-only (no authorised/paid without posted_journal_id)
+  const billStatuses = ["draft", "draft", "draft", "draft", "draft"] as const;
   for (let i = 0; i < 80; i++) {
     const num = `BILL-V${String(3000 + i).padStart(4, "0")}`;
     const { data: exists } = await supabase
