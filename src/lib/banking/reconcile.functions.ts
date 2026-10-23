@@ -69,18 +69,19 @@ async function loadLedgerLines(
   glAccountId: string,
   asOf: string,
 ): Promise<LedgerRow[]> {
-  const rows = await fetchAllPages<LedgerRow>((a, b) =>
-    supabase
-      .from("journal_lines" as never)
-      .select(
-        "id, description, debit_minor, credit_minor, journals!inner(journal_number, journal_date, status, source_type, memo, reversed_by_journal_id, reverses_journal_id)" as never,
-      )
-      .eq("company_id" as never, companyId as never)
-      .eq("account_id" as never, glAccountId as never)
-      .eq("journals.status" as never, "posted" as never)
-      .lte("journals.journal_date" as never, asOf as never)
-      .order("id" as never)
-      .range(a, b) as never,
+  const rows = await fetchAllPages<LedgerRow>(
+    (a, b) =>
+      supabase
+        .from("journal_lines" as never)
+        .select(
+          "id, description, debit_minor, credit_minor, journals!inner(journal_number, journal_date, status, source_type, memo, reversed_by_journal_id, reverses_journal_id)" as never,
+        )
+        .eq("company_id" as never, companyId as never)
+        .eq("account_id" as never, glAccountId as never)
+        .eq("journals.status" as never, "posted" as never)
+        .lte("journals.journal_date" as never, asOf as never)
+        .order("id" as never)
+        .range(a, b) as never,
   );
 
   const relatedIds = new Set<string>();
@@ -95,7 +96,11 @@ async function loadLedgerLines(
       .select("id, journal_date, status" as never)
       .in("id" as never, part as never);
     if (error) throw new Error(error.message);
-    for (const j of (data ?? []) as unknown as Array<{ id: string; journal_date: string; status: string }>) {
+    for (const j of (data ?? []) as unknown as Array<{
+      id: string;
+      journal_date: string;
+      status: string;
+    }>) {
       if (j.status === "posted") relatedDate.set(j.id, j.journal_date);
     }
   }
@@ -175,15 +180,16 @@ async function clearedLineIds(
   const out = new Set<string>();
   const ids = sessions.filter((s) => s.status === "completed").map((s) => s.id);
   for (const part of chunk(ids, 50)) {
-    const rows = await fetchAllPages<{ journal_line_id: string | null }>((a, b) =>
-      supabase
-        .from("reconciliation_session_lines" as never)
-        .select("id, journal_line_id" as never)
-        .eq("company_id" as never, companyId as never)
-        .in("session_id" as never, part as never)
-        .not("journal_line_id" as never, "is" as never, null as never)
-        .order("id" as never)
-        .range(a, b) as never,
+    const rows = await fetchAllPages<{ journal_line_id: string | null }>(
+      (a, b) =>
+        supabase
+          .from("reconciliation_session_lines" as never)
+          .select("id, journal_line_id" as never)
+          .eq("company_id" as never, companyId as never)
+          .in("session_id" as never, part as never)
+          .not("journal_line_id" as never, "is" as never, null as never)
+          .order("id" as never)
+          .range(a, b) as never,
     ).catch((e: Error) => {
       // Table not installed yet → nothing has ever been cleared through the new flow.
       if (/reconciliation_session_lines|schema cache|does not exist/i.test(e.message)) return [];
@@ -232,22 +238,25 @@ export const getReconciliationWorkspace = createServerFn({ method: "GET" })
     const ledgerOnlyAll = ledgerRows
       .filter((r) => !linked.has(r.id) && !cleared.has(r.id))
       .map(toItem)
-      .sort((a, b) => (a.date === b.date ? a.journalNumber - b.journalNumber : a.date < b.date ? -1 : 1));
+      .sort((a, b) =>
+        a.date === b.date ? a.journalNumber - b.journalNumber : a.date < b.date ? -1 : 1,
+      );
     const ledgerOnlyTotal = ledgerOnlyAll.reduce((acc, i) => acc + BigInt(i.amountMinor), 0n);
 
     // Matched statement lines (not yet reconciled) on or before the statement date.
     type Txn = { id: string; txn_date: string; amount_minor: number; description: string | null };
-    const matched = await fetchAllPages<Txn>((a, b) =>
-      supabase
-        .from("bank_transactions" as never)
-        .select("id, txn_date, amount_minor, description" as never)
-        .eq("company_id" as never, data.companyId as never)
-        .eq("bank_account_id" as never, data.bankAccountId as never)
-        .eq("status" as never, "matched" as never)
-        .lte("txn_date" as never, data.statementDate as never)
-        .order("txn_date" as never)
-        .order("id" as never)
-        .range(a, b) as never,
+    const matched = await fetchAllPages<Txn>(
+      (a, b) =>
+        supabase
+          .from("bank_transactions" as never)
+          .select("id, txn_date, amount_minor, description" as never)
+          .eq("company_id" as never, data.companyId as never)
+          .eq("bank_account_id" as never, data.bankAccountId as never)
+          .eq("status" as never, "matched" as never)
+          .lte("txn_date" as never, data.statementDate as never)
+          .order("txn_date" as never)
+          .order("id" as never)
+          .range(a, b) as never,
     );
 
     const links: Array<{ bankTransactionId: string; journalLineId: string }> = [];
@@ -261,14 +270,19 @@ export const getReconciliationWorkspace = createServerFn({ method: "GET" })
         .eq("company_id" as never, data.companyId as never)
         .in("bank_transaction_id" as never, part as never);
       if (error) throw new Error(error.message);
-      for (const r of (rows ?? []) as unknown as Array<{ bank_transaction_id: string; journal_line_id: string }>) {
+      for (const r of (rows ?? []) as unknown as Array<{
+        bank_transaction_id: string;
+        journal_line_id: string;
+      }>) {
         links.push({ bankTransactionId: r.bank_transaction_id, journalLineId: r.journal_line_id });
       }
     }
 
     const itemByLine = new Map<string, LedgerItem>();
     for (const r of ledgerRows) itemByLine.set(r.id, toItem(r));
-    const missingLines = [...new Set(links.map((l) => l.journalLineId))].filter((id) => !itemByLine.has(id));
+    const missingLines = [...new Set(links.map((l) => l.journalLineId))].filter(
+      (id) => !itemByLine.has(id),
+    );
     for (const part of chunk(missingLines, 150)) {
       const { data: rows, error } = await supabase
         .from("journal_lines" as never)
@@ -331,7 +345,9 @@ export const getReconciliationWorkspace = createServerFn({ method: "GET" })
           const t = txnById.get(id)!;
           return { id, date: t.txn_date, amountMinor: t.amount_minor, description: t.description };
         }),
-        ledgerLines: g.journalLineIds.map((id) => itemByLine.get(id)).filter((x): x is LedgerItem => Boolean(x)),
+        ledgerLines: g.journalLineIds
+          .map((id) => itemByLine.get(id))
+          .filter((x): x is LedgerItem => Boolean(x)),
       })),
       ledgerOnly: ledgerOnlyAll.slice(0, LEDGER_ITEM_CAP),
       ledgerOnlyTruncated: ledgerOnlyAll.length > LEDGER_ITEM_CAP,
@@ -372,10 +388,15 @@ export const completeReconciliation = createServerFn({ method: "POST" })
       if (!Number.isSafeInteger(closing) || !Number.isSafeInteger(opening)) {
         throw new Error("Balances must be valid amounts");
       }
-      const txIds = [...new Set((input.bankTransactionIds ?? []).map((id) => assertUuid(id, "Transaction")))];
-      const lineIds = [...new Set((input.journalLineIds ?? []).map((id) => assertUuid(id, "Journal line")))];
+      const txIds = [
+        ...new Set((input.bankTransactionIds ?? []).map((id) => assertUuid(id, "Transaction"))),
+      ];
+      const lineIds = [
+        ...new Set((input.journalLineIds ?? []).map((id) => assertUuid(id, "Journal line"))),
+      ];
       if (txIds.length + lineIds.length === 0) throw new Error("Tick at least one item");
-      if (txIds.length > 5000 || lineIds.length > 5000) throw new Error("Too many ticked items in one session");
+      if (txIds.length > 5000 || lineIds.length > 5000)
+        throw new Error("Too many ticked items in one session");
       return {
         companyId: assertUuid(input.companyId),
         bankAccountId: assertUuid(input.bankAccountId),
@@ -391,20 +412,20 @@ export const completeReconciliation = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const supabase = context.supabase as AnyClient;
     await assertCompanyPermission(supabase, data.companyId, "banking.reconcile");
-    const r = await callRpc<{ session_id: string; cleared_total_minor: number; ledger_balance_minor: number }>(
-      supabase,
-      "complete_reconciliation_session",
-      {
-        _company_id: data.companyId,
-        _bank_account_id: data.bankAccountId,
-        _statement_date: data.statementDate,
-        _statement_balance_minor: data.statementBalanceMinor,
-        _opening_balance_minor: data.openingBalanceMinor,
-        _bank_transaction_ids: data.bankTransactionIds,
-        _journal_line_ids: data.journalLineIds,
-        _notes: data.notes,
-      },
-    );
+    const r = await callRpc<{
+      session_id: string;
+      cleared_total_minor: number;
+      ledger_balance_minor: number;
+    }>(supabase, "complete_reconciliation_session", {
+      _company_id: data.companyId,
+      _bank_account_id: data.bankAccountId,
+      _statement_date: data.statementDate,
+      _statement_balance_minor: data.statementBalanceMinor,
+      _opening_balance_minor: data.openingBalanceMinor,
+      _bank_transaction_ids: data.bankTransactionIds,
+      _journal_line_ids: data.journalLineIds,
+      _notes: data.notes,
+    });
     return {
       sessionId: r.session_id,
       clearedTotalMinor: Number(r.cleared_total_minor),
@@ -423,11 +444,15 @@ export const voidReconciliationSession = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const supabase = context.supabase as AnyClient;
     await assertCompanyPermission(supabase, data.companyId, "banking.reconcile");
-    const r = await callRpc<{ statement_lines_reopened: number }>(supabase, "void_reconciliation_session", {
-      _company_id: data.companyId,
-      _session_id: data.sessionId,
-      _reason: data.reason,
-    });
+    const r = await callRpc<{ statement_lines_reopened: number }>(
+      supabase,
+      "void_reconciliation_session",
+      {
+        _company_id: data.companyId,
+        _session_id: data.sessionId,
+        _reason: data.reason,
+      },
+    );
     return { statementLinesReopened: r?.statement_lines_reopened ?? 0 };
   });
 
@@ -478,8 +503,15 @@ export const getBankReconciliationReport = createServerFn({ method: "GET" })
       : ledgerRows
           .filter((r) => !cleared.has(r.id))
           .map(toItem)
-          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.journalNumber - b.journalNumber));
-    const book = await ledgerBalanceAsOf(supabase, data.companyId, account.gl_account_id, session.statement_date);
+          .sort((a, b) =>
+            a.date < b.date ? -1 : a.date > b.date ? 1 : a.journalNumber - b.journalNumber,
+          );
+    const book = await ledgerBalanceAsOf(
+      supabase,
+      data.companyId,
+      account.gl_account_id,
+      session.statement_date,
+    );
     const report = bankReconciliationReport({
       statementBalanceMinor: session.statement_balance_minor,
       outstandingMinor: outstanding,

@@ -3,11 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import { fetchAllPages } from "@/lib/banking/fetch-all";
-import {
-  DEFAULT_MATCH_WINDOW_DAYS,
-  MAX_MATCH_LINES,
-  rankCandidates,
-} from "@/lib/banking/matching";
+import { DEFAULT_MATCH_WINDOW_DAYS, MAX_MATCH_LINES, rankCandidates } from "@/lib/banking/matching";
 import { callRpc } from "@/lib/banking/rpc";
 import {
   linkedLineIds,
@@ -62,11 +58,16 @@ export type MatchCandidateRow = {
 
 export const listMatchCandidates = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; bankTransactionId: string; windowDays?: number }) => ({
-    companyId: assertUuid(input.companyId),
-    bankTransactionId: assertUuid(input.bankTransactionId),
-    windowDays: Math.min(90, Math.max(0, Math.round(Number(input.windowDays ?? DEFAULT_MATCH_WINDOW_DAYS)))),
-  }))
+  .inputValidator(
+    (input: { companyId: string; bankTransactionId: string; windowDays?: number }) => ({
+      companyId: assertUuid(input.companyId),
+      bankTransactionId: assertUuid(input.bankTransactionId),
+      windowDays: Math.min(
+        90,
+        Math.max(0, Math.round(Number(input.windowDays ?? DEFAULT_MATCH_WINDOW_DAYS))),
+      ),
+    }),
+  )
   .handler(async ({ data, context }) => {
     const supabase = context.supabase as AnyClient;
     await assertCompanyMember(supabase, data.companyId);
@@ -94,21 +95,22 @@ export const listMatchCandidates = createServerFn({ method: "GET" })
         memo: string | null;
       };
     };
-    const lines = await fetchAllPages<Row>((a, b) =>
-      supabase
-        .from("journal_lines" as never)
-        .select(
-          "id, journal_id, description, debit_minor, credit_minor, journals!inner(journal_number, journal_date, status, source_type, memo, reversed_by_journal_id, reverses_journal_id)" as never,
-        )
-        .eq("company_id" as never, data.companyId as never)
-        .eq("account_id" as never, account.gl_account_id as never)
-        .eq("journals.status" as never, "posted" as never)
-        .is("journals.reversed_by_journal_id" as never, null as never)
-        .is("journals.reverses_journal_id" as never, null as never)
-        .gte("journals.journal_date" as never, from as never)
-        .lte("journals.journal_date" as never, to as never)
-        .order("id" as never)
-        .range(a, b) as never,
+    const lines = await fetchAllPages<Row>(
+      (a, b) =>
+        supabase
+          .from("journal_lines" as never)
+          .select(
+            "id, journal_id, description, debit_minor, credit_minor, journals!inner(journal_number, journal_date, status, source_type, memo, reversed_by_journal_id, reverses_journal_id)" as never,
+          )
+          .eq("company_id" as never, data.companyId as never)
+          .eq("account_id" as never, account.gl_account_id as never)
+          .eq("journals.status" as never, "posted" as never)
+          .is("journals.reversed_by_journal_id" as never, null as never)
+          .is("journals.reverses_journal_id" as never, null as never)
+          .gte("journals.journal_date" as never, from as never)
+          .lte("journals.journal_date" as never, to as never)
+          .order("id" as never)
+          .range(a, b) as never,
     );
 
     const linked = await linkedLineIds(
@@ -170,16 +172,21 @@ export const listMatchCandidates = createServerFn({ method: "GET" })
 /** One statement line ↔ one or several existing bank-ledger lines that add up exactly (RPC validates again). */
 export const matchBankTransaction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; bankTransactionId: string; journalLineIds: string[] }) => {
-    const ids = [...new Set((input.journalLineIds ?? []).map((id) => assertUuid(id, "Journal line")))];
-    if (ids.length === 0) throw new Error("Select at least one ledger line");
-    if (ids.length > MAX_MATCH_LINES) throw new Error(`Select at most ${MAX_MATCH_LINES} ledger lines`);
-    return {
-      companyId: assertUuid(input.companyId),
-      bankTransactionId: assertUuid(input.bankTransactionId),
-      journalLineIds: ids,
-    };
-  })
+  .inputValidator(
+    (input: { companyId: string; bankTransactionId: string; journalLineIds: string[] }) => {
+      const ids = [
+        ...new Set((input.journalLineIds ?? []).map((id) => assertUuid(id, "Journal line"))),
+      ];
+      if (ids.length === 0) throw new Error("Select at least one ledger line");
+      if (ids.length > MAX_MATCH_LINES)
+        throw new Error(`Select at most ${MAX_MATCH_LINES} ledger lines`);
+      return {
+        companyId: assertUuid(input.companyId),
+        bankTransactionId: assertUuid(input.bankTransactionId),
+        journalLineIds: ids,
+      };
+    },
+  )
   .handler(async ({ data, context }) => {
     const supabase = context.supabase as AnyClient;
     await assertCompanyMember(supabase, data.companyId);
@@ -194,16 +201,21 @@ export const matchBankTransaction = createServerFn({ method: "POST" })
 /** Several statement lines ↔ one ledger line (e.g. a bank deposit made of several receipts). */
 export const matchStatementLinesToJournalLine = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; bankTransactionIds: string[]; journalLineId: string }) => {
-    const ids = [...new Set((input.bankTransactionIds ?? []).map((id) => assertUuid(id, "Transaction")))];
-    if (ids.length === 0) throw new Error("Select at least one statement line");
-    if (ids.length > MAX_MATCH_LINES) throw new Error(`Select at most ${MAX_MATCH_LINES} statement lines`);
-    return {
-      companyId: assertUuid(input.companyId),
-      bankTransactionIds: ids,
-      journalLineId: assertUuid(input.journalLineId, "Journal line"),
-    };
-  })
+  .inputValidator(
+    (input: { companyId: string; bankTransactionIds: string[]; journalLineId: string }) => {
+      const ids = [
+        ...new Set((input.bankTransactionIds ?? []).map((id) => assertUuid(id, "Transaction"))),
+      ];
+      if (ids.length === 0) throw new Error("Select at least one statement line");
+      if (ids.length > MAX_MATCH_LINES)
+        throw new Error(`Select at most ${MAX_MATCH_LINES} statement lines`);
+      return {
+        companyId: assertUuid(input.companyId),
+        bankTransactionIds: ids,
+        journalLineId: assertUuid(input.journalLineId, "Journal line"),
+      };
+    },
+  )
   .handler(async ({ data, context }) => {
     const supabase = context.supabase as AnyClient;
     await assertCompanyMember(supabase, data.companyId);

@@ -131,3 +131,12 @@ ALTER TABLE public.bank_rules
 ALTER TABLE public.bank_rules DROP CONSTRAINT IF EXISTS bank_rules_direction_check;
 ALTER TABLE public.bank_rules
   ADD CONSTRAINT bank_rules_direction_check CHECK (direction IN ('any', 'in', 'out'));
+
+-- ---------------------------------------------------------------------------
+-- 8. Statement imports: the import record is written first and finalised afterwards (needs UPDATE)
+-- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Banking import update imports" ON public.bank_statement_imports;
+CREATE POLICY "Banking import update imports"
+  ON public.bank_statement_imports FOR UPDATE TO authenticated
+  USING (public.has_company_permission(company_id, 'banking.import'))
+  WITH CHECK (public.has_company_permission(company_id, 'banking.import'));
