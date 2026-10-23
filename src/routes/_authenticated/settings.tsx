@@ -165,7 +165,7 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCmdOpen(true);
       }
@@ -401,12 +401,12 @@ function SettingsForCompany({ companyId }: { companyId: string }) {
     <>
       <PageHeader
         title="Settings Centre"
-        description="Organisation configuration — search with Ctrl/Cmd+K. Preferences never override posting, period locks or journal immutability."
+        description="Organisation configuration — search settings with Ctrl/Cmd+Shift+K (Ctrl/Cmd+K searches everything). Preferences never override posting, period locks or journal immutability."
         actions={
           <Button variant="outline" size="sm" onClick={() => setCmdOpen(true)}>
             <Search className="mr-1.5 size-3.5" />
             Search
-            <kbd className="ml-2 hidden rounded border px-1 text-[10px] sm:inline">⌘K</kbd>
+            <kbd className="ml-2 hidden rounded border px-1 text-[10px] sm:inline">⌘⇧K</kbd>
           </Button>
         }
       />

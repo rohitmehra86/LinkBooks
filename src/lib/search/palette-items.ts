@@ -32,6 +32,41 @@ const CREATE: PaletteAction[] = [
     keywords: "spend receipt",
     href: "/purchases/expenses/new",
   },
+  {
+    id: "new-quote",
+    group: "Create",
+    label: "New quote",
+    keywords: "sales customer estimate",
+    href: "/sales/quotes/new",
+  },
+  {
+    id: "new-sales-credit-note",
+    group: "Create",
+    label: "New sales credit note",
+    keywords: "customer refund credit",
+    href: "/sales/credit-notes/new",
+  },
+  {
+    id: "new-sales-receipt",
+    group: "Create",
+    label: "New sales receipt",
+    keywords: "customer payment received",
+    href: "/sales/receipts/new",
+  },
+  {
+    id: "new-purchase-order",
+    group: "Create",
+    label: "New purchase order",
+    keywords: "supplier order",
+    href: "/purchases/orders/new",
+  },
+  {
+    id: "new-supplier-payment",
+    group: "Create",
+    label: "New supplier payment",
+    keywords: "pay bill payment",
+    href: "/purchases/payments/new",
+  },
 ];
 
 export function buildPaletteActions(): PaletteAction[] {
@@ -65,4 +100,12 @@ export function filterPaletteActions(actions: PaletteAction[], query: string): P
     const hay = `${a.label} ${a.keywords}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
+}
+
+/** What to show before the user types: the create shortcuts, then the main pages. */
+export function suggestedPaletteActions(actions: PaletteAction[]): PaletteAction[] {
+  return [
+    ...actions.filter((a) => a.group === "Create").slice(0, 5),
+    ...actions.filter((a) => a.group === "Go to").slice(0, 6),
+  ];
 }
