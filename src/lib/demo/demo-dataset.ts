@@ -1,3 +1,4 @@
+import type { JournalSourceType } from "@/lib/accounting/posting-engine";
 /**
  * Canonical Demo Company ledger — deterministic, known expected totals.
  * Posted lines use stable account *codes*; live seed resolves codes → UUIDs.
@@ -44,7 +45,7 @@ export type DemoJournalSpec = {
   key: string;
   date: string;
   memo: string;
-  source_type: string;
+  source_type: JournalSourceType;
   lines: Array<{ code: string; debit: bigint; credit: bigint; description?: string }>;
 };
 

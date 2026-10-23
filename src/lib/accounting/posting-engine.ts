@@ -4,13 +4,33 @@ import { assertLinesBalance, type JournalLineDraft } from "@/lib/accounting/mone
 
 type AuthedClient = SupabaseClient<Database>;
 
+/** Must match the Postgres enum `journal_source_type`. A value outside this list fails at post time. */
+export const JOURNAL_SOURCE_TYPES = [
+  "manual",
+  "opening_balance",
+  "sales_invoice",
+  "sales_credit_note",
+  "customer_payment",
+  "purchase_bill",
+  "purchase_credit_note",
+  "supplier_payment",
+  "expense",
+  "bank_transaction",
+  "bank_transfer",
+  "tax_adjustment",
+  "reversal",
+  "other",
+  "fx_revaluation",
+] as const;
+export type JournalSourceType = (typeof JOURNAL_SOURCE_TYPES)[number];
+
 export type PostJournalInput = {
   company_id: string;
   journal_date: string; // YYYY-MM-DD
   memo?: string;
   currency_code?: string;
   fx_rate_to_base?: number;
-  source_type?: string;
+  source_type?: JournalSourceType;
   source_id?: string;
   idempotency_key?: string;
   reverses_journal_id?: string;

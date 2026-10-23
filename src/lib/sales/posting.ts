@@ -102,7 +102,7 @@ export async function postCustomerReceipt(
     company_id: args.company_id,
     journal_date: args.receipt_date,
     currency_code: args.currency_code,
-    source_type: "customer_receipt",
+    source_type: "customer_payment",
     source_id: args.receipt_id,
     idempotency_key: `customer_receipt:${args.receipt_id}:post`,
     ...(args.memo ? { memo: args.memo } : {}),
