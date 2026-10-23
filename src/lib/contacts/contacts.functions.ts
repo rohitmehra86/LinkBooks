@@ -395,7 +395,7 @@ export const getContactBalances = createServerFn({ method: "GET" })
     const { data: invoices, error: iErr } = await context.supabase
       .from("sales_invoices" as never)
       .select(
-        "id, invoice_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, invoice_number" as never,
+        "id, invoice_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, invoice_number, currency_code" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
@@ -407,7 +407,7 @@ export const getContactBalances = createServerFn({ method: "GET" })
     const { data: bills, error: bErr } = await context.supabase
       .from("purchase_bills" as never)
       .select(
-        "id, bill_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, bill_number, supplier_invoice_number" as never,
+        "id, bill_date, due_date, status, total_minor, amount_paid_minor, amount_credited_minor, bill_number, supplier_invoice_number, currency_code" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
