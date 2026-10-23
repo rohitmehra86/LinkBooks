@@ -3,10 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { convertPurchaseOrderToBill, listPurchaseOrders } from "@/lib/purchases/purchases.functions";
+import {
+  convertPurchaseOrderToBill,
+  listPurchaseOrders,
+} from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { ListToolbar, useListSearch } from "@/components/common/ListTools";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,6 +21,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+type OrderRow = {
+  id: string;
+  order_date: string;
+  status: string;
+  total_minor: number;
+  billed_bill_id: string | null;
+  contacts: { name: string } | null;
+};
 
 export const Route = createFileRoute("/_authenticated/purchases/orders/")({
   component: OrdersList,
@@ -35,6 +48,8 @@ function OrdersList() {
     enabled: Boolean(companyId),
     queryFn: () => fetch({ data: { companyId: companyId! } }),
   });
+  const rows = (query.data ?? []) as OrderRow[];
+  const list = useListSearch(rows, (o) => `${o.order_date} ${o.contacts?.name ?? ""} ${o.status}`);
 
   const convertMutation = useMutation({
     mutationFn: (orderId: string) => convert({ data: { companyId: companyId!, orderId } }),
@@ -67,62 +82,74 @@ function OrdersList() {
       ) : (query.data ?? []).length === 0 ? (
         <EmptyState title="No purchase orders" description="Create a PO for a supplier." />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              query.data as Array<{
-                id: string;
-                order_date: string;
-                status: string;
-                total_minor: number;
-                billed_bill_id: string | null;
-                contacts: { name: string } | null;
-              }>
-            ).map((o) => (
-              <TableRow key={o.id}>
-                <TableCell>{o.order_date}</TableCell>
-                <TableCell>{o.contacts?.name ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {o.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(o.total_minor), currency)}
-                </TableCell>
-                <TableCell>
-                  {!o.billed_bill_id && o.status !== "cancelled" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={convertMutation.isPending}
-                      onClick={() => convertMutation.mutate(o.id)}
-                    >
-                      Convert to bill
-                    </Button>
-                  ) : o.billed_bill_id ? (
-                    <Link
-                      className="text-sm underline"
-                      to="/purchases/bills/$billId"
-                      params={{ billId: o.billed_bill_id }}
-                    >
-                      View bill
-                    </Link>
-                  ) : null}
-                </TableCell>
+        <>
+          <ListToolbar
+            query={list.query}
+            onQuery={list.setQuery}
+            shown={list.filtered.length}
+            total={rows.length}
+            placeholder="Search orders"
+            exportCsv={{
+              company: company?.name ?? "",
+              title: "Purchase orders",
+              currency,
+              headers: ["Date", "Supplier", "Status", "Total"],
+              rows: list.filtered.map((r) => [
+                r.order_date,
+                r.contacts?.name ?? "",
+                r.status,
+                fromMinorUnits(BigInt(r.total_minor), currency),
+              ]),
+            }}
+          />
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {list.filtered.map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell>{o.order_date}</TableCell>
+                  <TableCell>{o.contacts?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {o.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fromMinorUnits(BigInt(o.total_minor), currency)}
+                  </TableCell>
+                  <TableCell>
+                    {!o.billed_bill_id && o.status !== "cancelled" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={convertMutation.isPending}
+                        onClick={() => convertMutation.mutate(o.id)}
+                      >
+                        Convert to bill
+                      </Button>
+                    ) : o.billed_bill_id ? (
+                      <Link
+                        className="text-sm underline"
+                        to="/purchases/bills/$billId"
+                        params={{ billId: o.billed_bill_id }}
+                      >
+                        View bill
+                      </Link>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
     </>
   );

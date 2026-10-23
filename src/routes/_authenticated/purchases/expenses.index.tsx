@@ -6,6 +6,7 @@ import { listExpenses } from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { ListToolbar, useListSearch } from "@/components/common/ListTools";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +17,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+type ExpenseRow = {
+  id: string;
+  expense_date: string;
+  payee_name: string;
+  status: string;
+  total_minor: number;
+};
 
 export const Route = createFileRoute("/_authenticated/purchases/expenses/")({
   head: () => ({ meta: [{ title: "Expenses — LinkBooks" }] }),
@@ -33,6 +42,8 @@ function ExpensesList() {
     enabled: Boolean(companyId),
     queryFn: () => fetchExpenses({ data: { companyId: companyId! } }),
   });
+  const rows = (query.data ?? []) as ExpenseRow[];
+  const list = useListSearch(rows, (e) => `${e.expense_date} ${e.payee_name} ${e.status}`);
 
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
 
@@ -58,48 +69,61 @@ function ExpensesList() {
       ) : (query.data ?? []).length === 0 ? (
         <EmptyState title="No expenses" description="Record a direct expense paid from bank." />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Payee</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              query.data as Array<{
-                id: string;
-                expense_date: string;
-                payee_name: string;
-                status: string;
-                total_minor: number;
-              }>
-            ).map((e) => (
-              <TableRow key={e.id}>
-                <TableCell>
-                  <Link
-                    className="hover:underline"
-                    to="/purchases/expenses/$expenseId"
-                    params={{ expenseId: e.id }}
-                  >
-                    {e.expense_date}
-                  </Link>
-                </TableCell>
-                <TableCell>{e.payee_name}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {e.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(e.total_minor), currency)}
-                </TableCell>
+        <>
+          <ListToolbar
+            query={list.query}
+            onQuery={list.setQuery}
+            shown={list.filtered.length}
+            total={rows.length}
+            placeholder="Search expenses"
+            exportCsv={{
+              company: company?.name ?? "",
+              title: "Direct expenses",
+              currency,
+              headers: ["Date", "Payee", "Status", "Total"],
+              rows: list.filtered.map((r) => [
+                r.expense_date,
+                r.payee_name,
+                r.status,
+                fromMinorUnits(BigInt(r.total_minor), currency),
+              ]),
+            }}
+          />
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Payee</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Total</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {list.filtered.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell>
+                    <Link
+                      className="hover:underline"
+                      to="/purchases/expenses/$expenseId"
+                      params={{ expenseId: e.id }}
+                    >
+                      {e.expense_date}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{e.payee_name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {e.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fromMinorUnits(BigInt(e.total_minor), currency)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
     </>
   );

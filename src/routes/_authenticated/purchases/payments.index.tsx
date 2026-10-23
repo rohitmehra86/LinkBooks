@@ -6,6 +6,7 @@ import { listPayments } from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { ListToolbar, useListSearch } from "@/components/common/ListTools";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +17,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+type PaymentRow = {
+  id: string;
+  payment_date: string;
+  status: string;
+  amount_minor: number;
+  unallocated_minor: number;
+  contacts: { name: string } | null;
+};
 
 export const Route = createFileRoute("/_authenticated/purchases/payments/")({
   head: () => ({ meta: [{ title: "Supplier payments — LinkBooks" }] }),
@@ -32,6 +42,11 @@ function PaymentsList() {
     enabled: Boolean(companyId),
     queryFn: () => fetchPayments({ data: { companyId: companyId! } }),
   });
+  const rows = (query.data ?? []) as PaymentRow[];
+  const list = useListSearch(
+    rows,
+    (p) => `${p.payment_date} ${p.contacts?.name ?? ""} ${p.status}`,
+  );
 
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
 
@@ -53,45 +68,58 @@ function PaymentsList() {
       ) : (query.data ?? []).length === 0 ? (
         <EmptyState title="No payments" description="Record a payment against open bills." />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Unallocated</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(
-              query.data as Array<{
-                id: string;
-                payment_date: string;
-                status: string;
-                amount_minor: number;
-                unallocated_minor: number;
-                contacts: { name: string } | null;
-              }>
-            ).map((p) => (
-              <TableRow key={p.id}>
-                <TableCell>{p.payment_date}</TableCell>
-                <TableCell>{p.contacts?.name ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {p.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(p.amount_minor), currency)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(p.unallocated_minor), currency)}
-                </TableCell>
+        <>
+          <ListToolbar
+            query={list.query}
+            onQuery={list.setQuery}
+            shown={list.filtered.length}
+            total={rows.length}
+            placeholder="Search payments"
+            exportCsv={{
+              company: company?.name ?? "",
+              title: "Supplier payments",
+              currency,
+              headers: ["Date", "Supplier", "Status", "Amount", "Unallocated"],
+              rows: list.filtered.map((r) => [
+                r.payment_date,
+                r.contacts?.name ?? "",
+                r.status,
+                fromMinorUnits(BigInt(r.amount_minor), currency),
+                fromMinorUnits(BigInt(r.unallocated_minor), currency),
+              ]),
+            }}
+          />
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Unallocated</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {list.filtered.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>{p.payment_date}</TableCell>
+                  <TableCell>{p.contacts?.name ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {p.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fromMinorUnits(BigInt(p.amount_minor), currency)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {fromMinorUnits(BigInt(p.unallocated_minor), currency)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
     </>
   );
