@@ -65,7 +65,9 @@ export async function postJournal(
     lines: input.lines.map((l) => ({
       account_id: l.account_id,
       description: l.description ?? null,
-      debit_minor: Number(typeof l.debit_minor === "bigint" ? l.debit_minor : BigInt(l.debit_minor)),
+      debit_minor: Number(
+        typeof l.debit_minor === "bigint" ? l.debit_minor : BigInt(l.debit_minor),
+      ),
       credit_minor: Number(
         typeof l.credit_minor === "bigint" ? l.credit_minor : BigInt(l.credit_minor),
       ),
@@ -80,9 +82,12 @@ export async function postJournal(
   }
 
   const call = () =>
-    supabase.rpc("post_journal" as never, {
-      payload,
-    } as never);
+    supabase.rpc(
+      "post_journal" as never,
+      {
+        payload,
+      } as never,
+    );
   let { data, error } = await call();
   if (error && isNoPeriodError(error.message)) {
     // AC-01: create the financial year covering this date once, then retry. Locked or
@@ -121,10 +126,13 @@ export async function ensureFiscalPeriodForDate(
   companyId: string,
   date: string,
 ): Promise<{ ok: true; periodId: string } | { ok: false; reason: string }> {
-  const { data, error } = await supabase.rpc("ensure_fiscal_period_for_date" as never, {
-    _company_id: companyId,
-    _date: date,
-  } as never);
+  const { data, error } = await supabase.rpc(
+    "ensure_fiscal_period_for_date" as never,
+    {
+      _company_id: companyId,
+      _date: date,
+    } as never,
+  );
   if (error) {
     return { ok: false, reason: isMissingRpcError(error) ? "rpc_missing" : error.message };
   }
@@ -137,10 +145,13 @@ export async function reverseJournal(
   journalId: string,
   idempotencyKey?: string,
 ): Promise<{ journalId: string }> {
-  const { data, error } = await supabase.rpc("reverse_journal" as never, {
-    _journal_id: journalId,
-    _idempotency_key: idempotencyKey ?? null,
-  } as never);
+  const { data, error } = await supabase.rpc(
+    "reverse_journal" as never,
+    {
+      _journal_id: journalId,
+      _idempotency_key: idempotencyKey ?? null,
+    } as never,
+  );
   if (error) throw new Error(error.message);
   if (!data || typeof data !== "string") throw new Error("Reversal failed: no journal id returned");
   return { journalId: data };
