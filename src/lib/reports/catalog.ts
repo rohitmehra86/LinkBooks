@@ -39,6 +39,17 @@ export type ReportDef = {
     | "audit"
     | "general_ledger_all"
     | "equity"
+    | "executive_summary"
+    | "cash_summary"
+    | "gl_summary"
+    | "sales_by_contact"
+    | "sales_by_item"
+    | "purchases_by_supplier"
+    | "bank_recon_summary"
+    | "cash_flow_indirect"
+    | "budget_vs_actual"
+    | "fixed_asset_register"
+    | "depreciation_schedule"
     | "link"
     | "none";
   /** For runner "link": the existing screen that already does this job. */
@@ -108,6 +119,16 @@ export const REPORT_CATALOG: ReportDef[] = [
     tags: ["equity", "soce"],
     status: "ready",
     runner: "equity",
+  },
+  {
+    id: "cash-flow-indirect",
+    title: "Cash Flow (indirect)",
+    description:
+      "Net profit adjusted for non-cash items and balance sheet movements, reconciled to the bank ledger.",
+    category: "financial_statements",
+    tags: ["cash", "cf", "indirect"],
+    status: "ready",
+    runner: "cash_flow_indirect",
   },
   {
     id: "general-ledger",
@@ -190,22 +211,96 @@ export const REPORT_CATALOG: ReportDef[] = [
   {
     id: "budget-vs-actual",
     title: "Budget versus Actual",
-    description: "Compare budgets to posted actuals.",
+    description:
+      "Monthly, quarterly or year-to-date budget against posted actuals, with variance and favourable / unfavourable colouring.",
     category: "management",
-    tags: ["budget"],
-    status: "depends",
-    dependency: "Budget module is not implemented — no fabricated zeros.",
-    runner: "none",
+    tags: ["budget", "variance"],
+    status: "ready",
+    runner: "budget_vs_actual",
   },
   {
     id: "fixed-asset-register",
     title: "Fixed Asset Register",
-    description: "Asset cost, depreciation and carrying value.",
+    description: "Asset cost, accumulated depreciation and net book value as at a date.",
     category: "ledger",
     tags: ["assets", "ppe"],
-    status: "depends",
-    dependency: "No fixed-asset register module; PPE exists only as CoA + journals.",
-    runner: "none",
+    status: "ready",
+    runner: "fixed_asset_register",
+  },
+  {
+    id: "depreciation-schedule",
+    title: "Depreciation Schedule",
+    description: "Opening, charge and closing accumulated depreciation per asset for a period.",
+    category: "ledger",
+    tags: ["assets", "depreciation"],
+    status: "ready",
+    runner: "depreciation_schedule",
+  },
+  {
+    id: "executive-summary",
+    title: "Executive Summary",
+    description:
+      "Cash, profitability, position and key ratios for the period against the previous period.",
+    category: "overview",
+    tags: ["summary", "kpi", "overview"],
+    status: "ready",
+    runner: "executive_summary",
+  },
+  {
+    id: "cash-summary",
+    title: "Cash Summary",
+    description:
+      "Opening balance, cash received and spent, transfers and closing balance per bank account.",
+    category: "banking",
+    tags: ["cash", "bank"],
+    status: "ready",
+    runner: "cash_summary",
+  },
+  {
+    id: "bank-reconciliation-summary",
+    title: "Bank Reconciliation Summary",
+    description:
+      "Book balance against the last reconciliation, with uncleared and uncoded items per bank account.",
+    category: "reconciliation",
+    tags: ["bank", "recon", "summary"],
+    status: "ready",
+    runner: "bank_recon_summary",
+  },
+  {
+    id: "general-ledger-summary",
+    title: "General Ledger Summary",
+    description: "Opening balance, debits, credits and closing balance for every account.",
+    category: "ledger",
+    tags: ["gl", "ledger", "summary"],
+    status: "ready",
+    runner: "gl_summary",
+  },
+  {
+    id: "sales-by-contact",
+    title: "Sales by Contact",
+    description: "Invoices less credit notes per customer, net, tax and gross.",
+    category: "sales",
+    tags: ["customers", "sales"],
+    status: "ready",
+    runner: "sales_by_contact",
+  },
+  {
+    id: "sales-by-item",
+    title: "Sales by Item",
+    description: "Quantity and net sales per product or service.",
+    category: "sales",
+    tags: ["items", "products", "sales"],
+    status: "ready",
+    runner: "sales_by_item",
+  },
+  {
+    id: "purchases-by-supplier",
+    title: "Purchases by Supplier",
+    description: "Bills less credit notes per supplier, net, tax and gross.",
+    category: "purchases",
+    tags: ["suppliers", "purchases"],
+    status: "ready",
+    runner: "purchases_by_supplier",
   },
   {
     id: "customer-statement",

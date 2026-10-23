@@ -14,6 +14,8 @@ import {
   Building2,
   Percent,
   FolderOpen,
+  PiggyBank,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 
@@ -96,6 +98,20 @@ export const navItems: NavItem[] = [
     icon: FolderOpen,
     group: "records",
     description: "Attachments and uploaded documents",
+  },
+  {
+    label: "Budgets",
+    to: "/budgets",
+    icon: PiggyBank,
+    group: "accounting",
+    description: "Plan income and expenses by month",
+  },
+  {
+    label: "Fixed assets",
+    to: "/fixed-assets",
+    icon: Warehouse,
+    group: "accounting",
+    description: "Asset register and depreciation",
   },
   {
     label: "Reports",

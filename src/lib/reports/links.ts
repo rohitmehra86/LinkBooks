@@ -42,6 +42,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   tax_adjustment: "Tax adjustment",
   reversal: "Reversal",
   fx_revaluation: "FX revaluation",
+  depreciation: "Depreciation",
+  asset_disposal: "Asset disposal",
   other: "Other",
 };
 

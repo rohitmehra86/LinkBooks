@@ -44,7 +44,8 @@ export function NewOrder() {
   const [accountId, setAccountId] = useState("");
   const [qty, setQty] = useState("1");
   const [price, setPrice] = useState("0.00");
-  const [taxBps, setTaxBps] = useState("0");
+  // Tax is entered as a percentage (20 or 7.5) and sent as basis points.
+  const [taxPct, setTaxPct] = useState("0");
 
   const suppliersQ = useQuery({
     queryKey: ["suppliers", companyId],
@@ -62,6 +63,10 @@ export function NewOrder() {
   ).find((s) => s.id === contactId)?.default_currency;
   const currency = (supplierCurrency || baseCurrency).toUpperCase();
   const priceInvalid = tryParseMinor(price || "0", currency) === null;
+  const qtyNum = Number(qty);
+  const qtyInvalid = !qty.trim() || !Number.isFinite(qtyNum) || qtyNum <= 0;
+  const taxNum = taxPct.trim() === "" ? 0 : Number(taxPct);
+  const taxInvalid = !Number.isFinite(taxNum) || taxNum < 0 || taxNum > 100;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -77,7 +82,7 @@ export function NewOrder() {
               accountId,
               quantity: Number(qty),
               unitPriceMinor: Number(parseMinorOrThrow(price || "0", currency, "Price")),
-              taxRateBps: Number(taxBps || 0),
+              taxRateBps: Math.round(taxNum * 100),
             },
           ],
         },
@@ -146,7 +151,13 @@ export function NewOrder() {
           </Select>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <Input placeholder="Qty" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <Input
+            placeholder="Qty"
+            inputMode="decimal"
+            aria-invalid={qtyInvalid}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+          />
           <Input
             placeholder={`Price (${currency})`}
             inputMode="decimal"
@@ -155,16 +166,24 @@ export function NewOrder() {
             onChange={(e) => setPrice(e.target.value)}
           />
           <Input
-            placeholder="Tax rate in bps (2000 = 20%)"
-            title="Tax rate in basis points: 2000 = 20%"
-            value={taxBps}
-            onChange={(e) => setTaxBps(e.target.value)}
+            placeholder="Tax rate (%)"
+            title="Tax rate as a percentage, e.g. 20 or 7.5"
+            inputMode="decimal"
+            aria-invalid={taxInvalid}
+            value={taxPct}
+            onChange={(e) => setTaxPct(e.target.value)}
           />
         </div>
         <div className="flex gap-2">
           <Button
             size="sm"
-            disabled={mutation.isPending || priceInvalid || !can("purchases.draft")}
+            disabled={
+              mutation.isPending ||
+              priceInvalid ||
+              qtyInvalid ||
+              taxInvalid ||
+              !can("purchases.draft")
+            }
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}

@@ -558,22 +558,6 @@ function BillsWorkspace() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled
-                title="Document capture is not configured"
-              >
-                Capture
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled
-                title="CSV import for bills is not configured"
-              >
-                Import
-              </Button>
               <Button size="sm" asChild>
                 <Link to="/purchases/bills/new">
                   <Plus className="mr-1 size-4" />
