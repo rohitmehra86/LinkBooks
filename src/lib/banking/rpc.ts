@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** Any Supabase client, whatever its generated schema type (untyped RPC calls). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RpcClient = SupabaseClient<any>;
+
 /**
  * New banking RPCs / columns ship in migration FILES that are applied separately.
  * Until then the UI must say so clearly instead of showing a raw Postgres error.
@@ -39,7 +43,7 @@ export class DatabaseUpdateRequiredError extends Error {
 
 /** Call an RPC; translate "function missing" into DatabaseUpdateRequiredError. */
 export async function callRpc<T>(
-  supabase: SupabaseClient<any>,
+  supabase: RpcClient,
   fn: string,
   args: Record<string, unknown>,
 ): Promise<T> {
@@ -53,7 +57,7 @@ export async function callRpc<T>(
 
 /** Like callRpc but returns null when the function is not installed (caller supplies a fallback). */
 export async function tryRpc<T>(
-  supabase: SupabaseClient<any>,
+  supabase: RpcClient,
   fn: string,
   args: Record<string, unknown>,
 ): Promise<{ available: true; data: T } | { available: false }> {
@@ -70,7 +74,7 @@ export async function tryRpc<T>(
  * so direct inserts silently failed — BK-13). Failures are logged, not thrown.
  */
 export async function recordAudit(
-  supabase: SupabaseClient<any>,
+  supabase: RpcClient,
   args: {
     companyId: string;
     action: string;

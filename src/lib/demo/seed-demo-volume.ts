@@ -71,7 +71,13 @@ export async function seedDemoVolumeData(
     bankGlId: string;
     bankAccountId: string | null;
   },
-): Promise<{ contacts: number; invoices: number; bills: number; bankTxns: number; products: number }> {
+): Promise<{
+  contacts: number;
+  invoices: number;
+  bills: number;
+  bankTxns: number;
+  products: number;
+}> {
   const { companyId, userId, revenueAccountId, expenseAccountId, bankGlId, bankAccountId } = args;
   let contacts = 0;
   let invoices = 0;
@@ -111,14 +117,70 @@ export async function seedDemoVolumeData(
 
   // Products catalogue (non-inventory)
   const productDefs = [
-    { code: "SVC-CONSULT", name: "Consulting day", kind: "service", sales: 800_00, cost: 0, tax: 2000 },
-    { code: "SVC-RETAIN", name: "Monthly retainer", kind: "service", sales: 500_00, cost: 0, tax: 2000 },
-    { code: "SVC-TRAIN", name: "Training workshop", kind: "service", sales: 1200_00, cost: 0, tax: 2000 },
-    { code: "SVC-SUPPORT", name: "Support hours", kind: "service", sales: 95_00, cost: 0, tax: 2000 },
-    { code: "NI-HOST", name: "Hosting package", kind: "non_inventory", sales: 75_00, cost: 40_00, tax: 2000 },
-    { code: "NI-LICENSE", name: "Software licence", kind: "non_inventory", sales: 250_00, cost: 180_00, tax: 2000 },
-    { code: "NI-PRINT", name: "Print pack", kind: "non_inventory", sales: 45_00, cost: 22_00, tax: 2000 },
-    { code: "NI-DESIGN", name: "Design asset pack", kind: "non_inventory", sales: 150_00, cost: 0, tax: 2000 },
+    {
+      code: "SVC-CONSULT",
+      name: "Consulting day",
+      kind: "service",
+      sales: 800_00,
+      cost: 0,
+      tax: 2000,
+    },
+    {
+      code: "SVC-RETAIN",
+      name: "Monthly retainer",
+      kind: "service",
+      sales: 500_00,
+      cost: 0,
+      tax: 2000,
+    },
+    {
+      code: "SVC-TRAIN",
+      name: "Training workshop",
+      kind: "service",
+      sales: 1200_00,
+      cost: 0,
+      tax: 2000,
+    },
+    {
+      code: "SVC-SUPPORT",
+      name: "Support hours",
+      kind: "service",
+      sales: 95_00,
+      cost: 0,
+      tax: 2000,
+    },
+    {
+      code: "NI-HOST",
+      name: "Hosting package",
+      kind: "non_inventory",
+      sales: 75_00,
+      cost: 40_00,
+      tax: 2000,
+    },
+    {
+      code: "NI-LICENSE",
+      name: "Software licence",
+      kind: "non_inventory",
+      sales: 250_00,
+      cost: 180_00,
+      tax: 2000,
+    },
+    {
+      code: "NI-PRINT",
+      name: "Print pack",
+      kind: "non_inventory",
+      sales: 45_00,
+      cost: 22_00,
+      tax: 2000,
+    },
+    {
+      code: "NI-DESIGN",
+      name: "Design asset pack",
+      kind: "non_inventory",
+      sales: 150_00,
+      cost: 0,
+      tax: 2000,
+    },
   ];
   for (const p of productDefs) {
     const { data: existing } = await supabase

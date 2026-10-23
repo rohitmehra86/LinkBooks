@@ -66,18 +66,24 @@ export async function seedDemoCompanyData(
   let documents = 0;
 
   // Extended CoA + open period covering every demo journal date (critical for posting)
-  const { error: coaErr } = await supabase.rpc("seed_default_chart_of_accounts" as never, {
-    _company_id: companyId,
-  } as never);
+  const { error: coaErr } = await supabase.rpc(
+    "seed_default_chart_of_accounts" as never,
+    {
+      _company_id: companyId,
+    } as never,
+  );
   if (coaErr) {
     console.warn("[demo seed] chart seed:", coaErr.message);
   }
-  const { error: periodErr } = await supabase.rpc("ensure_accounting_period_coverage" as never, {
-    _company_id: companyId,
-    _from: DEMO_FY_FROM,
-    _to: DEMO_AS_OF,
-    _name: "Demo FY 2026/27",
-  } as never);
+  const { error: periodErr } = await supabase.rpc(
+    "ensure_accounting_period_coverage" as never,
+    {
+      _company_id: companyId,
+      _from: DEMO_FY_FROM,
+      _to: DEMO_AS_OF,
+      _name: "Demo FY 2026/27",
+    } as never,
+  );
   if (periodErr) {
     throw new Error(`Demo seed failed: cannot open accounting period (${periodErr.message})`);
   }
@@ -189,16 +195,66 @@ export async function seedDemoCompanyData(
   // Bank transactions (one bank account — unique gl_account_id constraint)
   if (bankAccountId) {
     const samples = [
-      { amount_minor: 1_200_000, txn_date: "2025-07-01", description: "ACME CONSULTING RECEIPT", status: "uncategorised" },
-      { amount_minor: -480_000, txn_date: "2025-07-05", description: "OFFICE SUPPLIES PAYMENT", status: "uncategorised" },
-      { amount_minor: -2_500, txn_date: "2025-12-15", description: "BANK SERVICE FEE", status: "uncategorised" },
-      { amount_minor: -4_200, txn_date: "2026-01-12", description: "UNKNOWN CARD PAYMENT", status: "uncategorised" },
-      { amount_minor: -18_500, txn_date: "2026-01-18", description: "CLOUD HOSTING MONTHLY", status: "uncategorised" },
-      { amount_minor: 350_000, txn_date: "2026-02-03", description: "BRIGHTSIDE PART PAYMENT", status: "uncategorised" },
-      { amount_minor: -95_000, txn_date: "2026-02-14", description: "PRINTSHOP INVOICE", status: "uncategorised" },
-      { amount_minor: -12_000, txn_date: "2026-02-20", description: "UBER BUSINESS TRAVEL", status: "uncategorised" },
-      { amount_minor: 50_000, txn_date: "2026-03-01", description: "NORTHWIND DEPOSIT", status: "uncategorised" },
-      { amount_minor: -7_500, txn_date: "2026-03-10", description: "STATIONERY DIRECT DEBIT", status: "uncategorised" },
+      {
+        amount_minor: 1_200_000,
+        txn_date: "2025-07-01",
+        description: "ACME CONSULTING RECEIPT",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -480_000,
+        txn_date: "2025-07-05",
+        description: "OFFICE SUPPLIES PAYMENT",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -2_500,
+        txn_date: "2025-12-15",
+        description: "BANK SERVICE FEE",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -4_200,
+        txn_date: "2026-01-12",
+        description: "UNKNOWN CARD PAYMENT",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -18_500,
+        txn_date: "2026-01-18",
+        description: "CLOUD HOSTING MONTHLY",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: 350_000,
+        txn_date: "2026-02-03",
+        description: "BRIGHTSIDE PART PAYMENT",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -95_000,
+        txn_date: "2026-02-14",
+        description: "PRINTSHOP INVOICE",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -12_000,
+        txn_date: "2026-02-20",
+        description: "UBER BUSINESS TRAVEL",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: 50_000,
+        txn_date: "2026-03-01",
+        description: "NORTHWIND DEPOSIT",
+        status: "uncategorised",
+      },
+      {
+        amount_minor: -7_500,
+        txn_date: "2026-03-10",
+        description: "STATIONERY DIRECT DEBIT",
+        status: "uncategorised",
+      },
     ];
     for (const s of samples) {
       const { data: exists } = await supabase
@@ -222,7 +278,15 @@ export async function seedDemoCompanyData(
   }
 
   // Bank rules
-  if (!(await existsBy(supabase, "bank_rules", companyId, "name", "Hosting fees → Operating expenses"))) {
+  if (
+    !(await existsBy(
+      supabase,
+      "bank_rules",
+      companyId,
+      "name",
+      "Hosting fees → Operating expenses",
+    ))
+  ) {
     const { error } = await supabase.from("bank_rules" as never).insert({
       company_id: companyId,
       name: "Hosting fees → Operating expenses",
@@ -450,7 +514,15 @@ export async function seedDemoCompanyData(
   }
 
   // Recurring invoice template
-  if (!(await existsBy(supabase, "sales_recurring_invoices", companyId, "name", "Brightside monthly retainer"))) {
+  if (
+    !(await existsBy(
+      supabase,
+      "sales_recurring_invoices",
+      companyId,
+      "name",
+      "Brightside monthly retainer",
+    ))
+  ) {
     const { data: rec, error } = await supabase
       .from("sales_recurring_invoices" as never)
       .insert({
@@ -717,7 +789,15 @@ export async function seedDemoCompanyData(
   }
 
   // Employee expense claim
-  if (!(await existsBy(supabase, "employee_expense_claims", companyId, "description", "Client lunch (demo claim)"))) {
+  if (
+    !(await existsBy(
+      supabase,
+      "employee_expense_claims",
+      companyId,
+      "description",
+      "Client lunch (demo claim)",
+    ))
+  ) {
     const { error } = await supabase.from("employee_expense_claims" as never).insert({
       company_id: companyId,
       claimant_user_id: userId,
@@ -731,7 +811,15 @@ export async function seedDemoCompanyData(
     } as never);
     if (!error) documents += 1;
   }
-  if (!(await existsBy(supabase, "employee_expense_claims", companyId, "description", "Train to Manchester (approved demo)"))) {
+  if (
+    !(await existsBy(
+      supabase,
+      "employee_expense_claims",
+      companyId,
+      "description",
+      "Train to Manchester (approved demo)",
+    ))
+  ) {
     const { error } = await supabase.from("employee_expense_claims" as never).insert({
       company_id: companyId,
       claimant_user_id: userId,
@@ -815,20 +903,23 @@ export async function seedDemoCompanyData(
   // Link canonical documents to their posted journals so AR/AP ageing matches the GL.
   await linkDemoDocumentsToJournals(supabase, companyId, journalByKey);
 
-  await supabase.rpc("record_audit_event" as never, {
-    _company_id: companyId,
-    _action: "demo.seed",
-    _entity_type: "company",
-    _entity_id: companyId,
-    _details: {
-      journalsPosted,
-      contacts: contactIds.size + volume.contacts,
-      documents,
-      volume,
-      sample: true,
-      rich: true,
-    },
-  } as never);
+  await supabase.rpc(
+    "record_audit_event" as never,
+    {
+      _company_id: companyId,
+      _action: "demo.seed",
+      _entity_type: "company",
+      _entity_id: companyId,
+      _details: {
+        journalsPosted,
+        contacts: contactIds.size + volume.contacts,
+        documents,
+        volume,
+        sample: true,
+        rich: true,
+      },
+    } as never,
+  );
 
   return {
     journalsPosted,
@@ -854,7 +945,8 @@ async function upsertDemoQuote(
     description: string;
   },
 ): Promise<number> {
-  if (await existsBy(supabase, "sales_quotes", args.companyId, "quote_number", args.number)) return 0;
+  if (await existsBy(supabase, "sales_quotes", args.companyId, "quote_number", args.number))
+    return 0;
   const total = args.subtotal + args.tax;
   const { data: q, error } = await supabase
     .from("sales_quotes" as never)
