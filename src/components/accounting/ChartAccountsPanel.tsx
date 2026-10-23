@@ -13,6 +13,7 @@ import {
   importChartAccounts,
   listChartAccounts,
   mergeChartAccounts,
+  previewMergeChartAccounts,
   saveChartAccount,
   suggestChartAccount,
   type ChartAccount,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/accounting/account-import";
 import { saveAccountSchema } from "@/lib/accounting/account-schema";
 import { signedBalance } from "@/lib/accounting/account-rules";
+import { assessMergePlan } from "@/lib/accounting/account-merge";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { STARTER_CHARTS } from "@/lib/accounting/starter-charts";
 import { friendlyAuthError } from "@/lib/auth-helpers";
@@ -72,6 +74,7 @@ export function ChartAccountsPanel({
   const fetchChart = useServerFn(listChartAccounts);
   const archive = useServerFn(archiveChartAccount);
   const merge = useServerFn(mergeChartAccounts);
+  const previewMerge = useServerFn(previewMergeChartAccounts);
   const importRows = useServerFn(importChartAccounts);
   const copyChart = useServerFn(copyChartAccounts);
   const suggest = useServerFn(suggestChartAccount);
@@ -94,6 +97,7 @@ export function ChartAccountsPanel({
   const [inline, setInline] = useState<{ id: string; name: string } | null>(null);
   const [mergeSource, setMergeSource] = useState<ChartAccount | null>(null);
   const [mergeTarget, setMergeTarget] = useState("");
+  const [mergeLockedToday, setMergeLockedToday] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [parsedRows, setParsedRows] = useState<ChartImportRow[]>([]);
   const [parseIssues, setParseIssues] = useState<string[]>([]);
@@ -149,17 +153,45 @@ export function ChartAccountsPanel({
     onError: (error) => toast.error(friendlyAuthError(error)),
   });
 
+  const mergePreview = useQuery({
+    queryKey: ["merge-preview", companyId, mergeSource?.id, mergeTarget],
+    enabled: mergeSource !== null && mergeTarget !== "",
+    retry: false,
+    queryFn: () =>
+      previewMerge({
+        data: { companyId, sourceId: mergeSource!.id, targetId: mergeTarget },
+      }),
+  });
+  const mergePlan = mergePreview.data && "periods" in mergePreview.data ? mergePreview.data : null;
+  const mergeAssessment = mergePlan ? assessMergePlan(mergePlan, mergeLockedToday) : null;
+
   const mergeMutation = useMutation({
     mutationFn: () => {
       if (!mergeSource || !mergeTarget) throw new Error("Choose the account that should remain.");
-      return merge({ data: { companyId, sourceId: mergeSource.id, targetId: mergeTarget } });
+      return merge({
+        data: {
+          companyId,
+          sourceId: mergeSource.id,
+          targetId: mergeTarget,
+          postLockedPeriodsToday: mergeLockedToday,
+        },
+      });
     },
     onSuccess: async (result) => {
       await refresh();
       setMergeSource(null);
+      setMergeLockedToday(false);
       toast.success(
-        result.journalId ? "Accounts merged and the balance was posted" : "Accounts merged",
+        result.journalCount
+          ? `Accounts merged: ${result.journalCount} journal${result.journalCount === 1 ? "" : "s"} posted`
+          : "Accounts merged",
       );
+      if (!result.archived) {
+        toast.message(
+          result.archiveBlockedReason ??
+            "The balance moved, but the old account could not be archived yet.",
+        );
+      }
     },
     onError: (error) => toast.error(friendlyAuthError(error)),
   });
@@ -564,10 +596,17 @@ export function ChartAccountsPanel({
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            The balance moves with a journal, then this account is archived. Posted history stays on
-            the original lines.
+            The balance moves period by period, with a journal dated inside each period, so earlier
+            years keep their figures. Posted history stays on the original lines. Then this account
+            is archived where the rules allow it.
           </p>
-          <Select value={mergeTarget} onValueChange={setMergeTarget}>
+          <Select
+            value={mergeTarget}
+            onValueChange={(value) => {
+              setMergeTarget(value);
+              setMergeLockedToday(false);
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Account to keep" />
             </SelectTrigger>
@@ -586,10 +625,61 @@ export function ChartAccountsPanel({
                 ))}
             </SelectContent>
           </Select>
+          {mergeTarget && mergePreview.isPending ? (
+            <p className="text-sm text-muted-foreground">Checking what will be posted…</p>
+          ) : null}
+          {mergePreview.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {friendlyAuthError(mergePreview.error)}
+            </p>
+          ) : null}
+          {mergePreview.data && "unavailable" in mergePreview.data ? (
+            <p className="text-sm text-muted-foreground">{mergePreview.data.unavailable}</p>
+          ) : null}
+          {mergePlan && mergeAssessment ? (
+            <div className="space-y-2 text-sm">
+              {mergePlan.periods.length === 0 ? (
+                <p>No balance to move. The account will just be archived.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {mergePlan.periods.map((p) => (
+                    <li key={p.period_id} className="flex justify-between gap-2">
+                      <span>
+                        {p.period_name}: journal dated {p.journal_date}
+                        {p.locked ? ` (locked: ${p.lock_reason ?? "locked"})` : ""}
+                      </span>
+                      <span className="tabular-nums">{fromMinorUnits(p.net_minor, currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {mergeAssessment.lockedPeriods.length > 0 ? (
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={mergeLockedToday}
+                    onChange={(e) => setMergeLockedToday(e.target.checked)}
+                  />
+                  <span>
+                    Post the locked periods&apos; share in one journal dated {mergePlan.today} (this
+                    puts their amounts in today&apos;s period).
+                  </span>
+                </label>
+              ) : null}
+              {mergeAssessment.blockedReason ? (
+                <p className="text-destructive">{mergeAssessment.blockedReason}</p>
+              ) : null}
+            </div>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
-              disabled={!mergeTarget || mergeMutation.isPending}
+              disabled={
+                !mergeTarget ||
+                mergeMutation.isPending ||
+                (mergeAssessment !== null && !mergeAssessment.canMerge)
+              }
               onClick={() => mergeMutation.mutate()}
             >
               {mergeMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
