@@ -4,13 +4,20 @@ import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-compa
 import { assertUuid } from "@/lib/company-validation";
 import { isAccountKind, type AccountClass, type AccountKind } from "@/lib/accounting/account-kinds";
 import { importAccountsSchema, saveAccountSchema } from "@/lib/accounting/account-schema";
-import { archiveDecision, mergeAllowed, mergeJournalLines } from "@/lib/accounting/account-rules";
+import {
+  archiveDecision,
+  lockedFieldChanges,
+  mergeAllowed,
+  mergeJournalLines,
+} from "@/lib/accounting/account-rules";
 import {
   misclassificationFlags,
   nearDuplicateNames,
   suggestAccountFromDescription,
 } from "@/lib/accounting/account-suggest";
 import { postJournal } from "@/lib/accounting/posting-engine";
+import { fiscalYearContaining, todayIso } from "@/lib/accounting/fiscal-year";
+import { fetchLedgerBalances, loadCompanyMeta, type Sb } from "@/lib/accounting/ledger-data";
 
 export type ChartAccount = {
   id: string;
@@ -59,48 +66,15 @@ export const listChartAccounts = createServerFn({ method: "GET" })
       .order("code" as never);
     if (error) throw new Error(error.message);
 
-    const { data: lineRows, error: lineError } = await context.supabase
-      .from("journal_lines" as never)
-      .select(
-        "account_id, debit_minor, credit_minor, journals!inner(status, journal_date)" as never,
-      )
-      .eq("company_id" as never, data.companyId as never);
-    if (lineError) throw new Error(lineError.message);
-
-    const yearStart = `${new Date().getUTCFullYear()}-01-01`;
-    const totals = new Map<
-      string,
-      { debit: number; credit: number; ytdDebit: number; ytdCredit: number; count: number }
-    >();
-    for (const line of records(lineRows)) {
-      const journal = record(line["journals"]);
-      if (text(journal, "status") !== "posted") continue;
-      const accountId = text(line, "account_id");
-      const current = totals.get(accountId) ?? {
-        debit: 0,
-        credit: 0,
-        ytdDebit: 0,
-        ytdCredit: 0,
-        count: 0,
-      };
-      const debit = number(line, "debit_minor");
-      const credit = number(line, "credit_minor");
-      current.debit += debit;
-      current.credit += credit;
-      current.count += 1;
-      if (text(journal, "journal_date") >= yearStart) {
-        current.ytdDebit += debit;
-        current.ytdCredit += credit;
-      }
-      totals.set(accountId, current);
-    }
+    const { totals, fy } = await chartTotals(context.supabase, data.companyId);
 
     const accounts = records(accountRows).map((row) =>
       toChartAccount(row, totals.get(text(row, "id"))),
     );
     return {
       accounts,
-      balanceLabel: "Calendar year to date (UTC)",
+      balanceLabel: `Financial year to date (${fy.start} to ${fy.end})`,
+      fiscalYear: { start: fy.start, end: fy.end },
       review: {
         misclassified: misclassificationFlags(
           accounts.map((account) => ({
@@ -131,6 +105,22 @@ export const saveChartAccount = createServerFn({ method: "POST" })
     }
     if (data.id) {
       const existing = await loadAccount(context.supabase, data.companyId, data.id);
+      const blocked = lockedFieldChanges(
+        {
+          isSystem: existing.isSystem,
+          isControl: existing.isControl,
+          isLocked: existing.isLocked,
+          code: existing.code,
+          accountKind: existing.accountKind,
+          isHeader: existing.isHeader,
+        },
+        { code: data.code, accountKind: data.accountKind, isHeader: data.isHeader },
+      );
+      if (blocked.length > 0) {
+        throw new Error(
+          `This is a system account. You cannot change its ${blocked.join(", ")}. You can still rename it and edit its description.`,
+        );
+      }
       if (
         existing.accountKind !== data.accountKind &&
         (await postedCount(context.supabase, data.id)) > 0
@@ -157,8 +147,6 @@ export const saveChartAccount = createServerFn({ method: "POST" })
       bank_name: data.bankName || null,
       account_number_masked: data.accountNumberMasked || null,
       updated_by: context.userId,
-      is_system: false,
-      is_control: false,
     };
     const query = context.supabase.from("accounts" as never);
     const result = data.id
@@ -171,6 +159,10 @@ export const saveChartAccount = createServerFn({ method: "POST" })
       : await query
           .insert({
             ...payload,
+            // AC-03: flags are only ever set on insert. Sending them on update tried to clear
+            // the system flag of system accounts and was rejected by the database.
+            is_system: false,
+            is_control: false,
             source: "manual",
             is_postable: !data.isHeader,
             is_active: true,
@@ -349,30 +341,67 @@ async function loadAccount(
   return toChartAccount(record(data), totals);
 }
 
+type AccountTotals = {
+  debit: number;
+  credit: number;
+  ytdDebit: number;
+  ytdCredit: number;
+  count: number;
+};
+
+/**
+ * Per-account totals from SQL aggregates (no 1000-row cap, converted to base currency).
+ * "YTD" is the company's financial year, not the calendar year (AC-06). Year-end closing
+ * journals are left out of the YTD movement so P&L accounts still show the year's activity.
+ */
+async function chartTotals(
+  supabase: Parameters<typeof assertCompanyMember>[0],
+  companyId: string,
+): Promise<{ totals: Map<string, AccountTotals>; fy: { start: string; end: string } }> {
+  const sb = supabase as unknown as Sb;
+  const meta = await loadCompanyMeta(sb, companyId);
+  const fy = fiscalYearContaining(todayIso(), meta.fyEndMonth, meta.fyEndDay);
+  const [allTime, movement] = await Promise.all([
+    fetchLedgerBalances(sb, companyId, meta.baseCurrency),
+    fetchLedgerBalances(sb, companyId, meta.baseCurrency, {
+      from: fy.start,
+      to: fy.end,
+      excludeYearEndClose: true,
+    }),
+  ]);
+  const totals = new Map<string, AccountTotals>();
+  for (const row of allTime) {
+    totals.set(row.account_id, {
+      debit: Number(row.debit_minor),
+      credit: Number(row.credit_minor),
+      ytdDebit: 0,
+      ytdCredit: 0,
+      count: row.line_count,
+    });
+  }
+  for (const row of movement) {
+    const current = totals.get(row.account_id) ?? {
+      debit: 0,
+      credit: 0,
+      ytdDebit: 0,
+      ytdCredit: 0,
+      count: 0,
+    };
+    current.ytdDebit = Number(row.debit_minor);
+    current.ytdCredit = Number(row.credit_minor);
+    current.count = Math.max(current.count, row.line_count);
+    totals.set(row.account_id, current);
+  }
+  return { totals, fy };
+}
+
 async function accountTotals(
   supabase: Parameters<typeof assertCompanyMember>[0],
   companyId: string,
   accountId: string,
 ) {
-  const { data, error } = await supabase
-    .from("journal_lines" as never)
-    .select("debit_minor, credit_minor, journals!inner(status, journal_date)" as never)
-    .eq("company_id" as never, companyId as never)
-    .eq("account_id" as never, accountId as never);
-  if (error) throw new Error(error.message);
-  const yearStart = `${new Date().getUTCFullYear()}-01-01`;
-  const totals = { debit: 0, credit: 0, ytdDebit: 0, ytdCredit: 0, count: 0 };
-  for (const line of records(data)) {
-    if (text(record(line["journals"]), "status") !== "posted") continue;
-    totals.debit += number(line, "debit_minor");
-    totals.credit += number(line, "credit_minor");
-    totals.count += 1;
-    if (text(record(line["journals"]), "journal_date") >= yearStart) {
-      totals.ytdDebit += number(line, "debit_minor");
-      totals.ytdCredit += number(line, "credit_minor");
-    }
-  }
-  return totals;
+  const { totals } = await chartTotals(supabase, companyId);
+  return totals.get(accountId) ?? { debit: 0, credit: 0, ytdDebit: 0, ytdCredit: 0, count: 0 };
 }
 
 async function postedCount(supabase: Parameters<typeof assertCompanyMember>[0], accountId: string) {
@@ -383,6 +412,23 @@ async function postedCount(supabase: Parameters<typeof assertCompanyMember>[0], 
   if (error) throw new Error(error.message);
   return records(data).filter((line) => text(record(line["journals"]), "status") === "posted")
     .length;
+}
+
+/** Posted lines on the account in the current financial year, excluding year-end closing. */
+async function currentYearActivity(
+  supabase: Parameters<typeof assertCompanyMember>[0],
+  companyId: string,
+  accountId: string,
+): Promise<number> {
+  const sb = supabase as unknown as Sb;
+  const meta = await loadCompanyMeta(sb, companyId);
+  const fy = fiscalYearContaining(todayIso(), meta.fyEndMonth, meta.fyEndDay);
+  const rows = await fetchLedgerBalances(sb, companyId, meta.baseCurrency, {
+    from: fy.start,
+    to: fy.end,
+    excludeYearEndClose: true,
+  });
+  return rows.find((r) => r.account_id === accountId)?.line_count ?? 0;
 }
 
 async function archiveFacts(
@@ -414,6 +460,8 @@ async function archiveFacts(
     isControl: account.isControl,
     isLocked: account.isLocked,
     activeChildCount: childCount ?? 0,
+    accountClass: account.accountType,
+    currentYearActivityCount: await currentYearActivity(supabase, companyId, account.id),
     postedDebitMinor: account.debitMinor,
     postedCreditMinor: account.creditMinor,
     activeRecurringInvoice: records(recurring).some((row) =>

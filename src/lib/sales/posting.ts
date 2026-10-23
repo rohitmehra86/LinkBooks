@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { postJournal, reverseJournal } from "@/lib/accounting/posting-engine";
+import { isMissingRpc } from "@/lib/sales/rpc";
 import type { JournalLineDraft } from "@/lib/accounting/money";
-import { requireAccountByCode } from "@/lib/purchases/accounts";
+import { resolveArAccount } from "@/lib/sales/ar-accounts";
 
 type Client = SupabaseClient<Database>;
 
@@ -21,11 +22,13 @@ export async function postInvoiceAuthorisation(
     invoice_id: string;
     invoice_date: string;
     currency_code: string;
+    /** Rate to base currency; defaults to 1 (base-currency document). */
+    fx_rate_to_base?: number;
     lines: InvoiceLinePost[];
     memo?: string;
   },
 ): Promise<string> {
-  const ar = await requireAccountByCode(supabase, args.company_id, "1100");
+  const ar = await resolveArAccount(supabase, args.company_id);
   const { resolveOutputTaxAccount } = await import("@/lib/tax/tax-accounts");
   const taxPayable = await resolveOutputTaxAccount(supabase, args.company_id);
 
@@ -68,6 +71,7 @@ export async function postInvoiceAuthorisation(
     company_id: args.company_id,
     journal_date: args.invoice_date,
     currency_code: args.currency_code,
+    ...(args.fx_rate_to_base ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
     source_type: "sales_invoice",
     source_id: args.invoice_id,
     idempotency_key: `sales_invoice:${args.invoice_id}:authorise`,
@@ -91,18 +95,21 @@ export async function postCustomerReceipt(
     currency_code: string;
     bank_account_id: string;
     amount_minor: bigint | number;
+    fx_rate_to_base?: number;
     memo?: string;
   },
 ): Promise<string> {
-  const ar = await requireAccountByCode(supabase, args.company_id, "1100");
-  const amount = typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
+  const ar = await resolveArAccount(supabase, args.company_id);
+  const amount =
+    typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Receipt amount must be positive");
 
   const { journalId } = await postJournal(supabase, {
     company_id: args.company_id,
     journal_date: args.receipt_date,
     currency_code: args.currency_code,
-    source_type: "customer_receipt",
+    ...(args.fx_rate_to_base ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
+    source_type: "customer_payment",
     source_id: args.receipt_id,
     idempotency_key: `customer_receipt:${args.receipt_id}:post`,
     ...(args.memo ? { memo: args.memo } : {}),
@@ -132,11 +139,12 @@ export async function postSalesCreditAuthorisation(
     credit_note_id: string;
     credit_date: string;
     currency_code: string;
+    fx_rate_to_base?: number;
     lines: InvoiceLinePost[];
     memo?: string;
   },
 ): Promise<string> {
-  const ar = await requireAccountByCode(supabase, args.company_id, "1100");
+  const ar = await resolveArAccount(supabase, args.company_id);
   const { resolveOutputTaxAccount } = await import("@/lib/tax/tax-accounts");
   const taxPayable = await resolveOutputTaxAccount(supabase, args.company_id);
   const journalLines: JournalLineDraft[] = [];
@@ -178,6 +186,7 @@ export async function postSalesCreditAuthorisation(
     company_id: args.company_id,
     journal_date: args.credit_date,
     currency_code: args.currency_code,
+    ...(args.fx_rate_to_base ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
     source_type: "sales_credit_note",
     source_id: args.credit_note_id,
     idempotency_key: `sales_credit_note:${args.credit_note_id}:authorise`,
@@ -201,7 +210,8 @@ export async function postBankTransfer(
     memo?: string;
   },
 ): Promise<string> {
-  const amount = typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
+  const amount =
+    typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Transfer amount must be positive");
   if (args.from_gl_account_id === args.to_gl_account_id) {
     throw new Error("Transfer accounts must differ");
@@ -237,7 +247,22 @@ export async function voidPostedDocument(
   supabase: Client,
   postedJournalId: string,
   idempotencyKey: string,
+  reversalDate?: string,
 ): Promise<string> {
+  if (reversalDate) {
+    // Reverse on an explicit date (must be in an open period, not before the original date).
+    const { data, error } = await supabase.rpc(
+      "reverse_journal_on" as never,
+      {
+        _journal_id: postedJournalId,
+        _reversal_date: reversalDate,
+        _idempotency_key: idempotencyKey,
+      } as never,
+    );
+    if (!error && typeof data === "string") return data;
+    if (error && !isMissingRpc(error, "reverse_journal_on")) throw new Error(error.message);
+    // reverse_journal_on is not deployed yet: fall back to the original-date reversal.
+  }
   const { journalId } = await reverseJournal(supabase, postedJournalId, idempotencyKey);
   return journalId;
 }

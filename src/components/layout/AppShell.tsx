@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Menu, Bell, LogOut, UserRound } from "lucide-react";
+import { Menu, LogOut, UserRound } from "lucide-react";
 import { navItems } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { initialsFrom } from "@/lib/auth-helpers";
@@ -128,14 +128,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-sidebar lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-sidebar print:hidden lg:flex">
         <Brand />
         <NavList />
         <SidebarFooter isDemo={isDemo} />
       </aside>
 
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur md:px-6">
+      <div className="lg:pl-64 print:pl-0">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur print:hidden md:px-6">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open menu">
@@ -161,17 +161,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <CreateNewMenu />
 
-          <Button variant="ghost" size="icon" aria-label="Notifications" disabled title="Notifications arrive later">
-            <Bell className="size-5" />
-          </Button>
-
           <UserMenu />
         </header>
 
         {!isPending && isDemo ? (
           <div
             role="status"
-            className="border-b border-warning/30 bg-warning/15 px-4 py-2.5 md:px-6"
+            className="border-b border-warning/30 bg-warning/15 px-4 py-2.5 print:hidden md:px-6"
           >
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge className="bg-warning text-warning-foreground hover:bg-warning">
@@ -181,13 +177,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Sample data only — not real financial records.
               </span>
               <span className="text-muted-foreground">
-                Same ledger engine and permissions as live organisations. Reset from Settings → Demo.
+                Same ledger engine and permissions as live organisations. Reset from Settings →
+                Demo.
               </span>
             </div>
           </div>
         ) : null}
 
-        <main className={cn("mx-auto w-full max-w-[1400px] px-4 py-6 md:px-6 md:py-8")}>
+        <main
+          id="main-content"
+          className={cn(
+            "mx-auto w-full max-w-[1400px] px-4 py-6 md:px-6 md:py-8 print:max-w-none print:p-0",
+          )}
+        >
           {children}
         </main>
       </div>

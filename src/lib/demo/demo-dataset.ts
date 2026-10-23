@@ -1,3 +1,4 @@
+import type { JournalSourceType } from "@/lib/accounting/posting-engine";
 /**
  * Canonical Demo Company ledger — deterministic, known expected totals.
  * Posted lines use stable account *codes*; live seed resolves codes → UUIDs.
@@ -44,7 +45,7 @@ export type DemoJournalSpec = {
   key: string;
   date: string;
   memo: string;
-  source_type: string;
+  source_type: JournalSourceType;
   lines: Array<{ code: string; debit: bigint; credit: bigint; description?: string }>;
 };
 
@@ -163,11 +164,13 @@ export const DEMO_JOURNAL_SPECS: DemoJournalSpec[] = [
   {
     key: "demo:cos-ap",
     date: "2026-09-20",
-    memo: "Cost of sales on account",
+    // Credit Accruals (2200), never the AP control account (2000): a manual
+    // journal on a control account has no subledger bill behind it.
+    memo: "Cost of sales accrual",
     source_type: "manual",
     lines: [
       { code: "5000", debit: 75_000n, credit: 0n },
-      { code: "2000", debit: 0n, credit: 75_000n },
+      { code: "2200", debit: 0n, credit: 75_000n },
     ],
   },
   {
@@ -273,7 +276,7 @@ export const DEMO_EXPECTED = {
   // Control accounts
   bank: 6_162_500n,
   ar: 480_000n,
-  ap: 75_000n,
+  ap: 0n, // all bills are paid/credited; the 75,000 cost accrual sits in Accruals (2200)
   taxPayable: 280_000n,
   vatRecoverable: 110_000n,
 } as const;

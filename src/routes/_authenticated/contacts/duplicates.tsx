@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
 import { findPotentialDuplicates, mergeContacts } from "@/lib/contacts/contacts.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
@@ -21,6 +22,7 @@ function DuplicatesPage() {
   const qc = useQueryClient();
   const fetchDupes = useServerFn(findPotentialDuplicates);
   const mergeFn = useServerFn(mergeContacts);
+  const canManage = useCanDo("contacts.manage");
   const [confirming, setConfirming] = useState<string | null>(null);
 
   const query = useQuery({
@@ -39,11 +41,18 @@ function DuplicatesPage() {
           confirm: true,
         },
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setConfirming(null);
       await qc.invalidateQueries({ queryKey: ["contact-duplicates", companyId] });
       await qc.invalidateQueries({ queryKey: ["contacts", companyId] });
-      toast.success("Contacts merged — transactions reassigned to the surviving contact");
+      toast.success(
+        `Contacts merged — ${result.rowsMoved} record${result.rowsMoved === 1 ? "" : "s"} moved to the surviving contact`,
+      );
+      if (!result.atomic) {
+        toast.message(
+          "The merge ran without the database transaction (migration not applied yet). Group and tag links stay on the archived contact.",
+        );
+      }
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -67,7 +76,10 @@ function DuplicatesPage() {
       ) : query.isError ? (
         <ErrorState title="Could not scan" description={friendlyAuthError(query.error)} />
       ) : (query.data ?? []).length === 0 ? (
-        <EmptyState title="No likely duplicates" description="No pairs scored high enough to review." />
+        <EmptyState
+          title="No likely duplicates"
+          description="No pairs scored high enough to review."
+        />
       ) : (
         <ul className="space-y-4">
           {(
@@ -138,7 +150,7 @@ function DuplicatesPage() {
                     <div className="flex gap-2">
                       <Button
                         size="sm"
-                        disabled={mergeM.isPending}
+                        disabled={mergeM.isPending || !canManage}
                         onClick={() =>
                           mergeM.mutate(
                             confirming.endsWith(":a")

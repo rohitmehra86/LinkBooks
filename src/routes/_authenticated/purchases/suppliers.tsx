@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
 import { listSuppliers, upsertSupplier } from "@/lib/purchases/purchases.functions";
+import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,10 @@ function SuppliersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [terms, setTerms] = useState("30");
+  const canManage = useCanDo("contacts.manage");
+  // "0" is valid (due on receipt) and must not turn into 30 days.
+  const termsDays = terms.trim() === "" ? NaN : Number(terms);
+  const termsValid = Number.isInteger(termsDays) && termsDays >= 0 && termsDays <= 3650;
 
   const query = useQuery({
     queryKey: ["suppliers", companyId, q],
@@ -49,7 +54,7 @@ function SuppliersPage() {
           companyId: companyId!,
           name,
           email,
-          paymentTermsDays: Number(terms) || 0,
+          paymentTermsDays: termsDays,
         },
       }),
     onSuccess: async () => {
@@ -81,11 +86,20 @@ function SuppliersPage() {
         </div>
         <div className="space-y-2">
           <Label>Payment terms (days)</Label>
-          <Input value={terms} onChange={(e) => setTerms(e.target.value)} />
+          <Input
+            value={terms}
+            inputMode="numeric"
+            aria-invalid={!termsValid}
+            onChange={(e) => setTerms(e.target.value)}
+          />
+          {!termsValid ? (
+            <p className="text-xs text-destructive">Enter whole days from 0 to 3650</p>
+          ) : null}
         </div>
         <Button
           size="sm"
-          disabled={mutation.isPending || name.trim().length < 1}
+          disabled={mutation.isPending || name.trim().length < 1 || !termsValid || !canManage}
+          title={canManage ? undefined : "You do not have permission to manage suppliers"}
           onClick={() => mutation.mutate()}
         >
           {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}

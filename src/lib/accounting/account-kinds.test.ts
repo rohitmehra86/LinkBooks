@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ACCOUNT_KINDS, kindSpec, suggestNextCode } from "@/lib/accounting/account-kinds";
 import {
   archiveDecision,
+  lockedFieldChanges,
   mergeAllowed,
   mergeJournalLines,
   signedBalance,
@@ -73,6 +74,21 @@ describe("archive and merge", () => {
     expect(archiveDecision(clear).ok).toBe(true);
   });
 
+  it("archives income/expense accounts by current-year activity, not all-time balance (AC-07)", () => {
+    const pl = {
+      ...clear,
+      accountClass: "expense" as const,
+      postedDebitMinor: 900,
+      postedCreditMinor: 0,
+    };
+    expect(archiveDecision({ ...pl, currentYearActivityCount: 0 }).ok).toBe(true);
+    const busy = archiveDecision({ ...pl, currentYearActivityCount: 2 });
+    expect(busy.ok).toBe(false);
+    // Balance-sheet accounts keep the zero-balance rule even with no current-year activity.
+    const bs = { ...pl, accountClass: "asset" as const, currentYearActivityCount: 0 };
+    expect(archiveDecision(bs).ok).toBe(false);
+  });
+
   it("builds a balanced merge and refuses a class change", () => {
     const lines = mergeJournalLines({ sourceId: "a", targetId: "b", netMinor: 25 });
     expect(
@@ -106,5 +122,38 @@ describe("chart import and suggestions", () => {
       const codes = new Set(chart.accounts.map((account) => account.code));
       expect(codes.size).toBe(chart.accounts.length);
     }
+  });
+});
+
+describe("locked account fields (AC-03)", () => {
+  const sys = {
+    isSystem: true,
+    isControl: false,
+    isLocked: false,
+    code: "1100",
+    accountKind: "accounts_receivable",
+    isHeader: false,
+  };
+  it("lists code, type and header changes on a system account", () => {
+    expect(lockedFieldChanges(sys, { code: "1101", accountKind: "bank", isHeader: true })).toEqual([
+      "code",
+      "type",
+      "header setting",
+    ]);
+  });
+  it("allows name-only edits and leaves ordinary accounts alone", () => {
+    expect(
+      lockedFieldChanges(sys, {
+        code: "1100",
+        accountKind: "accounts_receivable",
+        isHeader: false,
+      }),
+    ).toEqual([]);
+    expect(
+      lockedFieldChanges(
+        { ...sys, isSystem: false },
+        { code: "9", accountKind: "bank", isHeader: true },
+      ),
+    ).toEqual([]);
   });
 });

@@ -54,7 +54,9 @@ export function billOutstanding(bill: {
   amount_paid_minor: bigint | number;
   amount_credited_minor: bigint | number;
 }): bigint {
-  return asBig(bill.total_minor) - asBig(bill.amount_paid_minor) - asBig(bill.amount_credited_minor);
+  return (
+    asBig(bill.total_minor) - asBig(bill.amount_paid_minor) - asBig(bill.amount_credited_minor)
+  );
 }
 
 export function deriveBillStatus(bill: {

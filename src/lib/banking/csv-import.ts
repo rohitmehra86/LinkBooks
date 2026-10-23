@@ -73,7 +73,10 @@ export function parseBankCsv(text: string): ParseResult {
     const rowNumber = i + 1;
     const parts = splitCsvLine(lines[i]!);
     if (parts.length < 3) {
-      errors.push({ row_number: rowNumber, message: "Expected at least date, description, amount" });
+      errors.push({
+        row_number: rowNumber,
+        message: "Expected at least date, description, amount",
+      });
       continue;
     }
     const date = parseDate(parts[0]!);
@@ -92,7 +95,9 @@ export function parseBankCsv(text: string): ParseResult {
       continue;
     }
     const reference = (parts[3] ?? "").trim().slice(0, 120) || null;
-    const external_id = simpleHash(`${date}|${amount.toString()}|${description}|${reference ?? ""}`);
+    const external_id = simpleHash(
+      `${date}|${amount.toString()}|${description}|${reference ?? ""}`,
+    );
     rows.push({
       txn_date: date,
       description,

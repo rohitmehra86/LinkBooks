@@ -2,7 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { listBills, listExpenses, listPayments } from "@/lib/purchases/purchases.functions";
+import {
+  getBillsWorkspaceSummary,
+  listExpenses,
+  listPayments,
+} from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { StatCard } from "@/components/common/stat-card";
@@ -16,17 +20,18 @@ export const Route = createFileRoute("/_authenticated/purchases/")({
 
 function PurchasesOverview() {
   const { company, isPending } = useActiveCompany();
-  const fetchBills = useServerFn(listBills);
+  const fetchSummary = useServerFn(getBillsWorkspaceSummary);
   const fetchExpenses = useServerFn(listExpenses);
   const fetchPayments = useServerFn(listPayments);
 
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
 
-  const billsQ = useQuery({
-    queryKey: ["bills", companyId],
+  // Totals come from the server across ALL open bills, per currency - not a 100-row sample.
+  const summaryQ = useQuery({
+    queryKey: ["bills-workspace-summary", companyId],
     enabled: Boolean(companyId),
-    queryFn: () => fetchBills({ data: { companyId: companyId!, limit: 100 } }),
+    queryFn: () => fetchSummary({ data: { companyId: companyId! } }),
   });
   const expensesQ = useQuery({
     queryKey: ["expenses", companyId],
@@ -44,18 +49,12 @@ function PurchasesOverview() {
     return <EmptyState title="No organisation" description="Create an organisation first." />;
   }
 
-  const billsPayload = billsQ.data as { rows?: unknown[] } | unknown[] | undefined;
-  const bills = (
-    Array.isArray(billsPayload) ? billsPayload : (billsPayload?.rows ?? [])
-  ) as Array<{
-    status: string;
-    total_minor: number;
-    amount_paid_minor: number;
-    amount_credited_minor: number;
-  }>;
-  const toPay = bills
-    .filter((b) => ["authorised", "partly_paid"].includes(b.status))
-    .reduce((s, b) => s + (b.total_minor - b.amount_paid_minor - b.amount_credited_minor), 0);
+  const totals = summaryQ.data?.totalsByCurrency ?? [];
+  const baseCurrency = summaryQ.data?.baseCurrency ?? currency;
+  const openCount = summaryQ.data?.counts.to_pay ?? 0;
+  const toPayLabel = totals.length
+    ? totals.map((t) => `${fromMinorUnits(BigInt(t.outstandingMinor), t.currency)} ${t.currency}`)
+    : [`${fromMinorUnits(0n, baseCurrency)} ${baseCurrency}`];
 
   return (
     <>
@@ -77,8 +76,8 @@ function PurchasesOverview() {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Bills to pay"
-          value={fromMinorUnits(BigInt(toPay), currency)}
-          hint={`${bills.filter((b) => ["authorised", "partly_paid"].includes(b.status)).length} open`}
+          value={toPayLabel[0] ?? ""}
+          hint={`${openCount} open${toPayLabel.length > 1 ? ` · also ${toPayLabel.slice(1).join(", ")}` : ""}`}
         />
         <StatCard
           label="Payments recorded"

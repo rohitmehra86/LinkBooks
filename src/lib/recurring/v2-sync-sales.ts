@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { legacyFrequencyToRrule, type LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
+import {
+  legacyFrequencyToRrule,
+  type LegacyRecurrenceFrequency,
+} from "@/lib/recurring/legacy-frequency";
 
 type RpcClient = { from: SupabaseClient["from"] };
 
@@ -120,4 +123,58 @@ export async function ensureV2ForLegacySalesRecurring(
   if (sErr) throw new Error(sErr.message);
 
   return { scheduleId: (schedule as { id: string }).id, templateVersionId: versionId };
+}
+
+/**
+ * Push edits made on the legacy sales recurring row (name, frequency, next date, auto-authorise,
+ * active flag, lines) into the v2 template + schedule so the scheduler and the generator agree.
+ */
+export async function syncV2FromLegacySalesRecurring(
+  supabase: RpcClient,
+  recurringInvoiceId: string,
+): Promise<void> {
+  const { scheduleId } = await ensureV2ForLegacySalesRecurring(supabase, recurringInvoiceId);
+  const { data: ri, error } = await supabase
+    .from("sales_recurring_invoices" as never)
+    .select("*, sales_recurring_invoice_lines(*)" as never)
+    .eq("id" as never, recurringInvoiceId as never)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!ri) throw new Error("Recurring invoice not found");
+  const inv = ri as unknown as {
+    company_id: string;
+    contact_id: string;
+    name: string;
+    currency_code: string;
+    is_active: boolean;
+    frequency: LegacyRecurrenceFrequency;
+    next_due_date: string;
+    auto_authorise: boolean;
+    memo: string | null;
+    sales_recurring_invoice_lines: unknown[];
+  };
+
+  const { error: sErr } = await supabase
+    .from("recurring_schedules" as never)
+    .update({
+      frequency_legacy: inv.frequency,
+      rrule: legacyFrequencyToRrule(inv.frequency),
+      dtstart: inv.next_due_date,
+      next_occurrence_date: inv.next_due_date,
+      auto_authorise: inv.auto_authorise,
+      is_paused: !inv.is_active,
+    } as never)
+    .eq("id" as never, scheduleId as never);
+  if (sErr) throw new Error(sErr.message);
+
+  const { error: tErr } = await supabase
+    .from("recurring_templates" as never)
+    .update({
+      name: inv.name,
+      contact_id: inv.contact_id,
+      currency_code: inv.currency_code,
+      is_active: inv.is_active,
+    } as never)
+    .eq("legacy_sales_recurring_invoice_id" as never, recurringInvoiceId as never);
+  if (tErr) throw new Error(tErr.message);
 }

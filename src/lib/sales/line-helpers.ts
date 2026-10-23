@@ -1,5 +1,6 @@
 import { sumLines, deriveBillStatus, billOutstanding } from "@/lib/purchases/line-math";
-import { computeTaxLine, type TaxTreatment } from "@/lib/tax/tax-math";
+import type { TaxTreatment } from "@/lib/tax/tax-math";
+import { computeTaxLineRounded } from "@/lib/sales/line-math-rounded";
 
 export { sumLines, deriveBillStatus as deriveInvoiceStatus, billOutstanding as invoiceOutstanding };
 export type { TaxTreatment };
@@ -11,6 +12,8 @@ export type SalesLineInput = {
   unitPriceMinor: number;
   discountMinor?: number;
   taxRateBps?: number;
+  /** Tax code (tax_codes.id). When set the server derives the rate from the code. */
+  taxCodeId?: string | null;
   /** Optional catalogue product/service — does not invent inventory movements. */
   productId?: string | null;
 };
@@ -23,7 +26,7 @@ export type SalesLineComputed = SalesLineInput & {
 
 /**
  * Line tax uses org treatment: exclusive (default) or inclusive when prices_include_tax.
- * Rounding: half-up via computeTaxLine — same rules as tax-math tests.
+ * Rounding: half-up on quantity × price AND on tax (computeTaxLineRounded; AR-20).
  */
 export function validateSalesLines(
   lines: SalesLineInput[],
@@ -35,7 +38,7 @@ export function validateSalesLines(
     const description = (l.description ?? "").trim();
     if (!description) throw new Error(`Line ${i + 1}: description is required`);
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required`);
-    const computed = computeTaxLine({
+    const computed = computeTaxLineRounded({
       quantity: l.quantity,
       unit_price_minor: l.unitPriceMinor,
       discount_minor: l.discountMinor ?? 0,
@@ -49,6 +52,7 @@ export function validateSalesLines(
       unitPriceMinor: l.unitPriceMinor,
       discountMinor: l.discountMinor ?? 0,
       taxRateBps: l.taxRateBps ?? 0,
+      taxCodeId: l.taxCodeId ?? null,
       productId: l.productId ?? null,
       ...computed,
     };

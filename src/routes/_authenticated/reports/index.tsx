@@ -4,7 +4,7 @@ import { useActiveCompany } from "@/hooks/use-active-company";
 import {
   QUICK_REPORT_IDS,
   REPORT_CATALOG,
-  REPORT_CATEGORIES,
+  nonEmptyCategories,
   searchReports,
   type ReportCategoryId,
 } from "@/lib/reports/catalog";
@@ -21,7 +21,8 @@ export const Route = createFileRoute("/_authenticated/reports/")({
       { title: "Reports Centre — LinkBooks" },
       {
         name: "description",
-        content: "Searchable catalogue of financial and operational reports from the posted ledger.",
+        content:
+          "Searchable catalogue of financial and operational reports from the posted ledger.",
       },
     ],
   }),
@@ -33,11 +34,14 @@ function ReportsCentre() {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<ReportCategoryId | "all">("all");
 
-  const filtered = useMemo(() => {
-    let rows = searchReports(q);
-    if (category !== "all") rows = rows.filter((r) => r.category === category);
-    return rows;
-  }, [q, category]);
+  const searched = useMemo(() => searchReports(q), [q]);
+  // Only categories that still have a matching report are offered or shown (RP-10).
+  const categories = useMemo(() => nonEmptyCategories(searched), [searched]);
+  const filtered = useMemo(
+    () => (category === "all" ? searched : searched.filter((r) => r.category === category)),
+    [searched, category],
+  );
+  const visibleCategories = categories.filter((c) => filtered.some((r) => r.category === c.id));
 
   const readyCount = REPORT_CATALOG.filter((r) => r.status === "ready").length;
 
@@ -90,7 +94,7 @@ function ReportsCentre() {
             onChange={(e) => setCategory(e.target.value as ReportCategoryId | "all")}
           >
             <option value="all">All categories</option>
-            {REPORT_CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
@@ -99,35 +103,54 @@ function ReportsCentre() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((report) => (
-          <Card key={report.id} className={report.status === "depends" ? "opacity-90" : undefined}>
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-2">
-                <CardTitle className="text-base">{report.title}</CardTitle>
-                <Badge variant={report.status === "ready" ? "secondary" : "outline"}>
-                  {report.status === "ready" ? "Ready" : "Depends"}
-                </Badge>
-              </div>
-              <CardDescription>{report.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                {REPORT_CATEGORIES.find((c) => c.id === report.category)?.label}
-              </p>
-              {report.status === "depends" ? (
-                <p className="text-sm text-amber-700 dark:text-amber-400">{report.dependency}</p>
-              ) : (
-                <Button asChild size="sm">
-                  <Link to="/reports/$reportId" params={{ reportId: report.id }}>
-                    Open report
-                  </Link>
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {visibleCategories.map((cat) => {
+        const rows = filtered.filter((r) => r.category === cat.id);
+        return (
+          <section key={cat.id} aria-labelledby={`cat-${cat.id}`} className="space-y-3">
+            <h2
+              id={`cat-${cat.id}`}
+              className="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              {cat.label}
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {rows.map((report) => (
+                <Card
+                  key={report.id}
+                  className={report.status === "depends" ? "opacity-90" : undefined}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base">{report.title}</CardTitle>
+                      <Badge variant={report.status === "ready" ? "secondary" : "outline"}>
+                        {report.status === "ready" ? "Ready" : "Depends"}
+                      </Badge>
+                    </div>
+                    <CardDescription>{report.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {report.status === "depends" ? (
+                      <p className="text-sm text-amber-700 dark:text-amber-400">
+                        {report.dependency}
+                      </p>
+                    ) : report.runner === "link" && report.linkTo ? (
+                      <Button asChild size="sm">
+                        <Link to={report.linkTo}>Open</Link>
+                      </Button>
+                    ) : (
+                      <Button asChild size="sm">
+                        <Link to="/reports/$reportId" params={{ reportId: report.id }}>
+                          Open report
+                        </Link>
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       {filtered.length === 0 ? (
         <EmptyState

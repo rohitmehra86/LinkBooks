@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
@@ -42,6 +42,7 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
   const today = new Date().toISOString().slice(0, 10);
+  const qc = useQueryClient();
   const idempotencyKey = useRef(crypto.randomUUID());
   const save = useServerFn(saveMoneyDocument);
   const fetchAccounts = useServerFn(listAccounts);
@@ -70,7 +71,11 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
   });
   const contactsQ = useQuery({
     queryKey: ["money-contacts", companyId, kind],
-    enabled: Boolean(companyId) && kind !== "bank_deposit" && kind !== "card_payment" && kind !== "bank_adjustment",
+    enabled:
+      Boolean(companyId) &&
+      kind !== "bank_deposit" &&
+      kind !== "card_payment" &&
+      kind !== "bank_adjustment",
     queryFn: () =>
       kind === "supplier_refund"
         ? fetchSuppliers({ data: { companyId: companyId! } })
@@ -82,13 +87,24 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
     queryFn: () => fetchUndeposited({ data: { companyId: companyId! } }),
   });
 
-  const accounts = (accountsQ.data ?? []) as Array<{ id: string; code: string; name: string; account_type: string; is_postable: boolean; is_active: boolean }>;
+  const accounts = (accountsQ.data ?? []) as Array<{
+    id: string;
+    code: string;
+    name: string;
+    account_type: string;
+    is_postable: boolean;
+    is_active: boolean;
+  }>;
   const postable = accounts.filter((account) => account.is_active && account.is_postable);
   const banks = postable.filter((account) => account.account_type === "asset");
   const liabilities = postable.filter((account) => account.account_type === "liability");
   const contacts = (contactsQ.data ?? []) as Array<{ id: string; name: string }>;
 
-  const needsContact = kind === "sales_receipt" || kind === "customer_refund" || kind === "supplier_refund" || kind === "receive_money";
+  const needsContact =
+    kind === "sales_receipt" ||
+    kind === "customer_refund" ||
+    kind === "supplier_refund" ||
+    kind === "receive_money";
   const needsIncome = kind === "sales_receipt" || kind === "receive_money";
 
   const saveM = useMutation({
@@ -113,19 +129,38 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
           ...(kind === "bank_deposit" ? { sourceIds } : {}),
         },
       }),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setError(null);
       toast.success(result.replayed ? "This document was already saved" : `${TITLES[kind]} posted`);
+      // Start the next document with a fresh key so it is never mistaken for a replay.
+      idempotencyKey.current = crypto.randomUUID();
+      setAmount("");
+      setTaxAmount("0");
+      setDescription("");
+      setReference("");
+      setMemo("");
+      setSourceIds([]);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["money-documents", companyId] }),
+        qc.invalidateQueries({ queryKey: ["undeposited", companyId] }),
+        qc.invalidateQueries({ queryKey: ["banking-counts", companyId] }),
+        qc.invalidateQueries({ queryKey: ["bank-transactions"] }),
+      ]);
     },
     onError: (e) => setError(friendlyAuthError(e)),
   });
 
   const help = useMemo(() => {
-    if (kind === "sales_receipt") return "Posts cash and income. It does not create an unpaid receivable.";
-    if (kind === "receive_money") return "A direct receipt. It is not an invoice payment or a sales receipt.";
-    if (kind === "bank_deposit") return "Moves undeposited receipts into the selected bank. A receipt can be deposited once.";
-    if (kind === "card_payment") return "Pays a credit-card liability from a bank account. It is not an expense.";
-    if (kind === "customer_refund" || kind === "supplier_refund") return "Limited to the contact's remaining credit or overpayment.";
+    if (kind === "sales_receipt")
+      return "Posts cash and income. It does not create an unpaid receivable.";
+    if (kind === "receive_money")
+      return "A direct receipt. It is not an invoice payment or a sales receipt.";
+    if (kind === "bank_deposit")
+      return "Moves undeposited receipts into the selected bank. A receipt can be deposited once.";
+    if (kind === "card_payment")
+      return "Pays a credit-card liability from a bank account. It is not an expense.";
+    if (kind === "customer_refund" || kind === "supplier_refund")
+      return "Limited to the contact's remaining credit or overpayment.";
     return "Posts through the ledger. A locked period will reject the date.";
   }, [kind]);
 
@@ -150,31 +185,64 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
           <Input value={reference} onChange={(e) => setReference(e.target.value)} />
         </Field>
         {needsContact ? (
-          <Field label={kind === "supplier_refund" ? "Supplier" : kind === "receive_money" ? "Payer" : "Customer"}>
-            <Select value={contactId} onChange={setContactId} options={contacts.map((c) => ({ value: c.id, label: c.name }))} />
+          <Field
+            label={
+              kind === "supplier_refund"
+                ? "Supplier"
+                : kind === "receive_money"
+                  ? "Payer"
+                  : "Customer"
+            }
+          >
+            <Select
+              value={contactId}
+              onChange={setContactId}
+              options={contacts.map((c) => ({ value: c.id, label: c.name }))}
+            />
           </Field>
         ) : null}
         {kind !== "bank_deposit" ? (
           <Field label="Amount">
-            <Input required inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input
+              required
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </Field>
         ) : null}
         {needsIncome ? (
           <Field label="Tax">
-            <Input inputMode="decimal" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
+            <Input
+              inputMode="decimal"
+              value={taxAmount}
+              onChange={(e) => setTaxAmount(e.target.value)}
+            />
           </Field>
         ) : null}
         <Field label={kind === "card_payment" ? "Pay from bank" : "Bank or clearing account"}>
-          <Select value={bankAccountId} onChange={setBankAccountId} options={banks.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))} />
+          <Select
+            value={bankAccountId}
+            onChange={setBankAccountId}
+            options={banks.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+          />
         </Field>
         {needsIncome ? (
           <Field label="Income account">
-            <Select value={counterAccountId} onChange={setCounterAccountId} options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))} />
+            <Select
+              value={counterAccountId}
+              onChange={setCounterAccountId}
+              options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+            />
           </Field>
         ) : null}
         {kind === "card_payment" ? (
           <Field label="Credit card liability">
-            <Select value={counterAccountId} onChange={setCounterAccountId} options={liabilities.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))} />
+            <Select
+              value={counterAccountId}
+              onChange={setCounterAccountId}
+              options={liabilities.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+            />
           </Field>
         ) : null}
         {kind === "bank_adjustment" ? (
@@ -191,7 +259,11 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
               />
             </Field>
             <Field label="Offset account">
-              <Select value={counterAccountId} onChange={setCounterAccountId} options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))} />
+              <Select
+                value={counterAccountId}
+                onChange={setCounterAccountId}
+                options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+              />
             </Field>
           </>
         ) : null}
@@ -214,7 +286,15 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
       {kind === "bank_deposit" ? (
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">Undeposited receipts</legend>
-          {((undepositedQ.data ?? []) as Array<{ id: string; document_date: string; total_minor: number; reference: string | null; kind: string }>).map((row) => (
+          {(
+            (undepositedQ.data ?? []) as Array<{
+              id: string;
+              document_date: string;
+              total_minor: number;
+              reference: string | null;
+              kind: string;
+            }>
+          ).map((row) => (
             <label key={row.id} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -225,11 +305,14 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
                   )
                 }
               />
-              {row.document_date} · {row.kind} · {(row.total_minor / 100).toFixed(2)} {row.reference ?? ""}
+              {row.document_date} · {row.kind} · {(row.total_minor / 100).toFixed(2)}{" "}
+              {row.reference ?? ""}
             </label>
           ))}
           {(undepositedQ.data ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No undeposited receipts for this organisation.</p>
+            <p className="text-sm text-muted-foreground">
+              No undeposited receipts for this organisation.
+            </p>
           ) : null}
         </fieldset>
       ) : null}

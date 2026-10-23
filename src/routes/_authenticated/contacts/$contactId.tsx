@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
 import {
   getContact,
   getContactBalances,
@@ -25,8 +26,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export const Route = createFileRoute("/_authenticated/contacts/$contactId")({
@@ -40,6 +54,7 @@ function ContactDetail() {
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
   const qc = useQueryClient();
+  const canManage = useCanDo("contacts.manage");
 
   const fetchContact = useServerFn(getContact);
   const fetchBalances = useServerFn(getContactBalances);
@@ -73,22 +88,24 @@ function ContactDetail() {
     queryFn: () => fetchTags({ data: { companyId: companyId! } }),
   });
 
-  const c = contactQ.data?.contact as {
-    name?: unknown;
-    kind?: unknown;
-    email?: unknown;
-    phone?: unknown;
-    tax_number?: unknown;
-    payment_terms_days?: unknown;
-    notes?: unknown;
-    account_number?: unknown;
-    legal_name?: unknown;
-    website?: unknown;
-    billing_address_line1?: unknown;
-    billing_city?: unknown;
-    billing_country?: unknown;
-    archived_at?: unknown;
-  } | undefined;
+  const c = contactQ.data?.contact as
+    | {
+        name?: unknown;
+        kind?: unknown;
+        email?: unknown;
+        phone?: unknown;
+        tax_number?: unknown;
+        payment_terms_days?: unknown;
+        notes?: unknown;
+        account_number?: unknown;
+        legal_name?: unknown;
+        website?: unknown;
+        billing_address_line1?: unknown;
+        billing_city?: unknown;
+        billing_country?: unknown;
+        archived_at?: unknown;
+      }
+    | undefined;
 
   const [name, setName] = useState("");
   const [kind, setKind] = useState("customer");
@@ -127,11 +144,15 @@ function ContactDetail() {
   }, [c]);
 
   useEffect(() => {
-    const g = (contactQ.data?.groups ?? []) as Array<{ group_id?: string; contact_groups?: { id: string } }>;
-    setSelectedGroups(
-      g.map((x) => x.group_id ?? x.contact_groups?.id).filter(Boolean) as string[],
-    );
-    const t = (contactQ.data?.tags ?? []) as Array<{ tag_id?: string; contact_tags?: { id: string } }>;
+    const g = (contactQ.data?.groups ?? []) as Array<{
+      group_id?: string;
+      contact_groups?: { id: string };
+    }>;
+    setSelectedGroups(g.map((x) => x.group_id ?? x.contact_groups?.id).filter(Boolean) as string[]);
+    const t = (contactQ.data?.tags ?? []) as Array<{
+      tag_id?: string;
+      contact_tags?: { id: string };
+    }>;
     setSelectedTags(t.map((x) => x.tag_id ?? x.contact_tags?.id).filter(Boolean) as string[]);
   }, [contactQ.data]);
 
@@ -204,7 +225,8 @@ function ContactDetail() {
   });
 
   const tagsM = useMutation({
-    mutationFn: () => saveTags({ data: { companyId: companyId!, contactId, tagIds: selectedTags } }),
+    mutationFn: () =>
+      saveTags({ data: { companyId: companyId!, contactId, tagIds: selectedTags } }),
     onSuccess: () => toast.success("Tags updated"),
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -247,7 +269,8 @@ function ContactDetail() {
             <Button
               variant="outline"
               size="sm"
-              disabled={archiveM.isPending}
+              disabled={archiveM.isPending || !canManage}
+              title={canManage ? undefined : "You do not have permission to archive contacts"}
               onClick={() => archiveM.mutate(archived)}
             >
               {archived ? "Restore" : "Archive"}
@@ -261,15 +284,23 @@ function ContactDetail() {
 
       {balQ.data ? (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Receivables" value={fromMinorUnits(balQ.data.receivableMinor, currency)} />
+          <Metric
+            label={`Receivables (${balQ.data.baseCurrency})`}
+            value={fromMinorUnits(balQ.data.receivableMinor, balQ.data.baseCurrency)}
+            hint={otherCurrencies(balQ.data.receivableByCurrency, balQ.data.baseCurrency)}
+          />
           <Metric
             label="Overdue receivables"
-            value={fromMinorUnits(balQ.data.overdueReceivableMinor, currency)}
+            value={fromMinorUnits(balQ.data.overdueReceivableMinor, balQ.data.baseCurrency)}
           />
-          <Metric label="Payables" value={fromMinorUnits(balQ.data.payableMinor, currency)} />
+          <Metric
+            label={`Payables (${balQ.data.baseCurrency})`}
+            value={fromMinorUnits(balQ.data.payableMinor, balQ.data.baseCurrency)}
+            hint={otherCurrencies(balQ.data.payableByCurrency, balQ.data.baseCurrency)}
+          />
           <Metric
             label="Overdue payables"
-            value={fromMinorUnits(balQ.data.overduePayableMinor, currency)}
+            value={fromMinorUnits(balQ.data.overduePayableMinor, balQ.data.baseCurrency)}
           />
         </div>
       ) : null}
@@ -288,8 +319,12 @@ function ContactDetail() {
             <Badge variant="outline">{kind}</Badge>
             {archived ? <Badge variant="secondary">Archived</Badge> : null}
           </div>
-          <p>{email || "No email"} · {phone || "No phone"}</p>
-          <p>Tax ID: {taxNumber || "—"} · Legal name: {legalName || "—"}</p>
+          <p>
+            {email || "No email"} · {phone || "No phone"}
+          </p>
+          <p>
+            Tax ID: {taxNumber || "—"} · Legal name: {legalName || "—"}
+          </p>
           <p>
             Billing: {[billingLine1, billingCity, billingCountry].filter(Boolean).join(", ") || "—"}
           </p>
@@ -360,8 +395,8 @@ function ContactDetail() {
             />
           </Field>
           <p className="text-xs text-muted-foreground">
-            Internal notes never appear on customer-facing documents automatically. Changing defaults
-            does not rewrite posted invoices or bills.
+            Internal notes never appear on customer-facing documents automatically. Changing
+            defaults does not rewrite posted invoices or bills.
           </p>
           <Button disabled={saveM.isPending || !name.trim()} onClick={() => saveM.mutate()}>
             Save changes
@@ -399,7 +434,10 @@ function ContactDetail() {
           ) : (
             <ul className="space-y-2 text-sm">
               {people.map((p) => (
-                <li key={p.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between rounded-md border px-3 py-2"
+                >
                   <span>
                     {p.first_name} {p.last_name}
                     {p.is_primary ? " · primary" : ""}
@@ -445,7 +483,12 @@ function ContactDetail() {
                   </label>
                 ))}
             </div>
-            <Button size="sm" className="mt-3" disabled={groupsM.isPending} onClick={() => groupsM.mutate()}>
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={groupsM.isPending}
+              onClick={() => groupsM.mutate()}
+            >
               Save groups
             </Button>
           </div>
@@ -468,7 +511,12 @@ function ContactDetail() {
                   </label>
                 ))}
             </div>
-            <Button size="sm" className="mt-3" disabled={tagsM.isPending} onClick={() => tagsM.mutate()}>
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={tagsM.isPending}
+              onClick={() => tagsM.mutate()}
+            >
               Save tags
             </Button>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -481,7 +529,10 @@ function ContactDetail() {
           {balQ.isPending ? (
             <LoadingState />
           ) : balQ.isError ? (
-            <ErrorState title="Could not load balances" description={friendlyAuthError(balQ.error)} />
+            <ErrorState
+              title="Could not load balances"
+              description={friendlyAuthError(balQ.error)}
+            />
           ) : (
             <>
               <h3 className="mb-2 text-sm text-muted-foreground">Sales invoices</h3>
@@ -502,6 +553,7 @@ function ContactDetail() {
                       invoice_number: string | null;
                       status: string;
                       total_minor: number;
+                      currency_code?: string | null;
                     }>
                   ).map((i) => (
                     <TableRow key={i.id}>
@@ -517,7 +569,8 @@ function ContactDetail() {
                       <TableCell>{i.invoice_number ?? "—"}</TableCell>
                       <TableCell>{i.status}</TableCell>
                       <TableCell className="text-right">
-                        {fromMinorUnits(i.total_minor, currency)}
+                        {fromMinorUnits(i.total_minor, i.currency_code ?? currency)}{" "}
+                        {i.currency_code ?? ""}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -541,6 +594,7 @@ function ContactDetail() {
                       bill_number: string | null;
                       status: string;
                       total_minor: number;
+                      currency_code?: string | null;
                     }>
                   ).map((b) => (
                     <TableRow key={b.id}>
@@ -556,7 +610,8 @@ function ContactDetail() {
                       <TableCell>{b.bill_number ?? "—"}</TableCell>
                       <TableCell>{b.status}</TableCell>
                       <TableCell className="text-right">
-                        {fromMinorUnits(b.total_minor, currency)}
+                        {fromMinorUnits(b.total_minor, b.currency_code ?? currency)}{" "}
+                        {b.currency_code ?? ""}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -579,11 +634,29 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function otherCurrencies(
+  rows: Array<{ currency: string; outstandingMinor: number }> | undefined,
+  base: string,
+): string | undefined {
+  const others = (rows ?? []).filter((r) => r.currency !== base.toUpperCase());
+  if (!others.length) return undefined;
+  return `Also ${others.map((r) => `${fromMinorUnits(r.outstandingMinor, r.currency)} ${r.currency}`).join(", ")}`;
+}
+
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string | undefined;
+}) {
   return (
     <div className="rounded-md border px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm font-medium tabular-nums">{value}</p>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

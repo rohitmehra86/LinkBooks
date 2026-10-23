@@ -1,46 +1,26 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import {
-  ensureLedgerMasters,
-  listAccounts,
-  listJournals,
-  listPeriods,
-  lockPeriod,
-  postManualJournal,
-  reversePostedJournal,
-  unlockPeriod,
-} from "@/lib/accounting/accounting.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { ensureLedgerMasters } from "@/lib/accounting/accounting.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { PageHeader, EmptyState, LoadingState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ChartAccountsPanel } from "@/components/accounting/ChartAccountsPanel";
+import { FinancialYearsPanel } from "@/components/accounting/FinancialYearsPanel";
 import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
+import { JournalsPanel } from "@/components/accounting/JournalsPanel";
+import { PeriodClosePanel } from "@/components/accounting/PeriodClosePanel";
+import { ManualJournalPanel } from "@/components/create-new/JournalPanels";
+
+const ACCOUNTING_TABS = ["coa", "industry", "journals", "post", "periods", "close"] as const;
+type AccountingTab = (typeof ACCOUNTING_TABS)[number];
+type AccountingSearch = { tab?: AccountingTab | undefined; journal?: string | undefined };
 
 export const Route = createFileRoute("/_authenticated/accounting")({
   head: () => ({
@@ -52,6 +32,15 @@ export const Route = createFileRoute("/_authenticated/accounting")({
       },
     ],
   }),
+  // `tab` and `journal` make report drill-downs, search hits and dashboard tasks deep-linkable.
+  validateSearch: (raw: Record<string, unknown>): AccountingSearch => {
+    const tab = raw["tab"];
+    const journal = raw["journal"];
+    return {
+      tab: ACCOUNTING_TABS.find((t) => t === tab),
+      journal: typeof journal === "string" && journal ? journal : undefined,
+    };
+  },
   component: Accounting,
 });
 
@@ -77,27 +66,10 @@ export function AccountingWorkspace({
   currency: string;
 }) {
   const queryClient = useQueryClient();
-  const fetchAccounts = useServerFn(listAccounts);
-  const fetchJournals = useServerFn(listJournals);
-  const fetchPeriods = useServerFn(listPeriods);
+  const navigate = useNavigate({ from: "/accounting" });
+  const search = Route.useSearch();
   const seedMasters = useServerFn(ensureLedgerMasters);
-  const postJournal = useServerFn(postManualJournal);
-  const reverseJournal = useServerFn(reversePostedJournal);
-  const doLock = useServerFn(lockPeriod);
-  const doUnlock = useServerFn(unlockPeriod);
-
-  const accountsQuery = useQuery({
-    queryKey: ["accounts", companyId],
-    queryFn: () => fetchAccounts({ data: { companyId } }),
-  });
-  const journalsQuery = useQuery({
-    queryKey: ["journals", companyId],
-    queryFn: () => fetchJournals({ data: { companyId } }),
-  });
-  const periodsQuery = useQuery({
-    queryKey: ["periods", companyId],
-    queryFn: () => fetchPeriods({ data: { companyId } }),
-  });
+  const tab: AccountingTab = search.tab ?? (search.journal ? "journals" : "coa");
 
   const seedMutation = useMutation({
     mutationFn: () => seedMasters({ data: { companyId } }),
@@ -109,56 +81,11 @@ export function AccountingWorkspace({
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [journalDate, setJournalDate] = useState(today);
-  const [memo, setMemo] = useState("");
-  const [debitAccount, setDebitAccount] = useState("");
-  const [creditAccount, setCreditAccount] = useState("");
-  const [amountMajor, setAmountMajor] = useState("100.00");
-
-  const postMutation = useMutation({
-    mutationFn: async () => {
-      const { toMinorUnits } = await import("@/lib/accounting/money");
-      const minor = Number(toMinorUnits(amountMajor, currency));
-      const idem = `manual:${companyId}:${journalDate}:${debitAccount}:${creditAccount}:${minor}:${Date.now()}`;
-      return postJournal({
-        data: {
-          companyId,
-          journalDate,
-          memo,
-          idempotencyKey: idem,
-          lines: [
-            { accountId: debitAccount, debitMinor: minor, creditMinor: 0, description: memo },
-            { accountId: creditAccount, debitMinor: 0, creditMinor: minor, description: memo },
-          ],
-        },
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["journals", companyId] });
-      toast.success("Journal posted");
-      setMemo("");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
-
-  const reverseMutation = useMutation({
-    mutationFn: (journalId: string) => reverseJournal({ data: { journalId } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["journals", companyId] });
-      toast.success("Reversing journal posted");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
-
-  const accounts = accountsQuery.data ?? [];
-  const postable = accounts.filter((a) => a.is_active && a.is_postable);
-
   return (
     <>
       <PageHeader
         title="Accounting"
-        description="Authoritative double-entry ledger: chart of accounts, journals, periods and audit-safe posting."
+        description="Authoritative double-entry ledger: chart of accounts, journals, financial years and period close."
         actions={
           <Button
             size="sm"
@@ -180,13 +107,22 @@ export function AccountingWorkspace({
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="coa">
-        <TabsList>
+      <Tabs
+        value={tab}
+        onValueChange={(v) =>
+          void navigate({
+            search: { tab: v as AccountingTab },
+            replace: true,
+          })
+        }
+      >
+        <TabsList className="flex-wrap">
           <TabsTrigger value="coa">Chart of accounts</TabsTrigger>
           <TabsTrigger value="industry">Industry library</TabsTrigger>
           <TabsTrigger value="journals">Journals</TabsTrigger>
           <TabsTrigger value="post">Post manual journal</TabsTrigger>
-          <TabsTrigger value="periods">Periods</TabsTrigger>
+          <TabsTrigger value="periods">Financial years</TabsTrigger>
+          <TabsTrigger value="close">Period close</TabsTrigger>
         </TabsList>
 
         <TabsContent value="coa" className="mt-4">
@@ -198,208 +134,30 @@ export function AccountingWorkspace({
         </TabsContent>
 
         <TabsContent value="journals" className="mt-4">
-          {journalsQuery.isPending ? (
-            <LoadingState />
-          ) : journalsQuery.isError ? (
-            <ErrorState
-              title="Could not load journals"
-              description={friendlyAuthError(journalsQuery.error)}
-              onRetry={() => journalsQuery.refetch()}
-            />
-          ) : (journalsQuery.data ?? []).length === 0 ? (
-            <EmptyState
-              title="No journals yet"
-              description="Post a balanced manual journal to populate the ledger."
-            />
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Memo</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(journalsQuery.data ?? []).map((j) => (
-                      <TableRow key={j.id}>
-                        <TableCell>{j.journal_number}</TableCell>
-                        <TableCell>{j.journal_date}</TableCell>
-                        <TableCell className="capitalize">{j.status}</TableCell>
-                        <TableCell>{j.source_type}</TableCell>
-                        <TableCell className="max-w-[240px] truncate">{j.memo ?? "—"}</TableCell>
-                        <TableCell>
-                          {j.status === "posted" && j.source_type !== "reversal" ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={reverseMutation.isPending}
-                              onClick={() => reverseMutation.mutate(j.id)}
-                            >
-                              Reverse
-                            </Button>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+          <JournalsPanel
+            companyId={companyId}
+            currency={currency}
+            initialOpenJournalId={search.journal}
+          />
         </TabsContent>
 
         <TabsContent value="post" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Post manual journal</CardTitle>
+              <CardTitle className="text-base">Manual journal</CardTitle>
             </CardHeader>
-            <CardContent className="grid max-w-xl gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="j-date">Posting date</Label>
-                <Input
-                  id="j-date"
-                  type="date"
-                  value={journalDate}
-                  onChange={(e) => setJournalDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="j-memo">Memo</Label>
-                <Input id="j-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Debit account</Label>
-                <Select value={debitAccount} onValueChange={setDebitAccount}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Credit account</Label>
-                <Select value={creditAccount} onValueChange={setCreditAccount}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="j-amt">Amount ({currency})</Label>
-                <Input
-                  id="j-amt"
-                  value={amountMajor}
-                  onChange={(e) => setAmountMajor(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Stored as integer minor units (e.g. {fromMinorUnits(10000n, currency)} → 10000).
-                </p>
-              </div>
-              <Button
-                size="sm"
-                disabled={
-                  postMutation.isPending ||
-                  !debitAccount ||
-                  !creditAccount ||
-                  debitAccount === creditAccount
-                }
-                onClick={() => postMutation.mutate()}
-              >
-                {postMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                Post balanced journal
-              </Button>
+            <CardContent className="max-w-4xl">
+              <ManualJournalPanel />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="periods" className="mt-4">
-          {periodsQuery.isPending ? (
-            <LoadingState />
-          ) : periodsQuery.isError ? (
-            <ErrorState
-              title="Could not load periods"
-              description={friendlyAuthError(periodsQuery.error)}
-              onRetry={() => periodsQuery.refetch()}
-            />
-          ) : (periodsQuery.data ?? []).length === 0 ? (
-            <EmptyState
-              title="No accounting periods"
-              description="Seed default periods for this organisation’s financial year."
-            />
-          ) : (
-            <Card>
-              <CardContent className="space-y-3 pt-6">
-                {(periodsQuery.data ?? []).map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-                  >
-                    <div>
-                      <div className="text-sm font-medium">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {p.start_date} → {p.end_date} · {p.status}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {p.status === "open" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              await doLock({ data: { periodId: p.id } });
-                              await periodsQuery.refetch();
-                              toast.success("Period locked");
-                            } catch (e) {
-                              toast.error(friendlyAuthError(e));
-                            }
-                          }}
-                        >
-                          Lock
-                        </Button>
-                      ) : null}
-                      {p.status === "locked" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              await doUnlock({ data: { periodId: p.id } });
-                              await periodsQuery.refetch();
-                              toast.success("Period unlocked");
-                            } catch (e) {
-                              toast.error(friendlyAuthError(e));
-                            }
-                          }}
-                        >
-                          Unlock
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <FinancialYearsPanel companyId={companyId} />
+        </TabsContent>
+
+        <TabsContent value="close" className="mt-4">
+          <PeriodClosePanel companyId={companyId} />
         </TabsContent>
       </Tabs>
     </>

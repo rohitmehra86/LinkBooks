@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { QUICK_REPORT_IDS, REPORT_CATALOG, getReportById, searchReports } from "./catalog";
+import {
+  QUICK_REPORT_IDS,
+  REPORT_CATALOG,
+  getReportById,
+  nonEmptyCategories,
+  searchReports,
+} from "./catalog";
 
 describe("reports catalogue", () => {
   it("lists only honest ready vs depends entries", () => {
@@ -21,5 +27,23 @@ describe("reports catalogue", () => {
   it("searches by title and tags", () => {
     expect(searchReports("aged").some((r) => r.id === "aged-receivables")).toBe(true);
     expect(searchReports("budget")[0]?.status).toBe("depends");
+  });
+
+  it("link reports point at an existing screen and runner reports have a runner", () => {
+    for (const r of REPORT_CATALOG.filter((x) => x.runner === "link")) {
+      expect(r.linkTo).toBeTruthy();
+    }
+    expect(getReportById("general-ledger-all")?.runner).toBe("general_ledger_all");
+    expect(getReportById("statement-of-changes-in-equity")?.status).toBe("ready");
+    expect(getReportById("bank-reconciliation")?.linkTo).toBe("/banking/reconcile");
+  });
+
+  it("never lists a category with no reports (RP-10)", () => {
+    const cats = nonEmptyCategories();
+    expect(cats.some((c) => c.id === "custom")).toBe(false);
+    expect(cats.some((c) => c.id === "contacts")).toBe(false);
+    for (const c of cats) expect(REPORT_CATALOG.some((r) => r.category === c.id)).toBe(true);
+    const filtered = nonEmptyCategories(searchReports("aged"));
+    expect(filtered.map((c) => c.id).sort()).toEqual(["purchases", "sales"]);
   });
 });

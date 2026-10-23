@@ -46,16 +46,9 @@ export function directionFromAmount(amountMinor: number | bigint): "in" | "out" 
   return n >= 0n ? "in" : "out";
 }
 
-function ruleMatches(
-  rule: BankRuleRow,
-  description: string,
-  amountMinor: number,
-): boolean {
+function ruleMatches(rule: BankRuleRow, description: string, amountMinor: number): boolean {
   const field = (rule.match_field || "description").toLowerCase();
-  const hay =
-    field === "amount"
-      ? String(Math.abs(amountMinor))
-      : description.toLowerCase();
+  const hay = field === "amount" ? String(Math.abs(amountMinor)) : description.toLowerCase();
   const needle = (rule.match_pattern ?? "").toLowerCase();
   if (!needle) return false;
   switch ((rule.match_type || "contains").toLowerCase()) {
@@ -84,7 +77,12 @@ export function rankCodingSuggestions(opts: {
   const out: Suggestion[] = [];
 
   const hist = opts.history
-    .filter((h) => h.direction === direction && (h.payee_normalized === payee || (payee && h.payee_normalized && payee.includes(h.payee_normalized))))
+    .filter(
+      (h) =>
+        h.direction === direction &&
+        (h.payee_normalized === payee ||
+          (payee && h.payee_normalized && payee.includes(h.payee_normalized))),
+    )
     .sort((a, b) => b.times_used - a.times_used);
 
   for (const h of hist.slice(0, 3)) {

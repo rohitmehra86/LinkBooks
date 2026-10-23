@@ -203,7 +203,9 @@ function paymentClearedIds(events: BillHistoryEvent[], context: BillHistoryConte
   const posts = events.filter((event) => event.action === "supplier_payment.post");
   const explicit = posts.some((event) => typeof event.details?.["fully_paid"] === "boolean");
   if (explicit) {
-    return new Set(posts.filter((event) => event.details?.["fully_paid"] === true).map((event) => event.id));
+    return new Set(
+      posts.filter((event) => event.details?.["fully_paid"] === true).map((event) => event.id),
+    );
   }
   if (typeof context.totalMinor !== "number") return new Set();
   let remaining = context.totalMinor - (context.creditedMinor ?? 0);
@@ -215,7 +217,8 @@ function paymentClearedIds(events: BillHistoryEvent[], context: BillHistoryConte
   const cleared = new Set<string>();
   for (const event of ordered) {
     const amount =
-      minorValue(event.details?.["allocation_minor"]) ?? minorValue(event.details?.["amount_minor"]);
+      minorValue(event.details?.["allocation_minor"]) ??
+      minorValue(event.details?.["amount_minor"]);
     if (amount == null) continue;
     remaining -= amount;
     if (remaining <= 0) cleared.add(event.id);
@@ -269,7 +272,9 @@ function detailFor(
     case "bill.reject_approval":
       return reason ? `Returned for correction. ${reason}` : "Returned for correction.";
     case "bill.authorise":
-      return amount ? `Approved for ${amount} and posted to the ledger.` : "Approved and posted to the ledger.";
+      return amount
+        ? `Approved for ${amount} and posted to the ledger.`
+        : "Approved and posted to the ledger.";
     case "bill.void":
       return "Voided. Posted journals were reversed.";
     case "bill.attachment.upload":
@@ -314,7 +319,13 @@ export function presentBillHistory(
       at: event.created_at,
       user: text(event.actor_name) || text(event.details?.["actor_name"]) || "—",
       action: billHistoryActionLabel(event.action),
-      detail: detailFor(event, context.currency, note?.body ?? "", supplierName, cleared.has(event.id)),
+      detail: detailFor(
+        event,
+        context.currency,
+        note?.body ?? "",
+        supplierName,
+        cleared.has(event.id),
+      ),
       paymentId:
         event.action === "supplier_payment.post" || event.action === "supplier_payment.reverse"
           ? text(event.details?.["payment_id"]) || null

@@ -5,6 +5,13 @@ import { assertUuid } from "@/lib/company-validation";
 import { isRateEffective } from "@/lib/tax/tax-math";
 import { postJournal } from "@/lib/accounting/posting-engine";
 import { requireAccountInCompany } from "@/lib/purchases/accounts";
+import { buildTaxSettingsPatch, type TaxSettingsInput } from "@/lib/tax/tax-settings-patch";
+import {
+  isAccountTypeAllowedForTaxRole,
+  describeAllowedTypes,
+  type TaxAccountRole,
+} from "@/lib/tax/account-pickers";
+import { buildTaxAdjustmentJournal } from "@/lib/tax/tax-adjustment";
 
 function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -28,78 +35,38 @@ export const getTaxSettings = createServerFn({ method: "GET" })
 
 export const updateTaxSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (input: {
-      companyId: string;
-      taxRegime: string;
-      registrationNumber?: string;
-      pricesIncludeTax: boolean;
-      filingFrequency?: string | null;
-      taxBasis?: string;
-      jurisdictionCode?: string | null;
-      defaultSalesTaxCodeId?: string | null;
-      defaultPurchaseTaxCodeId?: string | null;
-      outputTaxAccountId?: string | null;
-      inputTaxAccountId?: string | null;
-      nonRecoverableTaxAccountId?: string | null;
-      registrationDate?: string | null;
-      registrationEndDate?: string | null;
-    }) => {
-      if (!["none", "vat", "gst", "sales_tax", "other"].includes(input.taxRegime)) {
-        throw new Error("Invalid tax regime");
-      }
-      const basis = input.taxBasis ?? "invoice";
-      if (!["invoice", "cash"].includes(basis)) throw new Error("Invalid tax basis");
-      const regDate = (input.registrationDate ?? "").trim();
-      const regEnd = (input.registrationEndDate ?? "").trim();
-      if (regDate && !isIsoDate(regDate)) throw new Error("registrationDate must be YYYY-MM-DD");
-      if (regEnd && !isIsoDate(regEnd)) throw new Error("registrationEndDate must be YYYY-MM-DD");
-      return {
-        companyId: assertUuid(input.companyId),
-        taxRegime: input.taxRegime,
-        registrationNumber: (input.registrationNumber ?? "").trim().slice(0, 80) || null,
-        pricesIncludeTax: Boolean(input.pricesIncludeTax),
-        filingFrequency: input.filingFrequency || null,
-        taxBasis: basis,
-        jurisdictionCode: (input.jurisdictionCode ?? "").trim().toUpperCase().slice(0, 8) || null,
-        defaultSalesTaxCodeId: input.defaultSalesTaxCodeId
-          ? assertUuid(input.defaultSalesTaxCodeId)
-          : null,
-        defaultPurchaseTaxCodeId: input.defaultPurchaseTaxCodeId
-          ? assertUuid(input.defaultPurchaseTaxCodeId)
-          : null,
-        outputTaxAccountId: input.outputTaxAccountId
-          ? assertUuid(input.outputTaxAccountId)
-          : null,
-        inputTaxAccountId: input.inputTaxAccountId ? assertUuid(input.inputTaxAccountId) : null,
-        nonRecoverableTaxAccountId: input.nonRecoverableTaxAccountId
-          ? assertUuid(input.nonRecoverableTaxAccountId)
-          : null,
-        registrationDate: regDate || null,
-        registrationEndDate: regEnd || null,
-      };
-    },
-  )
+  .inputValidator((input: TaxSettingsInput & { companyId: string }) => {
+    const { companyId, ...fields } = input;
+    // Validates and keeps only the fields that were actually sent (partial update, TX-02).
+    const patch = buildTaxSettingsPatch(fields);
+    if (Object.keys(patch).length === 0) throw new Error("Nothing to update");
+    return { companyId: assertUuid(companyId), patch };
+  })
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "tax.settings");
+    const roleColumns: Array<[string, TaxAccountRole, string]> = [
+      ["output_tax_account_id", "output", "Output tax account"],
+      ["input_tax_account_id", "input", "Input tax account"],
+      ["non_recoverable_tax_account_id", "non_recoverable", "Non-recoverable tax account"],
+    ];
+    for (const [col, role, label] of roleColumns) {
+      const id = data.patch[col];
+      if (typeof id !== "string") continue;
+      await requireAccountInCompany(context.supabase, data.companyId, id);
+      const { data: acc } = await context.supabase
+        .from("accounts" as never)
+        .select("account_type" as never)
+        .eq("id" as never, id as never)
+        .eq("company_id" as never, data.companyId as never)
+        .maybeSingle();
+      const type = (acc as { account_type?: string } | null)?.account_type ?? "";
+      if (!isAccountTypeAllowedForTaxRole(role, type)) {
+        throw new Error(`${label} must be a ${describeAllowedTypes(role)} account`);
+      }
+    }
     const { error } = await context.supabase
       .from("company_tax_settings" as never)
-      .update({
-        tax_regime: data.taxRegime,
-        registration_number: data.registrationNumber,
-        prices_include_tax: data.pricesIncludeTax,
-        filing_frequency: data.filingFrequency,
-        tax_basis: data.taxBasis,
-        jurisdiction_code: data.jurisdictionCode,
-        default_sales_tax_code_id: data.defaultSalesTaxCodeId,
-        default_purchase_tax_code_id: data.defaultPurchaseTaxCodeId,
-        output_tax_account_id: data.outputTaxAccountId,
-        input_tax_account_id: data.inputTaxAccountId,
-        non_recoverable_tax_account_id: data.nonRecoverableTaxAccountId,
-        registration_date: data.registrationDate,
-        registration_end_date: data.registrationEndDate,
-        updated_at: new Date().toISOString(),
-      } as never)
+      .update({ ...data.patch, updated_at: new Date().toISOString() } as never)
       .eq("company_id" as never, data.companyId as never);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -150,7 +117,8 @@ export const saveTaxRate = createServerFn({ method: "POST" })
       if (!isIsoDate(input.effectiveFrom)) throw new Error("effectiveFrom must be YYYY-MM-DD");
       const to = input.effectiveTo ? String(input.effectiveTo).trim() : "";
       if (to && !isIsoDate(to)) throw new Error("effectiveTo must be YYYY-MM-DD");
-      if (to && to < input.effectiveFrom) throw new Error("effectiveTo cannot be before effectiveFrom");
+      if (to && to < input.effectiveFrom)
+        throw new Error("effectiveTo cannot be before effectiveFrom");
       const rateBps = Math.round(Number(input.rateBps));
       if (!Number.isInteger(rateBps) || rateBps < 0 || rateBps > 10000) {
         throw new Error("Rate must be 0–10000 basis points");
@@ -300,14 +268,20 @@ export const seedTaxPack = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "tax.settings");
-    const { data: result, error } = await context.supabase.rpc("seed_country_tax_pack" as never, {
-      _company_id: data.companyId,
-      _pack_id: data.packId,
-    } as never);
-    if (error) {
-      const { error: e2 } = await context.supabase.rpc("seed_default_tax_pack" as never, {
+    const { data: result, error } = await context.supabase.rpc(
+      "seed_country_tax_pack" as never,
+      {
         _company_id: data.companyId,
-      } as never);
+        _pack_id: data.packId,
+      } as never,
+    );
+    if (error) {
+      const { error: e2 } = await context.supabase.rpc(
+        "seed_default_tax_pack" as never,
+        {
+          _company_id: data.companyId,
+        } as never,
+      );
       if (e2) throw new Error(error.message);
       return { ok: true as const, result: null, fallback: true as const };
     }
@@ -386,46 +360,6 @@ export const postTaxAdjustment = createServerFn({ method: "POST" })
       throw new Error("Tax and offset accounts must differ");
     }
 
-    const amount = BigInt(data.amountMinor);
-    // increase_payable: CR tax, DR offset (expense/equity); decrease: DR tax, CR offset
-    const taxIsCredit = data.direction === "increase_payable";
-    const result = await postJournal(context.supabase, {
-      company_id: data.companyId,
-      journal_date: data.journalDate,
-      currency_code: data.currencyCode,
-      source_type: "tax_adjustment",
-      source_id: data.adjustmentKey,
-      idempotency_key: `tax_adjustment:${data.companyId}:${data.adjustmentKey}`,
-      ...(data.memo ? { memo: data.memo } : {}),
-      lines: taxIsCredit
-        ? [
-            {
-              account_id: data.offsetAccountId,
-              description: data.memo ?? "Tax adjustment",
-              debit_minor: amount,
-              credit_minor: 0n,
-            },
-            {
-              account_id: data.taxAccountId,
-              description: data.memo ?? "Tax payable",
-              debit_minor: 0n,
-              credit_minor: amount,
-            },
-          ]
-        : [
-            {
-              account_id: data.taxAccountId,
-              description: data.memo ?? "Tax payable",
-              debit_minor: amount,
-              credit_minor: 0n,
-            },
-            {
-              account_id: data.offsetAccountId,
-              description: data.memo ?? "Tax adjustment",
-              debit_minor: 0n,
-              credit_minor: amount,
-            },
-          ],
-    });
+    const result = await postJournal(context.supabase, buildTaxAdjustmentJournal(data));
     return { journalId: result.journalId };
   });

@@ -129,7 +129,9 @@ export function AccountForm({
   const [baseline, setBaseline] = useState(JSON.stringify(starting));
   const dirty = JSON.stringify(draft) !== baseline;
   const spec = kindSpec(draft.accountKind);
-  const typeLocked = !!account && account.transactionCount > 0;
+  // AC-03: system, control and locked accounts keep their code, type and header setting.
+  const fieldsLocked = !!account && (account.isSystem || account.isControl || account.isLocked);
+  const typeLocked = fieldsLocked || (!!account && account.transactionCount > 0);
 
   useEffect(() => {
     const onLeave = (event: BeforeUnloadEvent) => {
@@ -236,7 +238,9 @@ export function AccountForm({
           </Select>
           {typeLocked ? (
             <p className="text-xs text-muted-foreground">
-              Type is locked because this account has posted transactions.
+              {fieldsLocked
+                ? "Type, code and header setting are locked because this is a system account."
+                : "Type is locked because this account has posted transactions."}
             </p>
           ) : null}
         </Field>
@@ -246,11 +250,12 @@ export function AccountForm({
               value={draft.code}
               maxLength={10}
               onChange={(event) => setDraft({ ...draft, code: event.target.value })}
-              disabled={account?.isSystem}
+              disabled={fieldsLocked}
             />
             <Button
               type="button"
               variant="outline"
+              disabled={fieldsLocked}
               onClick={() =>
                 setDraft({
                   ...draft,
@@ -350,6 +355,7 @@ export function AccountForm({
         <CheckLine
           checked={draft.isHeader}
           label="Header only (cannot be posted)"
+          disabled={fieldsLocked}
           onChange={(checked) => setDraft({ ...draft, isHeader: checked })}
         />
         <CheckLine
@@ -426,14 +432,20 @@ function CheckLine({
   checked,
   label,
   onChange,
+  disabled,
 }: {
   checked: boolean;
   label: string;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex items-center gap-2 text-sm">
-      <Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />
+      <Checkbox
+        checked={checked}
+        disabled={disabled === true}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
       {label}
     </label>
   );
