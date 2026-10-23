@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -16,6 +16,8 @@ import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   addBillNote,
   authoriseBill,
+  checkDuplicateSupplierBill,
+  listPaymentTerms,
   deleteDraftBill,
   downloadBillAttachment,
   getBill,
@@ -29,6 +31,19 @@ import {
   voidBill,
 } from "@/lib/purchases/purchases.functions";
 import { listProducts } from "@/lib/products/products.functions";
+import { listTaxCodes } from "@/lib/tax/tax.functions";
+import { listTrackingDimensions } from "@/lib/settings/dimensions.functions";
+import { listCustomers } from "@/lib/sales/sales.functions";
+import { useCan } from "@/hooks/use-can";
+import { calculateDueDate, type TaxCalculationMode } from "@/lib/purchases/bill-form-helpers";
+import {
+  billEditorSnapshot,
+  billEditorStateFromBill,
+  buildBillSavePayload,
+  isBillEditorDirty,
+  type BillEditorAddress,
+  type BillEditorState,
+} from "@/lib/purchases/bill-save-payload";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import {
   formatHistoryTimestamp,
@@ -67,6 +82,13 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -97,6 +119,16 @@ type BillPayload = {
   currency_code: string;
   fx_rate_to_base: number | null;
   payment_terms_days: number | null;
+  payment_term_id?: string | null;
+  due_date_manual_override?: boolean | null;
+  tax_calculation?: string | null;
+  duplicate_override?: boolean | null;
+  supplier_address_line1?: string | null;
+  supplier_address_line2?: string | null;
+  supplier_address_city?: string | null;
+  supplier_address_region?: string | null;
+  supplier_address_postal?: string | null;
+  supplier_address_country?: string | null;
   total_minor: number;
   tax_minor: number;
   subtotal_minor: number;
@@ -162,6 +194,12 @@ function BillDocumentWorkspace() {
   const fetchSuppliers = useServerFn(listSuppliers);
   const fetchAccounts = useServerFn(listAccounts);
   const fetchProducts = useServerFn(listProducts);
+  const fetchTaxCodes = useServerFn(listTaxCodes);
+  const fetchDimensions = useServerFn(listTrackingDimensions);
+  const fetchCustomers = useServerFn(listCustomers);
+  const fetchTerms = useServerFn(listPaymentTerms);
+  const checkDup = useServerFn(checkDuplicateSupplierBill);
+  const { can } = useCan();
   const saveDraft = useServerFn(saveBillDraft);
   const doAuthorise = useServerFn(authoriseBill);
   const doVoid = useServerFn(voidBill);
@@ -187,7 +225,23 @@ function BillDocumentWorkspace() {
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<PurchaseLineFormState[]>([emptyPurchaseLine()]);
+  const [dueDateManualOverride, setDueDateManualOverride] = useState(false);
+  const [paymentTermId, setPaymentTermId] = useState("");
+  const [paymentTermsDays, setPaymentTermsDays] = useState<number | null>(null);
+  const [taxCalculation, setTaxCalculation] = useState<TaxCalculationMode>("exclusive");
+  const [fxRate, setFxRate] = useState("");
+  const [acknowledgeDuplicate, setAcknowledgeDuplicate] = useState(false);
+  const [address, setAddress] = useState<BillEditorAddress>({
+    line1: "",
+    line2: "",
+    city: "",
+    region: "",
+    postal: "",
+    country: "",
+  });
   const [hydrated, setHydrated] = useState(false);
+  // Snapshot of what is saved, so Authorise / Submit only re-save when something changed.
+  const baselineRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (search.files) setFilesOpen(true);
@@ -238,6 +292,40 @@ function BillDocumentWorkspace() {
     queryFn: () => fetchProducts({ data: { companyId: companyId!, limit: 200 } }),
   });
 
+  const taxCodesQ = useQuery({
+    queryKey: ["tax-codes", companyId],
+    enabled: Boolean(companyId) && Boolean(canEdit),
+    queryFn: () => fetchTaxCodes({ data: { companyId: companyId! } }),
+  });
+  const dimsQ = useQuery({
+    queryKey: ["tracking-dimensions", companyId],
+    enabled: Boolean(companyId) && Boolean(canEdit),
+    queryFn: () => fetchDimensions({ data: { companyId: companyId! } }),
+  });
+  const customersQ = useQuery({
+    queryKey: ["customers", companyId],
+    enabled: Boolean(companyId) && Boolean(canEdit),
+    queryFn: () => fetchCustomers({ data: { companyId: companyId! } }),
+  });
+  const termsQ = useQuery({
+    queryKey: ["payment-terms", companyId],
+    enabled: Boolean(companyId) && Boolean(canEdit),
+    queryFn: () => fetchTerms({ data: { companyId: companyId! } }),
+  });
+  const dupQ = useQuery({
+    queryKey: ["bill-dup", companyId, contactId, supplierInvoiceNumber, billId],
+    enabled: Boolean(companyId && canEdit && contactId && supplierInvoiceNumber.trim()),
+    queryFn: () =>
+      checkDup({
+        data: {
+          companyId: companyId!,
+          contactId,
+          supplierInvoiceNumber,
+          excludeBillId: billId,
+        },
+      }),
+  });
+
   // Reset hydration when switching bills
   useEffect(() => {
     setHydrated(false);
@@ -249,32 +337,28 @@ function BillDocumentWorkspace() {
       setHydrated(true);
       return;
     }
-    const currency = bill.currency_code || baseCurrency;
-    setContactId(bill.contact_id);
-    setBillDate(bill.bill_date);
-    setDueDate(bill.due_date);
-    setSupplierInvoiceNumber(bill.supplier_invoice_number ?? "");
-    setMemo(bill.memo ?? "");
-    setLines(
-      (bill.purchase_bill_lines ?? []).length
-        ? bill.purchase_bill_lines.map((l) => ({
-            ...emptyPurchaseLine(),
-            productId: l.product_id ?? "",
-            description: l.description ?? "",
-            accountId: l.account_id ?? "",
-            quantity: String(l.quantity ?? 1),
-            unitPrice: fromMinorUnits(BigInt(l.unit_price_minor ?? 0), currency),
-            discount: fromMinorUnits(BigInt(l.discount_minor ?? 0), currency),
-            taxRateBps: String(l.tax_rate_bps ?? 0),
-            taxCodeId: l.tax_code_id ?? "",
-            classOptionId: l.class_option_id ?? l.class_id ?? "",
-            locationOptionId: l.location_option_id ?? l.location_id ?? "",
-            projectOptionId: l.project_option_id ?? l.project_id ?? "",
-            customerContactId: l.customer_contact_id ?? "",
-            isBillable: Boolean(l.is_billable),
-          }))
-        : [emptyPurchaseLine()],
+    // Every saved field is loaded, not just the ones shown at the top of the form.
+    const editor = billEditorStateFromBill(
+      {
+        ...bill,
+        purchase_bill_lines: bill.purchase_bill_lines,
+      } as never,
+      baseCurrency,
     );
+    setContactId(editor.contactId);
+    setBillDate(editor.billDate);
+    setDueDate(editor.dueDate);
+    setSupplierInvoiceNumber(editor.supplierInvoiceNumber);
+    setMemo(editor.memo);
+    setDueDateManualOverride(editor.dueDateManualOverride);
+    setPaymentTermId(editor.paymentTermId);
+    setPaymentTermsDays(editor.paymentTermsDays);
+    setTaxCalculation(editor.taxCalculation);
+    setFxRate(editor.fxRate);
+    setAcknowledgeDuplicate(editor.acknowledgeDuplicate);
+    setAddress(editor.address);
+    setLines(editor.lines);
+    baselineRef.current = billEditorSnapshot(editor);
     setHydrated(true);
   }, [bill, hydrated, baseCurrency]);
 
@@ -286,33 +370,43 @@ function BillDocumentWorkspace() {
     await queryClient.invalidateQueries({ queryKey: ["bill-activity", companyId, billId] });
   };
 
+  const editorState: BillEditorState = {
+    contactId,
+    billDate,
+    dueDate,
+    dueDateManualOverride,
+    paymentTermId,
+    paymentTermsDays,
+    supplierInvoiceNumber,
+    memo,
+    currencyCode: (bill?.currency_code || baseCurrency).toUpperCase(),
+    taxCalculation,
+    fxRate,
+    acknowledgeDuplicate,
+    address,
+    lines,
+  };
+  const isDirty = canEdit && hydrated && isBillEditorDirty(editorState, baselineRef.current);
+
   const buildSavePayload = () => {
     if (!companyId) throw new Error("No organisation");
-    if (!contactId) throw new Error("Choose a supplier");
-    return {
-      companyId,
-      billId,
-      contactId,
-      billDate,
-      dueDate,
-      supplierInvoiceNumber,
-      memo,
-      currencyCode: bill?.currency_code || baseCurrency,
-      lines: lines.map((l) => ({
-        description: l.description,
-        accountId: l.accountId,
-        quantity: Number(l.quantity),
-        unitPriceMinor: Number(toMinorUnits(l.unitPrice || "0", bill?.currency_code || baseCurrency)),
-        discountMinor: Number(toMinorUnits(l.discount || "0", bill?.currency_code || baseCurrency)),
-        taxRateBps: Number(l.taxRateBps || 0),
-      })),
-    };
+    return buildBillSavePayload({ companyId, billId, state: editorState, baseCurrency });
+  };
+
+  /** Save only when something changed since the last load/save (P-02). */
+  const saveIfDirty = async () => {
+    if (!canEdit) return;
+    if (!isBillEditorDirty(editorState, baselineRef.current)) return;
+    await saveDraft({ data: buildSavePayload() });
+    baselineRef.current = billEditorSnapshot(editorState);
   };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       setFormError(null);
-      return saveDraft({ data: buildSavePayload() });
+      const result = await saveDraft({ data: buildSavePayload() });
+      baselineRef.current = billEditorSnapshot(editorState);
+      return result;
     },
     onSuccess: async () => {
       setHydrated(false);
@@ -328,7 +422,7 @@ function BillDocumentWorkspace() {
 
   const authoriseMutation = useMutation({
     mutationFn: async () => {
-      if (canEdit) await saveDraft({ data: buildSavePayload() });
+      await saveIfDirty();
       return doAuthorise({ data: { companyId: companyId!, billId } });
     },
     onSuccess: async () => {
@@ -336,7 +430,11 @@ function BillDocumentWorkspace() {
       await invalidate();
       toast.success("Bill authorised — journal posted");
     },
-    onError: (e) => toast.error(friendlyAuthError(e)),
+    onError: (e) => {
+      const msg = friendlyAuthError(e);
+      setFormError(msg);
+      toast.error(msg);
+    },
   });
 
   const voidMutation = useMutation({
@@ -350,7 +448,7 @@ function BillDocumentWorkspace() {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      if (canEdit) await saveDraft({ data: buildSavePayload() });
+      await saveIfDirty();
       return doSubmit({
         data: {
           companyId: companyId!,
@@ -432,6 +530,52 @@ function BillDocumentWorkspace() {
         a.code.startsWith("6")),
   );
 
+  const terms = (termsQ.data ?? []) as Array<{
+    id: string;
+    name: string;
+    days: number;
+    calculation_method: "days_after_bill_date" | "due_on_receipt" | "days_after_month_end";
+  }>;
+  const taxCodes = (
+    (taxCodesQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      applies_to: string;
+      is_active: boolean;
+      tax_rates: { rate_bps: number } | { rate_bps: number }[] | null;
+    }>
+  )
+    .filter((t) => t.is_active)
+    .map((t) => {
+      const rate = Array.isArray(t.tax_rates) ? t.tax_rates[0] : t.tax_rates;
+      return {
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        rateBps: rate?.rate_bps ?? 0,
+        appliesTo: t.applies_to,
+      };
+    });
+  const dims = dimsQ.data as
+    | {
+        categories: Array<{ id: string; dimension_kind: string; is_active: boolean }>;
+        options: Array<{ id: string; category_id: string; name: string; is_active: boolean }>;
+      }
+    | undefined;
+  const optionsForKind = (kind: string) => {
+    if (!dims) return [];
+    const catIds = new Set(
+      dims.categories.filter((c) => c.is_active && c.dimension_kind === kind).map((c) => c.id),
+    );
+    return dims.options
+      .filter((o) => o.is_active && catIds.has(o.category_id))
+      .map((o) => ({ id: o.id, name: o.name, categoryId: o.category_id }));
+  };
+  const customerOptions = ((customersQ.data ?? []) as Array<{ id: string; name: string }>).map(
+    (c) => ({ id: c.id, name: c.name }),
+  );
+
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
   if (query.isPending) return <LoadingState />;
   if (query.isError || !bill) {
@@ -479,6 +623,13 @@ function BillDocumentWorkspace() {
   const backSearch =
     search.fromTab && search.fromTab !== "all" ? { tab: search.fromTab as never } : {};
   const neighbors = neighborsQ.data;
+
+  const applyDueFromTerms = (date: string, termId: string, force = false) => {
+    if (dueDateManualOverride && !force) return;
+    const term = terms.find((t) => t.id === termId);
+    if (!term || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    setDueDate(calculateDueDate(date, term));
+  };
 
   const downloadAttachment = async (attachmentId: string) => {
     try {
@@ -575,17 +726,17 @@ function BillDocumentWorkspace() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={saveMutation.isPending}
+                  disabled={saveMutation.isPending || !can("purchases.draft")}
                   onClick={() => saveMutation.mutate()}
                 >
                   {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Save
+                  Save{isDirty ? " *" : ""}
                 </Button>
                 {bill.status === "draft" ? (
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={submitMutation.isPending}
+                    disabled={submitMutation.isPending || !can("purchases.draft")}
                     onClick={() => submitMutation.mutate()}
                   >
                     Submit for approval
@@ -595,7 +746,7 @@ function BillDocumentWorkspace() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={rejectMutation.isPending}
+                    disabled={rejectMutation.isPending || !can("purchases.authorise")}
                     onClick={() => rejectMutation.mutate()}
                   >
                     Return for correction
@@ -603,7 +754,12 @@ function BillDocumentWorkspace() {
                 ) : null}
                 <Button
                   size="sm"
-                  disabled={authoriseMutation.isPending}
+                  disabled={authoriseMutation.isPending || !can("purchases.authorise")}
+                  title={
+                    can("purchases.authorise")
+                      ? undefined
+                      : "You do not have permission to authorise bills"
+                  }
                   onClick={() => authoriseMutation.mutate()}
                 >
                   {authoriseMutation.isPending ? (
@@ -614,7 +770,7 @@ function BillDocumentWorkspace() {
                 <Button
                   size="sm"
                   variant="destructive"
-                  disabled={deleteMutation.isPending}
+                  disabled={deleteMutation.isPending || !can("purchases.draft")}
                   onClick={() => {
                     if (confirm("Delete this unposted bill?")) deleteMutation.mutate();
                   }}
@@ -624,7 +780,9 @@ function BillDocumentWorkspace() {
               </>
             ) : (
               <>
-                {["authorised", "partly_paid"].includes(bill.status) && outstanding > 0 ? (
+                {["authorised", "partly_paid"].includes(bill.status) &&
+                outstanding > 0 &&
+                can("purchases.payment") ? (
                   <Button
                     size="sm"
                     className="bg-emerald-700 text-white hover:bg-emerald-800"
@@ -638,7 +796,7 @@ function BillDocumentWorkspace() {
                     Make a payment
                   </Button>
                 ) : null}
-                {bill.status !== "void" ? (
+                {bill.status !== "void" && can("purchases.authorise") ? (
                   <Button
                     size="sm"
                     variant="destructive"
@@ -733,28 +891,173 @@ function BillDocumentWorkspace() {
                     id="bill-date"
                     type="date"
                     value={billDate}
-                    onChange={(e) => setBillDate(e.target.value)}
+                    onChange={(e) => {
+                      setBillDate(e.target.value);
+                      applyDueFromTerms(e.target.value, paymentTermId);
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="due-date">Due date</Label>
+                  <Label htmlFor="due-date">
+                    Due date
+                    {dueDateManualOverride ? (
+                      <span className="ml-2 text-xs font-normal text-amber-700">
+                        (manual override)
+                      </span>
+                    ) : null}
+                  </Label>
                   <Input
                     id="due-date"
                     type="date"
                     value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
+                    onChange={(e) => {
+                      setDueDate(e.target.value);
+                      setDueDateManualOverride(true);
+                    }}
                   />
+                  {dueDateManualOverride && paymentTermId ? (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto p-0 text-xs"
+                      onClick={() => {
+                        setDueDateManualOverride(false);
+                        applyDueFromTerms(billDate, paymentTermId, true);
+                      }}
+                    >
+                      Return to automatic calculation
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="supplier-invoice">Supplier invoice #</Label>
                   <Input
                     id="supplier-invoice"
                     value={supplierInvoiceNumber}
-                    onChange={(e) => setSupplierInvoiceNumber(e.target.value)}
+                    onChange={(e) => {
+                      setSupplierInvoiceNumber(e.target.value);
+                      setAcknowledgeDuplicate(false);
+                    }}
                     placeholder="Supplier's invoice reference"
                   />
                 </div>
               </div>
+
+              {dupQ.data?.duplicate ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Possible duplicate supplier bill</AlertTitle>
+                  <AlertDescription className="space-y-2">
+                    <p>
+                      Another bill uses supplier invoice # <strong>{supplierInvoiceNumber}</strong>{" "}
+                      for this supplier.
+                    </p>
+                    <ul className="list-disc pl-5 text-sm">
+                      {dupQ.data.matches.map((m) => (
+                        <li key={m.id}>
+                          <Link
+                            to="/purchases/bills/$billId"
+                            params={{ billId: m.id }}
+                            className="underline"
+                          >
+                            {m.bill_number ?? m.id.slice(0, 8)} — {m.status} — {m.bill_date}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={acknowledgeDuplicate}
+                        onChange={(e) => setAcknowledgeDuplicate(e.target.checked)}
+                      />
+                      I have reviewed the existing bill and want to keep this as a separate bill
+                    </label>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Payment terms</Label>
+                  <EntityCombobox
+                    options={terms.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                      description: `${t.days}d · ${t.calculation_method}`,
+                    }))}
+                    value={paymentTermId}
+                    onChange={(id) => {
+                      setPaymentTermId(id);
+                      const t = terms.find((x) => x.id === id);
+                      setPaymentTermsDays(t ? t.days : null);
+                      applyDueFromTerms(billDate, id);
+                    }}
+                    placeholder="Select terms"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amounts are</Label>
+                  <Select
+                    value={taxCalculation}
+                    onValueChange={(v) => setTaxCalculation(v as TaxCalculationMode)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exclusive">Tax exclusive</SelectItem>
+                      <SelectItem value="inclusive">Tax inclusive</SelectItem>
+                      <SelectItem value="none">No tax</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Input value={currency} disabled readOnly />
+                  {currency.toUpperCase() !== baseCurrency.toUpperCase() ? (
+                    <div className="space-y-1">
+                      <Label htmlFor="bill-fx" className="text-xs text-muted-foreground">
+                        Rate ({currency} → {baseCurrency})
+                      </Label>
+                      <Input
+                        id="bill-fx"
+                        inputMode="decimal"
+                        value={fxRate}
+                        onChange={(e) => setFxRate(e.target.value)}
+                        placeholder="e.g. 1.2650"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="text-sm font-medium underline-offset-2 hover:underline">
+                    Supplier address on this bill
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      ["line1", "Address line 1"],
+                      ["line2", "Address line 2"],
+                      ["city", "City"],
+                      ["region", "Region"],
+                      ["postal", "Postal code"],
+                      ["country", "Country"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Input
+                      key={key}
+                      placeholder={label}
+                      aria-label={label}
+                      value={address[key]}
+                      onChange={(e) => setAddress((a) => ({ ...a, [key]: e.target.value }))}
+                    />
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
               <div className="space-y-2">
                 <Label htmlFor="bill-memo">Memo / notes</Label>
                 <Input
@@ -774,14 +1077,23 @@ function BillDocumentWorkspace() {
                 products={(productsQ.data ?? []) as never}
                 accounts={expenseAccounts}
                 currency={currency}
-                taxCalculation="exclusive"
+                taxCalculation={taxCalculation}
+                taxCodes={taxCodes}
+                classOptions={optionsForKind("class")}
+                locationOptions={optionsForKind("location")}
+                projectOptions={optionsForKind("project")}
+                customers={customerOptions}
+                showClass={optionsForKind("class").length > 0}
+                showLocation={optionsForKind("location").length > 0}
+                showProject={optionsForKind("project").length > 0}
+                showCustomer={customerOptions.length > 0}
                 toMinor={(d) => toMinorUnits(d, currency)}
               />
 
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button
                   size="sm"
-                  disabled={saveMutation.isPending}
+                  disabled={saveMutation.isPending || !can("purchases.draft")}
                   onClick={() => saveMutation.mutate()}
                 >
                   {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -863,7 +1175,7 @@ function BillDocumentWorkspace() {
             </section>
           )}
 
-          <div id="make-payment">
+          <div id="make-payment" className={can("purchases.payment") ? undefined : "hidden"}>
             <BillMakePaymentPanel
               companyId={companyId}
               billId={billId}
