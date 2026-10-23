@@ -12,7 +12,7 @@ import {
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/purchases/expenses/$expenseId")({
@@ -114,9 +114,7 @@ function ExpenseDetail() {
         }
       />
       <div className="space-y-2 text-sm">
-        <Badge variant="outline" className="capitalize">
-          {e.status}
-        </Badge>
+        <StatusBadge status={e.status} />
         <p>Net {fromMinorUnits(BigInt(e.net_minor), currency)}</p>
         <p>Tax {fromMinorUnits(BigInt(e.tax_minor), currency)}</p>
         <p>Total {fromMinorUnits(BigInt(e.total_minor), currency)}</p>

@@ -39,6 +39,7 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { cn } from "@/lib/utils";
 import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -212,10 +213,6 @@ export const Route = createFileRoute("/_authenticated/purchases/bills/")({
   head: () => ({ meta: [{ title: "Bills — LinkBooks" }] }),
   component: BillsWorkspace,
 });
-
-function statusLabel(status: string) {
-  return status.replace(/_/g, " ");
-}
 
 function paymentStatusOf(b: BillRow) {
   if (b.status === "draft" || b.status === "awaiting_approval") return "Unposted";
@@ -1132,9 +1129,7 @@ function BillsWorkspace() {
                               case "status":
                                 return (
                                   <TableCell key={col}>
-                                    <Badge variant="outline" className="capitalize">
-                                      {statusLabel(b.status)}
-                                    </Badge>
+                                    <StatusBadge status={b.status} />
                                   </TableCell>
                                 );
                               case "total":
@@ -1352,9 +1347,7 @@ function PreviewBody({
           </p>
         </div>
       </div>
-      <Badge variant="outline" className="capitalize">
-        {statusLabel(bill.status)}
-      </Badge>
+      <StatusBadge status={bill.status} />
       <dl className="grid grid-cols-2 gap-2">
         <div>
           <dt className="text-xs text-muted-foreground">Total</dt>

@@ -19,6 +19,7 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -280,9 +281,7 @@ function InvoiceDetail() {
             <p className="text-sm text-muted-foreground">Date {inv.invoice_date}</p>
             <p className="text-sm text-muted-foreground">Due {inv.due_date}</p>
             <div className="mt-1 flex justify-end gap-2 print:hidden">
-              <Badge variant="outline" className="capitalize">
-                {inv.status.replace("_", " ")}
-              </Badge>
+              <StatusBadge status={inv.status} />
               {overdue ? <Badge variant="destructive">Overdue</Badge> : null}
               {inv.sent_at ? <Badge variant="secondary">Sent</Badge> : null}
             </div>

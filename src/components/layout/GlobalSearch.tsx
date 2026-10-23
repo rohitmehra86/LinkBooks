@@ -9,6 +9,7 @@ import { globalSearch, type GlobalSearchHit } from "@/lib/search/global-search.f
 import {
   buildPaletteActions,
   filterPaletteActions,
+  suggestedPaletteActions,
   type PaletteAction,
 } from "@/lib/search/palette-items";
 import { Button } from "@/components/ui/button";
@@ -49,7 +50,7 @@ export function GlobalSearch({ className }: { className?: string }) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((v) => !v);
       }
@@ -71,7 +72,16 @@ export function GlobalSearch({ className }: { className?: string }) {
   });
 
   const allActions = useMemo(() => buildPaletteActions(), []);
-  const actions = useMemo(() => filterPaletteActions(allActions, q), [allActions, q]);
+  const actions = useMemo(
+    () =>
+      q.trim() === "" ? suggestedPaletteActions(allActions) : filterPaletteActions(allActions, q),
+    [allActions, q],
+  );
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(/mac|iphone|ipad/i.test(navigator.platform));
+  }, []);
+  const shortcut = isMac ? "⌘K" : "Ctrl K";
   const hits = searchQ.data ?? [];
 
   function close() {
@@ -105,16 +115,18 @@ export function GlobalSearch({ className }: { className?: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Search (Ctrl K)"
+        aria-label={`Search (${shortcut})`}
         aria-keyshortcuts="Control+K Meta+K"
         className={cn(
-          "hidden h-10 w-full max-w-sm items-center gap-2 rounded-md border border-input bg-background px-3 text-left text-sm text-muted-foreground hover:bg-accent md:flex",
+          "hidden h-9 w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 text-left text-sm text-muted-foreground shadow-xs transition-colors hover:bg-accent md:flex",
           className,
         )}
       >
         <Search className="size-4" />
         <span className="flex-1 truncate">Search invoices, bills, contacts…</span>
-        <kbd className="rounded border bg-muted px-1.5 text-[10px] font-medium">Ctrl K</kbd>
+        <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+          {shortcut}
+        </kbd>
       </button>
       {/* Mobile: icon button */}
       <Button
@@ -124,7 +136,7 @@ export function GlobalSearch({ className }: { className?: string }) {
         aria-label="Search"
         onClick={() => setOpen(true)}
       >
-        <Search className="size-5" />
+        <Search className="size-5" aria-hidden />
       </Button>
 
       <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : close())}>
@@ -148,12 +160,6 @@ export function GlobalSearch({ className }: { className?: string }) {
               {searchQ.isError ? (
                 <div role="alert" className="px-3 py-2 text-sm text-destructive">
                   {searchQ.error instanceof Error ? searchQ.error.message : "Search failed"}
-                </div>
-              ) : null}
-              {!typed ? (
-                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  Type at least 2 characters. Try “new invoice”, “aged payables” or a supplier
-                  invoice number.
                 </div>
               ) : null}
               {nothing ? <CommandEmpty>No matches in this organisation.</CommandEmpty> : null}
@@ -188,6 +194,12 @@ export function GlobalSearch({ className }: { className?: string }) {
                   ))}
                 </CommandGroup>
               ))}
+              {!typed ? (
+                <div className="border-t px-3 py-2.5 text-xs text-muted-foreground">
+                  Type 2+ characters to search invoices, bills, contacts and accounts. Use ↑ ↓ to
+                  move and Enter to open.
+                </div>
+              ) : null}
             </CommandList>
           </Command>
         </DialogContent>

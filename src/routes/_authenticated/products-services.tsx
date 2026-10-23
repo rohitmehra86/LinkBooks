@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Package, Plus, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
@@ -77,6 +78,7 @@ export function ProductsPage() {
 
 function ProductsWorkspace({ companyId, currency }: { companyId: string; currency: string }) {
   const queryClient = useQueryClient();
+  const fmt = useFormat();
   const fetchProducts = useServerFn(listProducts);
   const fetchAccounts = useServerFn(listAccounts);
   const saveProduct = useServerFn(upsertProduct);
@@ -349,17 +351,17 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
                       ) : null}
                     </TableCell>
                     <TableCell className="capitalize">{p.kind.replace("_", " ")}</TableCell>
-                    <TableCell className="text-right">
-                      {fromMinorUnits(p.sales_price_minor, currency)}
+                    <TableCell className="money">
+                      {fmt.money(p.sales_price_minor, currency)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {fromMinorUnits(p.purchase_cost_minor, currency)}
+                    <TableCell className="money">
+                      {fmt.money(p.purchase_cost_minor, currency)}
                     </TableCell>
                     <TableCell>
                       {p.is_active ? (
-                        <Badge variant="secondary">Active</Badge>
+                        <Badge variant="success">Active</Badge>
                       ) : (
-                        <Badge variant="outline">Archived</Badge>
+                        <Badge variant="neutral">Archived</Badge>
                       )}
                     </TableCell>
                     <TableCell className="space-x-1 text-right">
@@ -451,7 +453,13 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               </div>
             </div>
             <div className="grid gap-1">
-              <Label>Name</Label>
+              <Label>
+                Name
+                <span aria-hidden className="ml-0.5 text-destructive">
+                  *
+                </span>
+                <span className="sr-only"> (required)</span>
+              </Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}

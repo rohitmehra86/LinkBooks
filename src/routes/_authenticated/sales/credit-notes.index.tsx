@@ -4,22 +4,23 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { exportCreditNotesCsv, listCreditNotes } from "@/lib/sales/sales-credits.functions";
 import { creditNoteStatusLabel } from "@/lib/sales/allocation-rules";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   ListToolbar,
   Pager,
+  TableCard,
   SortHead,
   downloadCsv,
   initialListState,
   useDebounced,
   type ListState,
 } from "@/components/sales/ListKit";
-import { money } from "@/components/sales/sales-form-utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -44,6 +45,7 @@ const STATUSES = [
 
 function CreditNotesList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const companyId = company?.id;
   const fetchCredits = useServerFn(listCreditNotes);
   const exportCsv = useServerFn(exportCreditNotesCsv);
@@ -99,7 +101,7 @@ function CreditNotesList() {
         exporting={exporter.isPending}
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
         <ErrorState
           title="Could not load credit notes"
@@ -110,60 +112,70 @@ function CreditNotesList() {
         <EmptyState
           title="No credit notes"
           description="No credit notes match — create one for a customer."
+          action={
+            <Button size="sm" asChild>
+              <Link to="/sales/credit-notes/new">New credit note</Link>
+            </Button>
+          }
         />
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortHead label="Number" column="credit_number" state={state} onChange={patch} />
-                <SortHead label="Date" column="credit_date" state={state} onChange={patch} />
-                <TableHead>Customer</TableHead>
-                <SortHead label="Status" column="status" state={state} onChange={patch} />
-                <SortHead
-                  label="Total"
-                  column="total_minor"
-                  state={state}
-                  onChange={patch}
-                  className="text-right"
-                />
-                <TableHead className="text-right">Applied</TableHead>
-                <TableHead className="text-right">Remaining credit</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((c) => {
-                const live = ["authorised", "partly_paid"].includes(c.status);
-                return (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      <Link
-                        className="underline-offset-2 hover:underline"
-                        to="/sales/credit-notes/$creditNoteId"
-                        params={{ creditNoteId: c.id }}
-                      >
-                        {c.credit_number ?? c.id.slice(0, 8)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{c.credit_date}</TableCell>
-                    <TableCell>{c.contacts?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{creditNoteStatusLabel(c.status)}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money(c.total_minor, c.currency_code)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money(c.amount_allocated_minor, c.currency_code)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money(live ? c.total_minor - c.amount_allocated_minor : 0, c.currency_code)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <TableCard>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead label="Number" column="credit_number" state={state} onChange={patch} />
+                  <SortHead label="Date" column="credit_date" state={state} onChange={patch} />
+                  <TableHead>Customer</TableHead>
+                  <SortHead label="Status" column="status" state={state} onChange={patch} />
+                  <SortHead
+                    label="Total"
+                    column="total_minor"
+                    state={state}
+                    onChange={patch}
+                    className="text-right"
+                  />
+                  <TableHead className="text-right">Applied</TableHead>
+                  <TableHead className="text-right">Remaining credit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((c) => {
+                  const live = ["authorised", "partly_paid"].includes(c.status);
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link
+                          className="underline-offset-2 hover:underline"
+                          to="/sales/credit-notes/$creditNoteId"
+                          params={{ creditNoteId: c.id }}
+                        >
+                          {c.credit_number ?? c.id.slice(0, 8)}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{fmt.date(c.credit_date)}</TableCell>
+                      <TableCell>{c.contacts?.name ?? "—"}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={c.status} label={creditNoteStatusLabel(c.status)} />
+                      </TableCell>
+                      <TableCell className="money">
+                        {fmt.money(c.total_minor, c.currency_code)}
+                      </TableCell>
+                      <TableCell className="money">
+                        {fmt.money(c.amount_allocated_minor, c.currency_code)}
+                      </TableCell>
+                      <TableCell className="money">
+                        {fmt.money(
+                          live ? c.total_minor - c.amount_allocated_minor : 0,
+                          c.currency_code,
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableCard>
           <Pager total={query.data?.total ?? 0} state={state} onChange={patch} />
         </>
       )}

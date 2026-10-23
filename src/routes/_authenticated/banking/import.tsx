@@ -562,7 +562,7 @@ function ImportCsv() {
                       <TableCell className="whitespace-nowrap">{r.txnDate}</TableCell>
                       <TableCell>{r.description}</TableCell>
                       <TableCell>{r.reference ?? ""}</TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="money">
                         {fromMinorUnits(r.amountMinor, currency)}
                       </TableCell>
                       <TableCell>

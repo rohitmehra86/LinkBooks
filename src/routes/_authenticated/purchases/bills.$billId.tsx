@@ -60,7 +60,7 @@ import {
   type PurchaseLineFormState,
 } from "@/components/purchases/PurchasesDocumentLines";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -807,13 +807,7 @@ function BillDocumentWorkspace() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-          <Badge variant="outline" className="capitalize">
-            {bill.status === "authorised"
-              ? "Awaiting payment"
-              : bill.status === "partly_paid"
-                ? "Partially paid"
-                : bill.status.replace(/_/g, " ")}
-          </Badge>
+          <StatusBadge status={bill.status} />
           <span>
             Document total{" "}
             <strong className="tabular-nums">

@@ -185,7 +185,7 @@ export function CreateNewMenu() {
         aria-haspopup="dialog"
         aria-expanded={menuOpen}
         aria-controls={menuId}
-        className="rounded-full bg-neutral-950 px-4 text-white hover:bg-neutral-800"
+        className="gap-1.5 px-3.5"
         onClick={() => setMenuOpen((open) => !open)}
       >
         <Plus className="size-4" />

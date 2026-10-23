@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildPaletteActions, filterPaletteActions } from "./palette-items";
+import {
+  buildPaletteActions,
+  filterPaletteActions,
+  suggestedPaletteActions,
+} from "./palette-items";
 import { sanitiseSearchTerm } from "./sanitise";
 
 describe("command palette (U-07)", () => {
@@ -20,6 +24,15 @@ describe("command palette (U-07)", () => {
     ).toBe(true);
     expect(filterPaletteActions(actions, "zzzz")).toEqual([]);
     expect(filterPaletteActions(actions, "   ")).toEqual([]);
+  });
+});
+
+describe("palette suggestions", () => {
+  it("offers create shortcuts and pages before anything is typed", () => {
+    const s = suggestedPaletteActions(buildPaletteActions());
+    expect(s.some((a) => a.group === "Create")).toBe(true);
+    expect(s.some((a) => a.group === "Go to")).toBe(true);
+    expect(s.every((a) => a.group !== "Reports")).toBe(true);
   });
 });
 

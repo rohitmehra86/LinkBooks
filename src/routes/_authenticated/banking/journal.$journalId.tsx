@@ -90,10 +90,10 @@ function JournalDetail() {
             <TableRow key={l.id}>
               <TableCell>{l.accounts ? `${l.accounts.code} ${l.accounts.name}` : "—"}</TableCell>
               <TableCell>{l.description ?? ""}</TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {l.debit_minor ? fromMinorUnits(l.debit_minor, currency) : ""}
               </TableCell>
-              <TableCell className="text-right font-mono">
+              <TableCell className="money">
                 {l.credit_minor ? fromMinorUnits(l.credit_minor, currency) : ""}
               </TableCell>
             </TableRow>
@@ -102,10 +102,10 @@ function JournalDetail() {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={2}>Total ({currency})</TableCell>
-            <TableCell className="text-right font-mono">
+            <TableCell className="money">
               {fromMinorUnits(debit, currency)}
             </TableCell>
-            <TableCell className="text-right font-mono">
+            <TableCell className="money">
               {fromMinorUnits(credit, currency)}
             </TableCell>
           </TableRow>

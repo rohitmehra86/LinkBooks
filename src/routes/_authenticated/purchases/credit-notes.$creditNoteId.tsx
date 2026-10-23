@@ -22,7 +22,7 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { minorOrZero, parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -346,9 +346,7 @@ function CreditNoteDetail() {
         }
       />
       <div className="mb-4 flex flex-wrap gap-3 text-sm">
-        <Badge variant="outline" className="capitalize">
-          {cn.status.replace("_", " ")}
-        </Badge>
+        <StatusBadge status={cn.status} />
         <span>#{cn.credit_number ?? "—"}</span>
         <span>
           Total {fromMinorUnits(cn.total_minor, currency)} {currency}
