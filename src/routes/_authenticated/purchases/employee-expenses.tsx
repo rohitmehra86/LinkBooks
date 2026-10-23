@@ -9,10 +9,13 @@ import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   approveAndReimburseClaim,
   listEmployeeClaims,
+  listPaymentAccounts,
   rejectEmployeeClaim,
   submitEmployeeClaim,
 } from "@/lib/purchases/purchases.functions";
-import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
+import { fromMinorUnits } from "@/lib/accounting/money";
+import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
+import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +47,8 @@ export function EmployeeExpensesPage() {
   const queryClient = useQueryClient();
   const fetchClaims = useServerFn(listEmployeeClaims);
   const fetchAccounts = useServerFn(listAccounts);
+  const fetchPaymentAccounts = useServerFn(listPaymentAccounts);
+  const { can } = useCan();
   const submit = useServerFn(submitEmployeeClaim);
   const approve = useServerFn(approveAndReimburseClaim);
   const companyId = company?.id;
@@ -61,6 +66,12 @@ export function EmployeeExpensesPage() {
     queryFn: () => fetchAccounts({ data: { companyId: companyId! } }),
   });
 
+  const paymentAccountsQ = useQuery({
+    queryKey: ["payment-accounts", companyId],
+    enabled: Boolean(companyId) && can("expenses.approve"),
+    queryFn: () => fetchPaymentAccounts({ data: { companyId: companyId! } }),
+  });
+  const [tax, setTax] = useState("0.00");
   const [description, setDescription] = useState("");
   const [claimDate, setClaimDate] = useState(today);
   const [expenseAccountId, setExpenseAccountId] = useState("");
@@ -85,7 +96,8 @@ export function EmployeeExpensesPage() {
           description,
           expenseAccountId,
           currencyCode: currency,
-          amountMinor: Number(toMinorUnits(amount || "0", currency)),
+          amountMinor: Number(parseMinorOrThrow(amount || "0", currency, "Amount")),
+          taxMinor: Number(parseMinorOrThrow(tax || "0", currency, "Tax")),
         },
       }),
     onSuccess: async () => {
@@ -96,6 +108,8 @@ export function EmployeeExpensesPage() {
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
+  const amountInvalid = tryParseMinor(amount || "0", currency) === null;
+  const taxInvalid = tryParseMinor(tax || "0", currency) === null;
   const doReject = useServerFn(rejectEmployeeClaim);
 
   const approveMutation = useMutation({
@@ -154,32 +168,54 @@ export function EmployeeExpensesPage() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Amount ({currency})</Label>
-          <Input value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Label>Net amount ({currency})</Label>
+          <Input
+            value={amount}
+            inputMode="decimal"
+            aria-invalid={amountInvalid}
+            onChange={(e) => setAmount(e.target.value)}
+          />
         </div>
-        <Button size="sm" disabled={submitMutation.isPending} onClick={() => submitMutation.mutate()}>
+        <div className="space-y-2">
+          <Label>Recoverable tax ({currency}, added on top of the net amount)</Label>
+          <Input
+            value={tax}
+            inputMode="decimal"
+            aria-invalid={taxInvalid}
+            onChange={(e) => setTax(e.target.value)}
+          />
+        </div>
+        <Button
+          size="sm"
+          disabled={
+            submitMutation.isPending || amountInvalid || taxInvalid || !can("expenses.submit")
+          }
+          onClick={() => submitMutation.mutate()}
+        >
           {submitMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           Submit claim
         </Button>
       </div>
 
-      <div className="mb-4 max-w-sm space-y-2">
-        <Label>Reimbursement payment account (for approvals)</Label>
-        <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-          <SelectTrigger>
-            <SelectValue placeholder="Bank account" />
-          </SelectTrigger>
-          <SelectContent>
-            {accounts
-              .filter((a) => a.is_active && a.is_postable)
-              .map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {can("expenses.approve") ? (
+        <div className="mb-4 max-w-sm space-y-2">
+          <Label>Reimbursement payment account (for approvals)</Label>
+          <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Bank or cash account" />
+            </SelectTrigger>
+            <SelectContent>
+              {((paymentAccountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map(
+                (a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.code} — {a.name}
+                  </SelectItem>
+                ),
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       {claimsQ.isPending ? (
         <LoadingState />
@@ -192,6 +228,7 @@ export function EmployeeExpensesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
+              <TableHead>Claimant</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -206,10 +243,13 @@ export function EmployeeExpensesPage() {
                 description: string;
                 status: string;
                 amount_minor: number;
+                claimant_name: string | null;
+                is_mine: boolean;
               }>
             ).map((c) => (
               <TableRow key={c.id}>
                 <TableCell>{c.claim_date}</TableCell>
+                <TableCell>{c.is_mine ? "You" : (c.claimant_name ?? "—")}</TableCell>
                 <TableCell>{c.description}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="capitalize">
@@ -220,7 +260,12 @@ export function EmployeeExpensesPage() {
                   {fromMinorUnits(BigInt(c.amount_minor), currency)}
                 </TableCell>
                 <TableCell className="space-x-2 text-right">
-                  {c.status === "submitted" ? (
+                  {c.status === "submitted" && c.is_mine && can("expenses.approve") ? (
+                    <span className="text-xs text-muted-foreground">
+                      Needs another approver
+                    </span>
+                  ) : null}
+                  {c.status === "submitted" && !c.is_mine && can("expenses.approve") ? (
                     <>
                       <Button
                         size="sm"
