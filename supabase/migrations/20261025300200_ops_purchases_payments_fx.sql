@@ -72,6 +72,9 @@ DECLARE
   _contact_active BOOLEAN;
   _journal_ccy TEXT;
 BEGIN
+  -- This function posts the realised FX inside the payment journal itself, so the allocation
+  -- triggers of 20261025110000 (separate realised-FX journals) must stay quiet for this payment.
+  PERFORM set_config('linkbooks.fx_inline', 'on', true);
   SELECT base_currency INTO _base FROM public.companies WHERE id = _company;
   _ccy := upper(COALESCE(NULLIF(_p->>'currency_code', ''), _base));
   _fx := NULLIF(_p->>'fx_rate_to_base', '')::NUMERIC;
@@ -225,6 +228,7 @@ BEGIN
   UPDATE public.supplier_payments
   SET status = 'paid', posted_journal_id = _journal, updated_at = now()
   WHERE id = _pay;
+  PERFORM set_config('linkbooks.fx_inline', 'off', true);
 
   PERFORM public.record_audit_event(
     _company, 'supplier_payment.post', 'supplier_payment', _pay,
