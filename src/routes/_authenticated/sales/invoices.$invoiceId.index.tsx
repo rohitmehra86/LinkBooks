@@ -17,6 +17,7 @@ import {
 import { getSalesDocumentConfig } from "@/lib/sales/sales-config.functions";
 import { canVoidInvoice } from "@/lib/sales/allocation-rules";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
@@ -270,6 +271,11 @@ function InvoiceDetail() {
                 : null}
             </p>
           ) : null
+        ) : null}
+        {inv.status !== "void" ? (
+          <div className="mb-3">
+            <ProjectTagControl kind="sales_invoice" documentId={invoiceId} />
+          </div>
         ) : null}
         <p className="mb-4 text-xs text-muted-foreground">
           Delivery: use Print / PDF. Email delivery is not configured in this environment.

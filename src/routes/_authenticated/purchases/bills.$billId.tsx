@@ -81,6 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ProjectTagControl } from "@/components/projects/ProjectTagControl";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 type BillSearch = { fromTab?: string; files?: boolean };
@@ -841,6 +842,9 @@ function BillDocumentWorkspace() {
             <span className="text-xs text-muted-foreground">
               {neighbors.position} of {neighbors.total}
             </span>
+          ) : null}
+          {bill.status !== "void" ? (
+            <ProjectTagControl kind="purchase_bill" documentId={billId} />
           ) : null}
         </div>
       </header>
