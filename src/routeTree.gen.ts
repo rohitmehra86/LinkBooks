@@ -24,6 +24,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedProductsServicesRouteImport } from './routes/_authenticated/products-services'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPurchasesRouteRouteImport } from './routes/_authenticated/purchases/route'
+import { Route as AuthenticatedRecurringJournalsRouteImport } from './routes/_authenticated/recurring-journals'
 import { Route as AuthenticatedSalesRouteRouteImport } from './routes/_authenticated/sales/route'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTaxRouteImport } from './routes/_authenticated/tax'
@@ -167,6 +168,12 @@ const AuthenticatedPurchasesRouteRoute =
   AuthenticatedPurchasesRouteRouteImport.update({
     id: '/purchases',
     path: '/purchases',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRecurringJournalsRoute =
+  AuthenticatedRecurringJournalsRouteImport.update({
+    id: '/recurring-journals',
+    path: '/recurring-journals',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSalesRouteRoute = AuthenticatedSalesRouteRouteImport.update({
@@ -578,6 +585,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/banking/cash-coding': typeof AuthenticatedBankingCashCodingRoute
@@ -656,6 +664,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/products-services': typeof AuthenticatedProductsServicesRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tax': typeof AuthenticatedTaxRoute
   '/': typeof AuthenticatedIndexRoute
@@ -737,6 +746,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/products-services': typeof AuthenticatedProductsServicesRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/recurring-journals': typeof AuthenticatedRecurringJournalsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tax': typeof AuthenticatedTaxRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -822,6 +832,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/banking/cash-coding'
@@ -900,6 +911,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/products-services'
     | '/profile'
+    | '/recurring-journals'
     | '/settings'
     | '/tax'
     | '/'
@@ -980,6 +992,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/products-services'
     | '/_authenticated/profile'
+    | '/_authenticated/recurring-journals'
     | '/_authenticated/settings'
     | '/_authenticated/tax'
     | '/_authenticated/'
@@ -1160,6 +1173,13 @@ declare module '@tanstack/react-router' {
       path: '/purchases'
       fullPath: '/purchases'
       preLoaderRoute: typeof AuthenticatedPurchasesRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/recurring-journals': {
+      id: '/_authenticated/recurring-journals'
+      path: '/recurring-journals'
+      fullPath: '/recurring-journals'
+      preLoaderRoute: typeof AuthenticatedRecurringJournalsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/sales': {
@@ -1867,6 +1887,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProductsServicesRoute: typeof AuthenticatedProductsServicesRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedRecurringJournalsRoute: typeof AuthenticatedRecurringJournalsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTaxRoute: typeof AuthenticatedTaxRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -1892,6 +1913,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProductsServicesRoute: AuthenticatedProductsServicesRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedRecurringJournalsRoute: AuthenticatedRecurringJournalsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTaxRoute: AuthenticatedTaxRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

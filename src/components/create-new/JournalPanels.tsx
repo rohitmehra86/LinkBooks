@@ -66,6 +66,8 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine(), emptyLine()]);
   const [templateId, setTemplateId] = useState<string | null>(null);
+  const [intervalMonths, setIntervalMonths] = useState("1");
+  const [maxOccurrences, setMaxOccurrences] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
@@ -118,7 +120,15 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
       const journalLines = payloadLines();
       if (mode === "template") {
         return saveTemplate({
-          data: { companyId: companyId!, name, startDate: date, lines: journalLines },
+          data: {
+            companyId: companyId!,
+            name,
+            startDate: date,
+            memo,
+            intervalMonths: Number(intervalMonths) || 1,
+            maxOccurrences: Number(maxOccurrences) > 0 ? Number(maxOccurrences) : null,
+            lines: journalLines,
+          },
         });
       }
       return post({
@@ -164,7 +174,7 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
     >
       <p className="text-sm text-muted-foreground">
         {mode === "template"
-          ? "Saving this template does not post a journal. Generate posts one occurrence through the ledger."
+          ? "Saving this template does not post a journal. Post it from the Recurring journals page (or let your scheduler run it)."
           : "Posts a balanced journal through the accounting engine. A locked period rejects the date. Receivables, payables and tax accounts are not available here: use an invoice, bill, credit note or payment."}
       </p>
       {error ? (
@@ -198,6 +208,31 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
           <Label htmlFor="journal-memo">Narration</Label>
           <Input id="journal-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
         </div>
+        {mode === "template" ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="journal-interval">Repeat every (months)</Label>
+              <Input
+                id="journal-interval"
+                type="number"
+                min={1}
+                max={12}
+                value={intervalMonths}
+                onChange={(e) => setIntervalMonths(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="journal-max">Stop after (occurrences, optional)</Label>
+              <Input
+                id="journal-max"
+                type="number"
+                min={1}
+                value={maxOccurrences}
+                onChange={(e) => setMaxOccurrences(e.target.value)}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="space-y-2">

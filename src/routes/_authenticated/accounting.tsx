@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
@@ -87,15 +87,20 @@ export function AccountingWorkspace({
         title="Accounting"
         description="Authoritative double-entry ledger: chart of accounts, journals, financial years and period close."
         actions={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={seedMutation.isPending}
-            onClick={() => seedMutation.mutate()}
-          >
-            {seedMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Ensure CoA & periods
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/recurring-journals">Recurring journals</Link>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={seedMutation.isPending}
+              onClick={() => seedMutation.mutate()}
+            >
+              {seedMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+              Ensure CoA & periods
+            </Button>
+          </div>
         }
       />
 

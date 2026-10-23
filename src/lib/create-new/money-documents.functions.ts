@@ -302,6 +302,9 @@ export const saveRecurringJournalTemplate = createServerFn({ method: "POST" })
       name: string;
       startDate: string;
       endDate?: string;
+      intervalMonths?: number;
+      maxOccurrences?: number | null;
+      memo?: string;
       lines: Array<{
         accountId: string;
         description?: string;
@@ -317,6 +320,12 @@ export const saveRecurringJournalTemplate = createServerFn({ method: "POST" })
         name,
         startDate: isoDate(input.startDate, "Start date"),
         endDate: input.endDate ? isoDate(input.endDate, "End date") : null,
+        intervalMonths: Math.min(12, Math.max(1, Math.floor(Number(input.intervalMonths) || 1))),
+        maxOccurrences:
+          input.maxOccurrences && Number(input.maxOccurrences) > 0
+            ? Math.floor(Number(input.maxOccurrences))
+            : null,
+        memo: (input.memo ?? "").trim().slice(0, 240) || null,
         lines: input.lines.map((line) => ({
           accountId: assertUuid(line.accountId, "account"),
           description: (line.description ?? "").trim().slice(0, 240),
@@ -344,6 +353,9 @@ export const saveRecurringJournalTemplate = createServerFn({ method: "POST" })
         name: data.name,
         start_date: data.startDate,
         end_date: data.endDate,
+        interval_months: data.intervalMonths,
+        max_occurrences: data.maxOccurrences,
+        memo: data.memo,
         next_date: data.startDate,
         is_active: true,
         lines: data.lines,
@@ -376,70 +388,16 @@ export const generateRecurringJournal = createServerFn({ method: "POST" })
     const { supabase } = context;
     await assertCompanyPermission(supabase, data.companyId, "journals.manual");
     await assertCompanyPermission(supabase, data.companyId, "accounting.post");
-    const { data: template, error } = await supabase
-      .from("recurring_journal_templates" as never)
-      .select("id, name, next_date, end_date, is_active, lines" as never)
-      .eq("id" as never, data.templateId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!template) throw new Error("Recurring journal not found");
-    const row = template as {
-      name: string;
-      next_date: string;
-      end_date: string | null;
-      is_active: boolean;
-      lines: Array<{
-        accountId: string;
-        description?: string;
-        debitMinor: number;
-        creditMinor: number;
-      }>;
-    };
-    if (!row.is_active) throw new Error("This recurring journal is paused");
-    if (row.end_date && row.next_date > row.end_date) throw new Error("This schedule has ended");
-    const key = `recurring_journal:${data.templateId}:${row.next_date}`;
-    const { journalId } = await postJournal(supabase, {
-      company_id: data.companyId,
-      journal_date: row.next_date,
-      memo: row.name,
-      source_type: "manual",
-      source_id: data.templateId,
-      idempotency_key: key,
-      lines: row.lines.map((line) => ({
-        account_id: line.accountId,
-        description: line.description ?? row.name,
-        debit_minor: BigInt(line.debitMinor),
-        credit_minor: BigInt(line.creditMinor),
-      })),
-    });
-    const { error: occError } = await supabase
-      .from("recurring_journal_occurrences" as never)
-      .insert({
-        company_id: data.companyId,
-        template_id: data.templateId,
-        occurrence_date: row.next_date,
-        journal_id: journalId,
-      } as never);
-    if (occError && !occError.message.toLowerCase().includes("duplicate"))
-      throw new Error(occError.message);
-    const next = addMonths(row.next_date, 1);
-    await supabase
-      .from("recurring_journal_templates" as never)
-      .update({ next_date: next, updated_at: new Date().toISOString() } as never)
-      .eq("id" as never, data.templateId as never)
-      .eq("company_id" as never, data.companyId as never);
-    return { journalId, occurrenceDate: row.next_date };
+    const rpc = await callSalesRpc<{ last_date: string | null }>(
+      supabase,
+      "post_recurring_journal_now",
+      { company_id: data.companyId, template_id: data.templateId },
+    );
+    const done = requireRpc(rpc, "post_recurring_journal_now", RECURRING_JOURNAL_MIGRATION);
+    return { occurrenceDate: done.last_date ?? "" };
   });
 
-function addMonths(iso: string, months: number): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1 + months, 1));
-  const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
-  const clamped = Math.min(day!, last);
-  const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), clamped));
-  return result.toISOString().slice(0, 10);
-}
+const RECURRING_JOURNAL_MIGRATION = "20261025300300_ops_recurring_journals.sql";
 
 export const listMoneyDocuments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
