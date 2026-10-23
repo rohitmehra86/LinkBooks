@@ -846,6 +846,13 @@ function BillDocumentWorkspace() {
           {bill.status !== "void" ? (
             <ProjectTagControl kind="purchase_bill" documentId={billId} />
           ) : null}
+          {["authorised", "partly_paid"].includes(bill.status) ? (
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/purchases/credit-notes/new" search={{ billId }}>
+                Credit this bill
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </header>
 

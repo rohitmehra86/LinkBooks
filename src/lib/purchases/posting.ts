@@ -193,6 +193,8 @@ export async function postCreditNoteAuthorisation(
     currency_code: string;
     lines: BillLinePost[];
     memo?: string;
+    /** Same convention as bills: stored on the journal, amounts stay in the document currency. */
+    fx_rate_to_base?: number;
   },
 ): Promise<string> {
   const ap = await requireAccountByCode(supabase, args.company_id, "2000");
@@ -241,6 +243,7 @@ export async function postCreditNoteAuthorisation(
     source_id: args.credit_note_id,
     idempotency_key: `purchase_credit_note:${args.credit_note_id}:authorise`,
     ...(args.memo ? { memo: args.memo } : {}),
+    ...(args.fx_rate_to_base != null ? { fx_rate_to_base: args.fx_rate_to_base } : {}),
     lines: journalLines,
   });
   return journalId;

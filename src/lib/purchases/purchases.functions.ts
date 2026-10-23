@@ -2358,11 +2358,26 @@ async function authoriseCreditNoteInternal(
     });
   }
 
+  // Rate is optional: the column arrives with the ops purchases migration. Missing column = no rate.
+  const { data: fxRow, error: fxErr } = await supabase
+    .from("purchase_credit_notes" as never)
+    .select("fx_rate_to_base" as never)
+    .eq("company_id" as never, companyId as never)
+    .eq("id" as never, creditNoteId as never)
+    .maybeSingle();
+  if (fxErr && !/fx_rate_to_base|schema cache/i.test(fxErr.message)) throw new Error(fxErr.message);
+  const storedRate = Number(
+    (fxRow as { fx_rate_to_base?: number | string | null } | null)?.fx_rate_to_base,
+  );
+  const creditFx =
+    Number.isFinite(storedRate) && storedRate > 0 && storedRate !== 1 ? storedRate : null;
+
   const journalId = await postCreditNoteAuthorisation(supabase as never, {
     company_id: companyId,
     credit_note_id: creditNoteId,
     credit_date: credit.credit_date,
     currency_code: credit.currency_code,
+    ...(creditFx != null ? { fx_rate_to_base: creditFx } : {}),
     ...(credit.memo ? { memo: credit.memo } : {}),
     lines: [...credit.purchase_credit_note_lines]
       .sort((a, b) => a.line_no - b.line_no)
@@ -2429,11 +2444,18 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
       memo?: string;
       lines: CreditLineIn[];
       allocations?: Array<{ billId: string; amountMinor: number }>;
+      /** Rate to the base currency for a foreign-currency credit (blank/1 for base). */
+      fxRateToBase?: number | null;
       authorise: boolean;
     }) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.creditDate)) throw new Error("Credit date required");
       const lines = normaliseCreditLines(input.lines);
+      const fx = input.fxRateToBase == null ? null : Number(input.fxRateToBase);
+      if (fx !== null && (!Number.isFinite(fx) || !(fx > 0))) {
+        throw new Error("Exchange rate must be a positive number");
+      }
       return {
+        fxRateToBase: fx !== null && fx !== 1 ? fx : null,
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
         creditDate: input.creditDate,
@@ -2497,10 +2519,18 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
         total_minor: total,
         status: "draft",
         created_by: userId,
+        ...(data.fxRateToBase != null ? { fx_rate_to_base: data.fxRateToBase } : {}),
       } as never)
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (data.fxRateToBase != null && /fx_rate_to_base|schema cache/i.test(error.message)) {
+        throw new Error(
+          "Foreign-currency credit notes need a database update that has not been applied yet.",
+        );
+      }
+      throw new Error(error.message);
+    }
     const creditId = (cn as { id: string }).id;
     const { error: lineErr } = await supabase.from("purchase_credit_note_lines" as never).insert(
       data.lines.map((l, i) => ({
