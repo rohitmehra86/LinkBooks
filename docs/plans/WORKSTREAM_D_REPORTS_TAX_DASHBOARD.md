@@ -14,67 +14,67 @@ Source audits: `docs/audit/BUGS_BANKING_REPORTS.md` (RP, AC, TX) and `docs/audit
 
 ### Reports (RP)
 
-| ID | Status | Notes |
-| --- | --- | --- |
-| RP-01 | Done | Ledger reports use SQL aggregate RPCs plus a paged fetch ordered by id (`fetch-all.ts`, `ledger-data.ts`). No 1000-row cap. Falls back to the pager if the RPCs are missing. |
-| RP-02 | Done | Journal report filters by date in the database and orders newest first, with paging. |
-| RP-03 | Done | Cash flow classifies each bank journal by all its counterpart lines into operating, investing and financing. |
-| RP-04 | Done | Fiscal year comes from `companies.fiscal_year_end_*`. The balance sheet splits current-year earnings from retained earnings. P&L excludes year-end closing journals. Year-end close is a preview then explicit confirm. |
-| RP-05 | Done | Account codes in TB, P&L and BS link to the General Ledger report for that account. |
-| RP-06 | Done | P&L is sectioned: revenue, cost of sales, gross profit, operating expenses, other, net profit. |
-| RP-07 | Done | One decimal-aware converter (`convertMinorToBase`) is used on every report path. The old test expectation for JPY→USD changed from 700 to 670 on purpose, because the old value ignored decimal places. |
-| RP-08 | Done | CSV export on every report (`csv.ts`, with metadata header). |
-| RP-09 | Done | Comparison with prior period or prior year, and a by-quarter option (see the report toolbar). |
+| ID    | Status  | Notes                                                                                                                                                                                                                                          |
+| ----- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RP-01 | Done    | Ledger reports use SQL aggregate RPCs plus a paged fetch ordered by id (`fetch-all.ts`, `ledger-data.ts`). No 1000-row cap. Falls back to the pager if the RPCs are missing.                                                                   |
+| RP-02 | Done    | Journal report filters by date in the database and orders newest first, with paging.                                                                                                                                                           |
+| RP-03 | Done    | Cash flow classifies each bank journal by all its counterpart lines into operating, investing and financing.                                                                                                                                   |
+| RP-04 | Done    | Fiscal year comes from `companies.fiscal_year_end_*`. The balance sheet splits current-year earnings from retained earnings. P&L excludes year-end closing journals. Year-end close is a preview then explicit confirm.                        |
+| RP-05 | Done    | Account codes in TB, P&L and BS link to the General Ledger report for that account.                                                                                                                                                            |
+| RP-06 | Done    | P&L is sectioned: revenue, cost of sales, gross profit, operating expenses, other, net profit.                                                                                                                                                 |
+| RP-07 | Done    | One decimal-aware converter (`convertMinorToBase`) is used on every report path. The old test expectation for JPY→USD changed from 700 to 670 on purpose, because the old value ignored decimal places.                                        |
+| RP-08 | Done    | CSV export on every report (`csv.ts`, with metadata header).                                                                                                                                                                                   |
+| RP-09 | Done    | Comparison with prior period or prior year, and a by-quarter option (see the report toolbar).                                                                                                                                                  |
 | RP-10 | Partial | Added all-accounts General Ledger and Statement of Changes in Equity; empty categories are hidden. Still "depends" with no runner: Budget vs Actual and Fixed Asset Register. Bank reconciliation and statements link to the existing screens. |
-| RP-11 | Done | Account transactions show a running balance in the account's natural direction. Journal numbers and source documents are linkable. |
-| RP-12 | Done | Control accounts are found by role (`control-accounts.ts`), not by hard-coded code. |
-| RP-13 | Done | The audit report shows actor, details and paging. |
-| RP-14 | Done | Only the selected report loads; the page title is the report name. |
-| RP-15 | Done | `useFormat` / `format.ts`: thousands separators, currency, brackets for negatives, locale dates. |
+| RP-11 | Done    | Account transactions show a running balance in the account's natural direction. Journal numbers and source documents are linkable.                                                                                                             |
+| RP-12 | Done    | Control accounts are found by role (`control-accounts.ts`), not by hard-coded code.                                                                                                                                                            |
+| RP-13 | Done    | The audit report shows actor, details and paging.                                                                                                                                                                                              |
+| RP-14 | Done    | Only the selected report loads; the page title is the report name.                                                                                                                                                                             |
+| RP-15 | Done    | `useFormat` / `format.ts`: thousands separators, currency, brackets for negatives, locale dates.                                                                                                                                               |
 
 ### Accounting (AC)
 
-| ID | Status | Notes |
-| --- | --- | --- |
-| AC-01 | Done | "Financial years" tab creates a full year of periods (`createFinancialYear`, permission `accounting.post`). `postJournal` also creates the missing period on first posting (`ensure_fiscal_period_for_date`). |
-| AC-02 | **Not done** | Conversion/opening balances. This needs a dedicated opening-balance posting flow and a conversion date, which I did not build. |
-| AC-03 | Done | Saving a system account no longer wipes fields. Locked fields (type, currency, control flags) are blocked once an account has activity (`lockedFieldChanges`). |
-| AC-04 | Not changed | `JournalsPanel` only shows Reverse when `canReverseHere` allows it. I did not re-audit this finding beyond reading the code. |
-| AC-05 | Partial | The existing multi-line manual journal panel is kept. **Auto-reverse journals are not built** (needs a scheduler). |
-| AC-06 | Done | Chart balances are financial-year-to-date for income/expense and all-time for balance-sheet accounts, in base currency. |
-| AC-07 | Done | Income and expense accounts can be archived when they have no current-year activity (year-end closing journals ignored). Balance-sheet accounts still need a zero balance. Enforced in the database and in `archiveDecision`. |
-| AC-08 | Not done | Account merge still posts one journal dated today. |
-| AC-09 | Done | "Period close" tab: checklist (bank, drafts, AR/AP tie-out, opening balance equity, tax return filed, year-end journal), optional year-end close, then lock with acknowledgement. |
+| ID    | Status       | Notes                                                                                                                                                                                                                         |
+| ----- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-01 | Done         | "Financial years" tab creates a full year of periods (`createFinancialYear`, permission `accounting.post`). `postJournal` also creates the missing period on first posting (`ensure_fiscal_period_for_date`).                 |
+| AC-02 | **Not done** | Conversion/opening balances. This needs a dedicated opening-balance posting flow and a conversion date, which I did not build.                                                                                                |
+| AC-03 | Done         | Saving a system account no longer wipes fields. Locked fields (type, currency, control flags) are blocked once an account has activity (`lockedFieldChanges`).                                                                |
+| AC-04 | Not changed  | `JournalsPanel` only shows Reverse when `canReverseHere` allows it. I did not re-audit this finding beyond reading the code.                                                                                                  |
+| AC-05 | Partial      | The existing multi-line manual journal panel is kept. **Auto-reverse journals are not built** (needs a scheduler).                                                                                                            |
+| AC-06 | Done         | Chart balances are financial-year-to-date for income/expense and all-time for balance-sheet accounts, in base currency.                                                                                                       |
+| AC-07 | Done         | Income and expense accounts can be archived when they have no current-year activity (year-end closing journals ignored). Balance-sheet accounts still need a zero balance. Enforced in the database and in `archiveDecision`. |
+| AC-08 | Not done     | Account merge still posts one journal dated today.                                                                                                                                                                            |
+| AC-09 | Done         | "Period close" tab: checklist (bank, drafts, AR/AP tie-out, opening balance equity, tax return filed, year-end journal), optional year-end close, then lock with acknowledgement.                                             |
 
 ### Tax (TX)
 
-| ID | Status | Notes |
-| --- | --- | --- |
+| ID    | Status                      | Notes                                                                                                                                                                                                                                                                                                                       |
+| ----- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TX-01 | Done (internal filing only) | Tax → Returns tab. Boxes are totalled from document tax lines by tax code. Accrual or cash basis. Draft → file and lock (database triggers freeze it). Optional settlement journal (`tax_adjustment`) only after explicit confirmation. UK VAT100 labels for GB, whole-pound filing amounts for boxes 6-9. See limitations. |
-| TX-02 | Done | Tax settings save only the fields sent. Filing frequency has a select. Non-recoverable tax account added. |
-| TX-03 | Done | Tax adjustment journals use a real UUID `source_id` (or null for manual ones), never free text. |
-| TX-04 | Partial | The cash basis is honoured **in the return** (payments dated in the period, pro rata). The older "Tax summary" report still reads the ledger by posting date. |
-| TX-05 | Done | Rates and codes can be edited, end-dated and deactivated (`rate-status.ts`, `TaxRatesPanel`, `TaxCodesPanel`). |
-| TX-06 | Done | Tax account pickers show only valid account types (`account-pickers.ts`). |
+| TX-02 | Done                        | Tax settings save only the fields sent. Filing frequency has a select. Non-recoverable tax account added.                                                                                                                                                                                                                   |
+| TX-03 | Done                        | Tax adjustment journals use a real UUID `source_id` (or null for manual ones), never free text.                                                                                                                                                                                                                             |
+| TX-04 | Partial                     | The cash basis is honoured **in the return** (payments dated in the period, pro rata). The older "Tax summary" report still reads the ledger by posting date.                                                                                                                                                               |
+| TX-05 | Done                        | Rates and codes can be edited, end-dated and deactivated (`rate-status.ts`, `TaxRatesPanel`, `TaxCodesPanel`).                                                                                                                                                                                                              |
+| TX-06 | Done                        | Tax account pickers show only valid account types (`account-pickers.ts`).                                                                                                                                                                                                                                                   |
 
 ### Dashboard, formatting and UX (U)
 
-| ID | Status | Notes |
-| --- | --- | --- |
-| U-01 | Done | Dashboard reads real data for every company. `is_demo` does not change any calculation. |
-| U-02 | Done | Cash, receivables and payables use control accounts by role and honour the as-at date. |
-| U-03 | Done | Server-side aggregation and paging. No row-cap truncation. |
-| U-04 | Done | The period-close card shows real task counts from the database. |
-| U-05 | Done | Bank balances with "reconcile N items" links, receivables and payables ageing per currency, 12-month cash chart, profit vs last year, approvals, watchlist, tasks, and a New bill shortcut. |
-| U-06 | Done | The permanently disabled bell is hidden. |
-| U-07 | Done | Global search is now a command palette (`cmdk`) with keyboard navigation and quick links to pages and reports. |
-| U-08 | Done | Shared money/date formatting through `useFormat`, used on the dashboard, reports, tax and accounting. Not rolled out to sales, purchases and banking screens (other workstreams own them). |
-| U-09 | Done | Help centre with search and current articles. |
-| U-10 | Not done | Bills Capture/Import buttons are in purchases (not my scope). |
-| U-11 | Not done | List-page tooling for other modules (not my scope). A shared `sortable-head` and `sort.ts` are available for them. |
-| U-12 | Not done | Numeric inputs in purchases forms (not my scope). |
-| U-13 | Done | `aria-sort` on the shared sortable header; the palette uses `cmdk`, which manages the active option for assistive tech. |
-| U-14 | Not done | The Create-new flyover is in `src/lib/create-new/*` / `CreateNewMenu.tsx`, owned by another workstream. |
+| ID   | Status   | Notes                                                                                                                                                                                       |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U-01 | Done     | Dashboard reads real data for every company. `is_demo` does not change any calculation.                                                                                                     |
+| U-02 | Done     | Cash, receivables and payables use control accounts by role and honour the as-at date.                                                                                                      |
+| U-03 | Done     | Server-side aggregation and paging. No row-cap truncation.                                                                                                                                  |
+| U-04 | Done     | The period-close card shows real task counts from the database.                                                                                                                             |
+| U-05 | Done     | Bank balances with "reconcile N items" links, receivables and payables ageing per currency, 12-month cash chart, profit vs last year, approvals, watchlist, tasks, and a New bill shortcut. |
+| U-06 | Done     | The permanently disabled bell is hidden.                                                                                                                                                    |
+| U-07 | Done     | Global search is now a command palette (`cmdk`) with keyboard navigation and quick links to pages and reports.                                                                              |
+| U-08 | Done     | Shared money/date formatting through `useFormat`, used on the dashboard, reports, tax and accounting. Not rolled out to sales, purchases and banking screens (other workstreams own them).  |
+| U-09 | Done     | Help centre with search and current articles.                                                                                                                                               |
+| U-10 | Not done | Bills Capture/Import buttons are in purchases (not my scope).                                                                                                                               |
+| U-11 | Not done | List-page tooling for other modules (not my scope). A shared `sortable-head` and `sort.ts` are available for them.                                                                          |
+| U-12 | Not done | Numeric inputs in purchases forms (not my scope).                                                                                                                                           |
+| U-13 | Done     | `aria-sort` on the shared sortable header; the palette uses `cmdk`, which manages the active option for assistive tech.                                                                     |
+| U-14 | Not done | The Create-new flyover is in `src/lib/create-new/*` / `CreateNewMenu.tsx`, owned by another workstream.                                                                                     |
 
 ## Migration files (apply in this order)
 
