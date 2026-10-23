@@ -10,6 +10,7 @@ import {
   upsertOrganisationConfig,
 } from "@/lib/settings/settings-centre.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { LedgerHealthPanel } from "@/components/accounting/LedgerHealthPanel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -240,6 +241,8 @@ export function SettingsAccountingLocksPanel({ companyId, canEdit, canLock }: Pr
           </Button>
         </CardContent>
       </Card>
+
+      <LedgerHealthPanel companyId={companyId} />
     </div>
   );
 }
