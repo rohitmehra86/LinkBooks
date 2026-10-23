@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Users, Download, Upload, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
 import {
   listContacts,
   upsertContact,
@@ -43,17 +44,22 @@ type ContactRow = {
   is_active: boolean;
 };
 
+const PAGE_SIZE = 50;
+
 export function ContactsPage({ initialKind = "customer" }: { initialKind?: string } = {}) {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const canManage = useCanDo("contacts.manage");
   const fetch = useServerFn(listContacts);
   const upsert = useServerFn(upsertContact);
   const fetchSummary = useServerFn(getContactsDirectorySummary);
   const exportFn = useServerFn(exportContactsCsv);
 
   const [view, setView] = useState("all");
+  const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const [name, setName] = useState("");
   const [newKind, setNewKind] = useState(initialKind);
@@ -68,7 +74,7 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
   }, [view]);
 
   const query = useQuery({
-    queryKey: ["contacts", companyId, view, q],
+    queryKey: ["contacts", companyId, view, q, page],
     enabled: Boolean(companyId),
     queryFn: () =>
       fetch({
@@ -78,6 +84,8 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
           view,
           ...(q ? { q } : {}),
           includeInactive: view === "inactive" || view === "archived",
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
         },
       }),
   });
@@ -88,6 +96,10 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
     queryFn: () => fetchSummary({ data: { companyId: companyId! } }),
   });
 
+  // "0" days (due on receipt) is valid; only a blank/invalid entry falls back to the default.
+  const termsDays = terms.trim() === "" ? 30 : Number(terms);
+  const termsValid = Number.isInteger(termsDays) && termsDays >= 0 && termsDays <= 3650;
+
   const createM = useMutation({
     mutationFn: () =>
       upsert({
@@ -96,7 +108,7 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
           name,
           kind: newKind,
           email,
-          paymentTermsDays: Number(terms) || 30,
+          paymentTermsDays: termsDays,
         },
       }),
     onSuccess: async (res) => {
@@ -105,7 +117,7 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
       toast.success("Contact saved");
       setName("");
       setEmail("");
-      window.location.href = `/contacts/${res.id}`;
+      void navigate({ to: "/contacts/$contactId", params: { contactId: res.id } });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -167,15 +179,23 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
       {summary ? (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric label="Active contacts" value={String(summary.activeContactCount)} />
-          <Metric label="Receivables" value={fromMinorUnits(summary.receivableMinor, currency)} />
-          <Metric label="Payables" value={fromMinorUnits(summary.payableMinor, currency)} />
+          <Metric
+            label={`Receivables (${summary.baseCurrency})`}
+            value={fromMinorUnits(summary.receivableMinor, summary.baseCurrency)}
+            hint={otherCurrencies(summary.receivableByCurrency, summary.baseCurrency)}
+          />
+          <Metric
+            label={`Payables (${summary.baseCurrency})`}
+            value={fromMinorUnits(summary.payableMinor, summary.baseCurrency)}
+            hint={otherCurrencies(summary.payableByCurrency, summary.baseCurrency)}
+          />
           <Metric
             label="Overdue receivables"
-            value={fromMinorUnits(summary.overdueReceivableMinor, currency)}
+            value={fromMinorUnits(summary.overdueReceivableMinor, summary.baseCurrency)}
           />
           <Metric
             label="Overdue payables"
-            value={fromMinorUnits(summary.overduePayableMinor, currency)}
+            value={fromMinorUnits(summary.overduePayableMinor, summary.baseCurrency)}
           />
         </div>
       ) : null}
@@ -216,13 +236,16 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
             <Input
               placeholder="Payment terms (days)"
               value={terms}
+              inputMode="numeric"
+              aria-invalid={!termsValid}
               onChange={(e) => setTerms(e.target.value)}
               aria-label="Payment terms"
             />
           ) : null}
           <Button
             size="sm"
-            disabled={createM.isPending || !name.trim()}
+            disabled={createM.isPending || !name.trim() || !termsValid || !canManage}
+            title={canManage ? undefined : "You do not have permission to add contacts"}
             onClick={() => createM.mutate()}
           >
             Save contact
@@ -230,7 +253,13 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
         </div>
       </div>
 
-      <Tabs value={view} onValueChange={setView}>
+      <Tabs
+        value={view}
+        onValueChange={(v) => {
+          setView(v);
+          setPage(0);
+        }}
+      >
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <TabsList className="flex h-auto flex-wrap">
             <TabsTrigger value="all">All</TabsTrigger>
@@ -246,7 +275,10 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
             placeholder="Search name, email, phone, account #, tax ID…"
             className="lg:max-w-sm"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(0);
+            }}
           />
         </div>
         <TabsContent value={view} className="mt-4">
@@ -292,17 +324,52 @@ export function ContactsPage({ initialKind = "customer" }: { initialKind?: strin
               </TableBody>
             </Table>
           )}
+          {!query.isPending && !query.isError && (page > 0 || (query.data ?? []).length === PAGE_SIZE) ? (
+            <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + (query.data ?? []).length}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={(query.data ?? []).length < PAGE_SIZE}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </TabsContent>
       </Tabs>
     </>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function otherCurrencies(
+  rows: Array<{ currency: string; outstandingMinor: number }> | undefined,
+  base: string,
+): string | undefined {
+  const others = (rows ?? []).filter((r) => r.currency !== base.toUpperCase());
+  if (!others.length) return undefined;
+  return `Also ${others.map((r) => `${fromMinorUnits(r.outstandingMinor, r.currency)} ${r.currency}`).join(", ")}`;
+}
+
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string | undefined }) {
   return (
     <div className="rounded-md border px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm font-medium tabular-nums">{value}</p>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
