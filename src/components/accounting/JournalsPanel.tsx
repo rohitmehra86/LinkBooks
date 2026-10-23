@@ -65,7 +65,7 @@ export function JournalsPanel({
   companyId: string;
   currency: string;
   /** Opens this journal's lines on load (deep link from reports and search). */
-  initialOpenJournalId?: string;
+  initialOpenJournalId?: string | undefined;
 }) {
   const { company } = useActiveCompany();
   const fmt = useFormat();

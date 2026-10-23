@@ -1,45 +1,26 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import {
-  ensureLedgerMasters,
-  listAccounts,
-  listPeriods,
-  lockPeriod,
-  unlockPeriod,
-} from "@/lib/accounting/accounting.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { ensureLedgerMasters } from "@/lib/accounting/accounting.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { PageHeader, EmptyState, LoadingState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ChartAccountsPanel } from "@/components/accounting/ChartAccountsPanel";
+import { FinancialYearsPanel } from "@/components/accounting/FinancialYearsPanel";
 import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
 import { JournalsPanel } from "@/components/accounting/JournalsPanel";
+import { PeriodClosePanel } from "@/components/accounting/PeriodClosePanel";
 import { ManualJournalPanel } from "@/components/create-new/JournalPanels";
+
+const ACCOUNTING_TABS = ["coa", "industry", "journals", "post", "periods", "close"] as const;
+type AccountingTab = (typeof ACCOUNTING_TABS)[number];
+type AccountingSearch = { tab?: AccountingTab | undefined; journal?: string | undefined };
 
 export const Route = createFileRoute("/_authenticated/accounting")({
   head: () => ({
@@ -51,6 +32,15 @@ export const Route = createFileRoute("/_authenticated/accounting")({
       },
     ],
   }),
+  // `tab` and `journal` make report drill-downs, search hits and dashboard tasks deep-linkable.
+  validateSearch: (raw: Record<string, unknown>): AccountingSearch => {
+    const tab = raw["tab"];
+    const journal = raw["journal"];
+    return {
+      tab: ACCOUNTING_TABS.find((t) => t === tab),
+      journal: typeof journal === "string" && journal ? journal : undefined,
+    };
+  },
   component: Accounting,
 });
 
@@ -76,20 +66,10 @@ export function AccountingWorkspace({
   currency: string;
 }) {
   const queryClient = useQueryClient();
-  const fetchAccounts = useServerFn(listAccounts);
-  const fetchPeriods = useServerFn(listPeriods);
+  const navigate = useNavigate({ from: "/accounting" });
+  const search = Route.useSearch();
   const seedMasters = useServerFn(ensureLedgerMasters);
-  const doLock = useServerFn(lockPeriod);
-  const doUnlock = useServerFn(unlockPeriod);
-
-  const accountsQuery = useQuery({
-    queryKey: ["accounts", companyId],
-    queryFn: () => fetchAccounts({ data: { companyId } }),
-  });
-  const periodsQuery = useQuery({
-    queryKey: ["periods", companyId],
-    queryFn: () => fetchPeriods({ data: { companyId } }),
-  });
+  const tab: AccountingTab = search.tab ?? (search.journal ? "journals" : "coa");
 
   const seedMutation = useMutation({
     mutationFn: () => seedMasters({ data: { companyId } }),
@@ -105,7 +85,7 @@ export function AccountingWorkspace({
     <>
       <PageHeader
         title="Accounting"
-        description="Authoritative double-entry ledger: chart of accounts, journals, periods and audit-safe posting."
+        description="Authoritative double-entry ledger: chart of accounts, journals, financial years and period close."
         actions={
           <Button
             size="sm"
@@ -127,13 +107,22 @@ export function AccountingWorkspace({
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="coa">
-        <TabsList>
+      <Tabs
+        value={tab}
+        onValueChange={(v) =>
+          void navigate({
+            search: { tab: v as AccountingTab },
+            replace: true,
+          })
+        }
+      >
+        <TabsList className="flex-wrap">
           <TabsTrigger value="coa">Chart of accounts</TabsTrigger>
           <TabsTrigger value="industry">Industry library</TabsTrigger>
           <TabsTrigger value="journals">Journals</TabsTrigger>
           <TabsTrigger value="post">Post manual journal</TabsTrigger>
-          <TabsTrigger value="periods">Periods</TabsTrigger>
+          <TabsTrigger value="periods">Financial years</TabsTrigger>
+          <TabsTrigger value="close">Period close</TabsTrigger>
         </TabsList>
 
         <TabsContent value="coa" className="mt-4">
@@ -145,7 +134,11 @@ export function AccountingWorkspace({
         </TabsContent>
 
         <TabsContent value="journals" className="mt-4">
-          <JournalsPanel companyId={companyId} currency={currency} />
+          <JournalsPanel
+            companyId={companyId}
+            currency={currency}
+            initialOpenJournalId={search.journal}
+          />
         </TabsContent>
 
         <TabsContent value="post" className="mt-4">
@@ -160,74 +153,11 @@ export function AccountingWorkspace({
         </TabsContent>
 
         <TabsContent value="periods" className="mt-4">
-          {periodsQuery.isPending ? (
-            <LoadingState />
-          ) : periodsQuery.isError ? (
-            <ErrorState
-              title="Could not load periods"
-              description={friendlyAuthError(periodsQuery.error)}
-              onRetry={() => periodsQuery.refetch()}
-            />
-          ) : (periodsQuery.data ?? []).length === 0 ? (
-            <EmptyState
-              title="No accounting periods"
-              description="Seed default periods for this organisation’s financial year."
-            />
-          ) : (
-            <Card>
-              <CardContent className="space-y-3 pt-6">
-                {(periodsQuery.data ?? []).map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-                  >
-                    <div>
-                      <div className="text-sm font-medium">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {p.start_date} → {p.end_date} · {p.status}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {p.status === "open" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              await doLock({ data: { periodId: p.id } });
-                              await periodsQuery.refetch();
-                              toast.success("Period locked");
-                            } catch (e) {
-                              toast.error(friendlyAuthError(e));
-                            }
-                          }}
-                        >
-                          Lock
-                        </Button>
-                      ) : null}
-                      {p.status === "locked" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              await doUnlock({ data: { periodId: p.id } });
-                              await periodsQuery.refetch();
-                              toast.success("Period unlocked");
-                            } catch (e) {
-                              toast.error(friendlyAuthError(e));
-                            }
-                          }}
-                        >
-                          Unlock
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <FinancialYearsPanel companyId={companyId} />
+        </TabsContent>
+
+        <TabsContent value="close" className="mt-4">
+          <PeriodClosePanel companyId={companyId} />
         </TabsContent>
       </Tabs>
     </>
