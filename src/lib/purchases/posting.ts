@@ -3,6 +3,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { postJournal, reverseJournal } from "@/lib/accounting/posting-engine";
 import type { JournalLineDraft } from "@/lib/accounting/money";
 import { requireAccountByCode } from "@/lib/purchases/accounts";
+import { planReverseCharge } from "@/lib/tax/reverse-charge";
 
 type Client = SupabaseClient<Database>;
 
@@ -11,9 +12,17 @@ export type BillLinePost = {
   description: string;
   net_minor: bigint | number;
   tax_minor: bigint | number;
+  /** Tax code rate and treatment, used for reverse charge. Omitted = ordinary line. */
+  tax_rate_bps?: number;
+  tax_treatment?: string | null;
+  tax_recoverable?: boolean;
 };
 
-/** Authorise bill: DR expense(s) + DR VAT recoverable, CR AP. */
+/**
+ * Authorise bill: DR expense(s) + DR VAT recoverable, CR AP.
+ * Reverse-charge lines (tax code treatment `reverse_charge`, no tax charged by the supplier)
+ * also post DR input tax / CR output tax for the self-assessed amount; AP is unchanged.
+ */
 export async function postBillAuthorisation(
   supabase: Client,
   args: {
@@ -35,14 +44,25 @@ export async function postBillAuthorisation(
   let taxTotal = 0n;
   let netTotal = 0n;
 
-  for (const line of args.lines) {
+  const plan = planReverseCharge(
+    args.lines.map((line) => ({
+      netMinor: typeof line.net_minor === "bigint" ? line.net_minor : BigInt(line.net_minor),
+      rateBps: line.tax_rate_bps ?? 0,
+      treatment: line.tax_treatment ?? null,
+      storedTaxMinor: typeof line.tax_minor === "bigint" ? line.tax_minor : BigInt(line.tax_minor),
+      recoverable: line.tax_recoverable !== false,
+    })),
+  );
+
+  for (const [i, line] of args.lines.entries()) {
     const net = typeof line.net_minor === "bigint" ? line.net_minor : BigInt(line.net_minor);
     const tax = typeof line.tax_minor === "bigint" ? line.tax_minor : BigInt(line.tax_minor);
-    if (net > 0n) {
+    const debit = net + plan.expenseUplift[i]!;
+    if (debit > 0n) {
       journalLines.push({
         account_id: line.account_id,
         description: line.description,
-        debit_minor: net,
+        debit_minor: debit,
         credit_minor: 0n,
       });
     }
@@ -59,6 +79,24 @@ export async function postBillAuthorisation(
   }
   const gross = netTotal + taxTotal;
   if (gross <= 0n) throw new Error("Bill total must be greater than zero");
+  if (plan.outputCredit > 0n) {
+    const { resolveOutputTaxAccount } = await import("@/lib/tax/tax-accounts");
+    const outAcc = await resolveOutputTaxAccount(supabase, args.company_id);
+    if (plan.inputDebit > 0n) {
+      journalLines.push({
+        account_id: vat.id,
+        description: "Reverse charge input tax",
+        debit_minor: plan.inputDebit,
+        credit_minor: 0n,
+      });
+    }
+    journalLines.push({
+      account_id: outAcc.id,
+      description: "Reverse charge output tax",
+      debit_minor: 0n,
+      credit_minor: plan.outputCredit,
+    });
+  }
   journalLines.push({
     account_id: ap.id,
     description: args.memo ?? "Accounts payable",

@@ -41,6 +41,7 @@ import {
   postSupplierPayment,
   voidPostedDocument,
 } from "@/lib/purchases/posting";
+import { applyReverseChargeToLines, loadTaxCodeInfo } from "@/lib/purchases/reverse-charge-lines";
 import { parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
 
 async function recordBillAudit(
@@ -1209,10 +1210,20 @@ export const saveBillDraft = createServerFn({ method: "POST" })
           ? existing.tax_calculation
           : "exclusive"
         : data.taxCalculation;
-    const lines =
+    const validatedLines =
       effectiveTaxCalculation === data.taxCalculation
         ? data.lines
         : validateBillLines(data.rawLines, effectiveTaxCalculation);
+    // Reverse-charge lines carry no supplier tax: the payable is the net amount (TX-04).
+    const lines = applyReverseChargeToLines(
+      validatedLines,
+      await loadTaxCodeInfo(
+        supabase,
+        data.companyId,
+        validatedLines.map((l) => l.taxCodeId ?? ""),
+      ),
+      effectiveTaxCalculation,
+    );
     const totals = sumLines(lines);
 
     const isEdit = Boolean(existing);
@@ -1437,11 +1448,18 @@ export async function authoriseBillInternal(
       description: string;
       net_minor: number;
       tax_minor: number;
+      tax_code_id?: string | null;
+      tax_rate_bps?: number | null;
     }>;
   };
   if (b.status !== "draft" && b.status !== "awaiting_approval") {
     throw new Error("Only draft or awaiting-approval bills can be authorised");
   }
+  const taxCodes = await loadTaxCodeInfo(
+    supabase,
+    companyId,
+    b.purchase_bill_lines.map((l) => l.tax_code_id ?? ""),
+  );
   if (b.posted_journal_id) throw new Error("Bill already posted");
 
   const billFx = bill as { fx_rate_to_base?: number | string | null };
@@ -1462,6 +1480,9 @@ export async function authoriseBillInternal(
       description: l.description,
       net_minor: l.net_minor,
       tax_minor: l.tax_minor,
+      tax_rate_bps: Number(l.tax_rate_bps ?? 0),
+      tax_treatment: l.tax_code_id ? (taxCodes.get(l.tax_code_id)?.treatment ?? null) : null,
+      tax_recoverable: l.tax_code_id ? (taxCodes.get(l.tax_code_id)?.recoverable ?? true) : true,
     })),
   });
 
