@@ -4,10 +4,18 @@ import { monthsForFrequency, suggestReturnPeriod } from "./return-periods";
 describe("suggested return period", () => {
   it("follows the last filed return", () => {
     expect(
-      suggestReturnPeriod({ frequency: "quarterly", today: "2026-10-23", lastFiledEnd: "2026-06-30" }),
+      suggestReturnPeriod({
+        frequency: "quarterly",
+        today: "2026-10-23",
+        lastFiledEnd: "2026-06-30",
+      }),
     ).toEqual({ start: "2026-07-01", end: "2026-09-30" });
     expect(
-      suggestReturnPeriod({ frequency: "monthly", today: "2026-10-23", lastFiledEnd: "2026-01-31" }),
+      suggestReturnPeriod({
+        frequency: "monthly",
+        today: "2026-10-23",
+        lastFiledEnd: "2026-01-31",
+      }),
     ).toEqual({ start: "2026-02-01", end: "2026-02-28" });
   });
 
