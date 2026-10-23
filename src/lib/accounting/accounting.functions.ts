@@ -77,22 +77,32 @@ export const listPeriods = createServerFn({ method: "GET" })
 
 export const lockPeriod = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { periodId: string }) => ({ periodId: assertUuid(input?.periodId, "period") }))
+  .inputValidator((input: { periodId: string }) => ({
+    periodId: assertUuid(input?.periodId, "period"),
+  }))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("lock_accounting_period" as never, {
-      _period_id: data.periodId,
-    } as never);
+    const { error } = await context.supabase.rpc(
+      "lock_accounting_period" as never,
+      {
+        _period_id: data.periodId,
+      } as never,
+    );
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const unlockPeriod = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { periodId: string }) => ({ periodId: assertUuid(input?.periodId, "period") }))
+  .inputValidator((input: { periodId: string }) => ({
+    periodId: assertUuid(input?.periodId, "period"),
+  }))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("unlock_accounting_period" as never, {
-      _period_id: data.periodId,
-    } as never);
+    const { error } = await context.supabase.rpc(
+      "unlock_accounting_period" as never,
+      {
+        _period_id: data.periodId,
+      } as never,
+    );
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -104,22 +114,138 @@ export type JournalListItem = {
   status: string;
   memo: string | null;
   source_type: string;
+  source_id: string | null;
   currency_code: string;
+  reverses_journal_id: string | null;
+  reversed_by_journal_id: string | null;
+  total_debit_minor: number;
 };
 
 export const listJournals = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(companyIdInput)
+  .inputValidator(
+    (input: {
+      companyId: string;
+      search?: string;
+      source?: string;
+      from?: string;
+      to?: string;
+      limit?: number;
+    }) => {
+      const date = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+      return {
+        companyId: assertUuid(input?.companyId),
+        search: (input.search ?? "").trim().slice(0, 80),
+        source: (input.source ?? "").trim().slice(0, 40),
+        from: date(input.from),
+        to: date(input.to),
+        limit: Math.min(500, Math.max(1, Math.floor(input.limit ?? 100))),
+      };
+    },
+  )
   .handler(async ({ data, context }): Promise<JournalListItem[]> => {
     await assertCompanyMember(context.supabase, data.companyId);
-    const { data: rows, error } = await context.supabase
+    let query = context.supabase
       .from("journals" as never)
-      .select("id, journal_number, journal_date, status, memo, source_type, currency_code" as never)
+      .select(
+        "id, journal_number, journal_date, status, memo, source_type, source_id, currency_code, reverses_journal_id, reversed_by_journal_id, journal_lines(debit_minor)" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
+      .order("journal_date" as never, { ascending: false } as never)
       .order("journal_number" as never, { ascending: false } as never)
-      .limit(100);
+      .limit(data.limit);
+    if (data.source) query = query.eq("source_type" as never, data.source as never);
+    if (data.from) query = query.gte("journal_date" as never, data.from as never);
+    if (data.to) query = query.lte("journal_date" as never, data.to as never);
+    if (data.search) {
+      const term = data.search.replace(/[%,()]/g, " ");
+      const asNumber = Number(term);
+      query =
+        Number.isInteger(asNumber) && asNumber > 0
+          ? query.or(`journal_number.eq.${asNumber},memo.ilike.%${term}%`)
+          : query.ilike("memo" as never, `%${term}%` as never);
+    }
+    const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    return (rows ?? []) as JournalListItem[];
+    return (
+      (rows ?? []) as unknown as Array<
+        Omit<JournalListItem, "total_debit_minor"> & {
+          journal_lines: Array<{ debit_minor: number }>;
+        }
+      >
+    ).map(({ journal_lines, ...rest }) => ({
+      ...rest,
+      total_debit_minor: (journal_lines ?? []).reduce(
+        (sum, line) => sum + Number(line.debit_minor),
+        0,
+      ),
+    }));
+  });
+
+export type JournalDetail = {
+  id: string;
+  journal_number: number;
+  journal_date: string;
+  status: string;
+  memo: string | null;
+  source_type: string;
+  currency_code: string;
+  reverses_journal_id: string | null;
+  lines: Array<{
+    id: string;
+    line_no: number;
+    description: string | null;
+    debit_minor: number;
+    credit_minor: number;
+    account_code: string;
+    account_name: string;
+  }>;
+};
+
+export const getJournalDetail = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; journalId: string }) => ({
+    companyId: assertUuid(input?.companyId),
+    journalId: assertUuid(input?.journalId, "journal"),
+  }))
+  .handler(async ({ data, context }): Promise<JournalDetail> => {
+    await assertCompanyMember(context.supabase, data.companyId);
+    const { data: row, error } = await context.supabase
+      .from("journals" as never)
+      .select(
+        "id, journal_number, journal_date, status, memo, source_type, currency_code, reverses_journal_id, journal_lines(id, line_no, description, debit_minor, credit_minor, accounts(code, name))" as never,
+      )
+      .eq("id" as never, data.journalId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Journal not found");
+    const j = row as unknown as Omit<JournalDetail, "lines"> & {
+      journal_lines: Array<{
+        id: string;
+        line_no: number;
+        description: string | null;
+        debit_minor: number;
+        credit_minor: number;
+        accounts: { code: string; name: string } | null;
+      }>;
+    };
+    const { journal_lines, ...rest } = j;
+    return {
+      ...rest,
+      lines: (journal_lines ?? [])
+        .slice()
+        .sort((x, y) => x.line_no - y.line_no)
+        .map((l) => ({
+          id: l.id,
+          line_no: l.line_no,
+          description: l.description,
+          debit_minor: Number(l.debit_minor),
+          credit_minor: Number(l.credit_minor),
+          account_code: l.accounts?.code ?? "",
+          account_name: l.accounts?.name ?? "",
+        })),
+    };
   });
 
 export const postManualJournal = createServerFn({ method: "POST" })
@@ -166,7 +292,8 @@ export const postManualJournal = createServerFn({ method: "POST" })
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
     if (
-      (wf as { accounting_require_journal_memo?: boolean } | null)?.accounting_require_journal_memo &&
+      (wf as { accounting_require_journal_memo?: boolean } | null)
+        ?.accounting_require_journal_memo &&
       !data.memo
     ) {
       throw new Error("A journal memo is required by organisation settings.");
@@ -354,12 +481,14 @@ export const getBalanceSheet = createServerFn({ method: "GET" })
 
 export const getGeneralLedger = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; accountId: string; from?: string; to?: string }) => ({
-    companyId: assertUuid(input?.companyId),
-    accountId: assertUuid(input?.accountId, "account"),
-    from: input.from,
-    to: input.to,
-  }))
+  .inputValidator(
+    (input: { companyId: string; accountId: string; from?: string; to?: string }) => ({
+      companyId: assertUuid(input?.companyId),
+      accountId: assertUuid(input?.accountId, "account"),
+      from: input.from,
+      to: input.to,
+    }),
+  )
   .handler(async ({ data, context }) => {
     await assertCompanyMember(context.supabase, data.companyId);
     const lines = await loadPostedLines(context.supabase, data.companyId);
@@ -690,14 +819,12 @@ export const getTaxReport = createServerFn({ method: "GET" })
 
 export const getJournalReport = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (input: { companyId: string; from?: string; to?: string; status?: string }) => ({
-      companyId: assertUuid(input.companyId),
-      from: input.from,
-      to: input.to,
-      status: input.status,
-    }),
-  )
+  .inputValidator((input: { companyId: string; from?: string; to?: string; status?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    from: input.from,
+    to: input.to,
+    status: input.status,
+  }))
   .handler(async ({ data, context }) => {
     await assertCompanyMember(context.supabase, data.companyId);
     const { data: journals, error } = await context.supabase
@@ -709,15 +836,17 @@ export const getJournalReport = createServerFn({ method: "GET" })
       .order("journal_date" as never)
       .limit(500);
     if (error) throw new Error(error.message);
-    const mapped = ((journals ?? []) as Array<{
-      id: string;
-      journal_number: number;
-      journal_date: string;
-      status: string;
-      source_type: string;
-      memo: string | null;
-      journal_lines: Array<{ debit_minor: number; credit_minor: number }>;
-    }>).map((j) => ({
+    const mapped = (
+      (journals ?? []) as Array<{
+        id: string;
+        journal_number: number;
+        journal_date: string;
+        status: string;
+        source_type: string;
+        memo: string | null;
+        journal_lines: Array<{ debit_minor: number; credit_minor: number }>;
+      }>
+    ).map((j) => ({
       id: j.id,
       journal_number: j.journal_number,
       journal_date: j.journal_date,
@@ -766,13 +895,19 @@ export const ensureLedgerMasters = createServerFn({ method: "POST" })
   .inputValidator(companyIdInput)
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "accounts.manage");
-    const { error: a } = await context.supabase.rpc("seed_default_chart_of_accounts" as never, {
-      _company_id: data.companyId,
-    } as never);
+    const { error: a } = await context.supabase.rpc(
+      "seed_default_chart_of_accounts" as never,
+      {
+        _company_id: data.companyId,
+      } as never,
+    );
     if (a) throw new Error(a.message);
-    const { error: p } = await context.supabase.rpc("seed_default_accounting_periods" as never, {
-      _company_id: data.companyId,
-    } as never);
+    const { error: p } = await context.supabase.rpc(
+      "seed_default_accounting_periods" as never,
+      {
+        _company_id: data.companyId,
+      } as never,
+    );
     if (p) throw new Error(p.message);
     return { ok: true };
   });

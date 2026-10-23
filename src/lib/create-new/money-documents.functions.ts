@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
-import { postJournal } from "@/lib/accounting/posting-engine";
+import { postJournal, reverseJournal } from "@/lib/accounting/posting-engine";
 import { toMinorUnits } from "@/lib/accounting/money";
 import type { Permission } from "@/lib/permissions";
 import { requireAccountByCode, requireAccountInCompany } from "@/lib/purchases/accounts";
@@ -98,7 +98,9 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
         contactId: input.contactId ? assertUuid(input.contactId, "contact") : null,
         projectId: input.projectId ? assertUuid(input.projectId, "project") : null,
         bankAccountId: input.bankAccountId ? assertUuid(input.bankAccountId, "bank account") : null,
-        counterAccountId: input.counterAccountId ? assertUuid(input.counterAccountId, "account") : null,
+        counterAccountId: input.counterAccountId
+          ? assertUuid(input.counterAccountId, "account")
+          : null,
         settlement: input.settlement === "undeposited" ? "undeposited" : "bank",
         amount: input.amount ?? "0",
         taxAmount: input.taxAmount ?? "0",
@@ -125,7 +127,11 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
       .maybeSingle();
     if (existing.data) {
       const row = existing.data as { id: string; posted_journal_id: string | null };
-      return { id: row.id, journalId: row.posted_journal_id, replayed: true };
+      if (row.posted_journal_id) {
+        return { id: row.id, journalId: row.posted_journal_id, replayed: true };
+      }
+      // A previous attempt stopped before posting. Remove the half-saved document and retry cleanly.
+      await rollbackDocument(supabase, data.companyId, row.id);
     }
 
     const currency = data.currencyCode || "GBP";
@@ -138,9 +144,11 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
     let depositStatus: string | null = data.settlement === "undeposited" ? "undeposited" : null;
     const sourceUpdates: string[] = [];
     const sourceAmounts = new Map<string, number>();
+    let creditUses: CreditUse[] = [];
 
     if (data.kind === "sales_receipt" || data.kind === "receive_money") {
-      if (!data.bankAccountId || !data.counterAccountId) throw new Error("Choose the payment account and the income account");
+      if (!data.bankAccountId || !data.counterAccountId)
+        throw new Error("Choose the payment account and the income account");
       if (!data.contactId && data.kind === "sales_receipt") throw new Error("Choose a customer");
       await requireAccountInCompany(supabase, data.companyId, data.bankAccountId);
       await requireAccountInCompany(supabase, data.companyId, data.counterAccountId);
@@ -149,13 +157,23 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
       journalLines = build({
         settlementAccountId: data.bankAccountId,
         outputTaxAccountId: outputTax.id,
-        lines: [{ accountId: data.counterAccountId, netMinor: net, taxMinor: tax, description: data.description }],
+        lines: [
+          {
+            accountId: data.counterAccountId,
+            netMinor: net,
+            taxMinor: tax,
+            description: data.description,
+          },
+        ],
       });
     } else if (data.kind === "customer_refund" || data.kind === "supplier_refund") {
-      if (!data.contactId || !data.bankAccountId) throw new Error("Choose the contact and the bank account");
+      if (!data.contactId || !data.bankAccountId)
+        throw new Error("Choose the contact and the bank account");
       if (net <= 0n) throw new Error("Refund must be greater than zero");
       await requireAccountInCompany(supabase, data.companyId, data.bankAccountId);
-      const available = await refundableBalance(supabase, data.companyId, data.kind, data.contactId);
+      const plan = await planCreditUses(supabase, data.companyId, data.kind, data.contactId, net);
+      const available = plan.available;
+      creditUses = plan.uses;
       if (data.kind === "customer_refund") {
         const ar = await requireAccountByCode(supabase, data.companyId, "1100");
         journalLines = customerRefundJournal({
@@ -191,7 +209,8 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
         deposit_status: string | null;
         kind: string;
       }>;
-      if (rows.length !== data.sourceIds.length) throw new Error("A selected receipt was not found");
+      if (rows.length !== data.sourceIds.length)
+        throw new Error("A selected receipt was not found");
       journalLines = bankDepositJournal({
         bankAccountId: data.bankAccountId,
         items: rows.map((row) => ({
@@ -206,8 +225,12 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
       for (const row of rows) sourceAmounts.set(row.id, Number(row.total_minor));
       sourceUpdates.push(...rows.map((row) => row.id));
     } else if (data.kind === "card_payment") {
-      if (!data.bankAccountId || !data.counterAccountId) throw new Error("Choose the bank and the credit card");
-      const types = await accountTypes(supabase, data.companyId, [data.bankAccountId, data.counterAccountId]);
+      if (!data.bankAccountId || !data.counterAccountId)
+        throw new Error("Choose the bank and the credit card");
+      const types = await accountTypes(supabase, data.companyId, [
+        data.bankAccountId,
+        data.counterAccountId,
+      ]);
       journalLines = cardPaymentJournal({
         amountMinor: net,
         bankAccountId: data.bankAccountId,
@@ -232,6 +255,8 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
       totalMinor = net;
       depositStatus = null;
     }
+
+    if (totalMinor <= 0n) throw new Error("Amount must be greater than zero");
 
     const { data: inserted, error: insertError } = await supabase
       .from("money_documents" as never)
@@ -261,108 +286,269 @@ export const saveMoneyDocument = createServerFn({ method: "POST" })
     if (insertError) throw new Error(insertError.message);
     const id = (inserted as { id: string }).id;
 
-    if (data.kind === "sales_receipt" || data.kind === "receive_money") {
-      const { error: lineError } = await supabase.from("money_document_lines" as never).insert({
-        company_id: data.companyId,
-        document_id: id,
-        line_no: 1,
-        description: data.description,
-        account_id: data.counterAccountId,
-        net_minor: Number(net),
-        tax_minor: Number(tax),
-        project_id: data.projectId,
-      } as never);
-      if (lineError) throw new Error(lineError.message);
-    }
-
-    if (data.kind === "bank_deposit") {
-      for (const sourceId of sourceUpdates) {
-        const { data: claimed, error: claimError } = await supabase
-          .from("money_documents" as never)
-          .update({ deposit_status: "deposited", deposited_in_id: id } as never)
-          .eq("id" as never, sourceId as never)
-          .eq("company_id" as never, data.companyId as never)
-          .eq("deposit_status" as never, "undeposited" as never)
-          .select("id");
-        if (claimError) throw new Error(claimError.message);
-        if (!claimed || (claimed as unknown[]).length === 0) {
-          throw new Error("A selected receipt is already deposited");
-        }
-        const { error: itemError } = await supabase.from("money_deposit_items" as never).insert({
+    let committed = false;
+    try {
+      if (data.kind === "sales_receipt" || data.kind === "receive_money") {
+        const { error: lineError } = await supabase.from("money_document_lines" as never).insert({
           company_id: data.companyId,
-          deposit_id: id,
-          source_document_id: sourceId,
-          amount_minor: sourceAmounts.get(sourceId) ?? 0,
+          document_id: id,
+          line_no: 1,
+          description: data.description,
+          account_id: data.counterAccountId,
+          net_minor: Number(net),
+          tax_minor: Number(tax),
+          project_id: data.projectId,
         } as never);
-        if (itemError) throw new Error(itemError.message);
+        if (lineError) throw new Error(lineError.message);
       }
+
+      if (data.kind === "bank_deposit") {
+        for (const sourceId of sourceUpdates) {
+          const { data: claimed, error: claimError } = await supabase
+            .from("money_documents" as never)
+            .update({ deposit_status: "deposited", deposited_in_id: id } as never)
+            .eq("id" as never, sourceId as never)
+            .eq("company_id" as never, data.companyId as never)
+            .eq("deposit_status" as never, "undeposited" as never)
+            .select("id");
+          if (claimError) throw new Error(claimError.message);
+          if (!claimed || (claimed as unknown[]).length === 0) {
+            throw new Error("A selected receipt is already deposited");
+          }
+          const { error: itemError } = await supabase.from("money_deposit_items" as never).insert({
+            company_id: data.companyId,
+            deposit_id: id,
+            source_document_id: sourceId,
+            amount_minor: sourceAmounts.get(sourceId) ?? 0,
+          } as never);
+          if (itemError) throw new Error(itemError.message);
+        }
+      }
+
+      await applyCreditUses(supabase, data.companyId, id, creditUses);
+
+      const { journalId } = await postJournal(supabase, {
+        company_id: data.companyId,
+        journal_date: data.documentDate,
+        memo: data.memo ?? data.description,
+        currency_code: currency,
+        fx_rate_to_base: data.fxRateToBase,
+        source_type: "other",
+        source_id: id,
+        idempotency_key: `money_document:${data.idempotencyKey}`,
+        lines: journalLines,
+      });
+
+      const { error: linkError } = await supabase
+        .from("money_documents" as never)
+        .update({ posted_journal_id: journalId } as never)
+        .eq("id" as never, id as never)
+        .eq("company_id" as never, data.companyId as never);
+      if (linkError) {
+        // The journal posted but the document could not point at it. Reverse so the ledger stays clean.
+        await reverseJournal(
+          supabase,
+          journalId,
+          `money_document:${data.idempotencyKey}:link-failed`,
+        ).catch(() => undefined);
+        throw new Error(linkError.message);
+      }
+      committed = true;
+
+      await audit(supabase, data.companyId, `money_document.${data.kind}`, "money_document", id, {
+        journal_id: journalId,
+        total_minor: Number(totalMinor),
+      });
+      return { id, journalId, replayed: false };
+    } catch (error) {
+      if (!committed) await rollbackDocument(supabase, data.companyId, id);
+      throw error;
     }
-
-    const { journalId } = await postJournal(supabase, {
-      company_id: data.companyId,
-      journal_date: data.documentDate,
-      memo: data.memo ?? data.description,
-      currency_code: currency,
-      fx_rate_to_base: data.fxRateToBase,
-      source_type: "other",
-      source_id: id,
-      idempotency_key: `money_document:${data.idempotencyKey}`,
-      lines: journalLines,
-    });
-
-    await supabase
-      .from("money_documents" as never)
-      .update({ posted_journal_id: journalId } as never)
-      .eq("id" as never, id as never)
-      .eq("company_id" as never, data.companyId as never);
-
-    await audit(supabase, data.companyId, `money_document.${data.kind}`, "money_document", id, {
-      journal_id: journalId,
-      total_minor: Number(totalMinor),
-    });
-    return { id, journalId, replayed: false };
   });
 
-async function refundableBalance(
-  supabase: Parameters<typeof assertCompanyPermission>[0],
+type CreditUse = {
+  kind: "sales_credit_note" | "purchase_credit_note" | "sales_receipt";
+  id: string;
+  amount: bigint;
+};
+
+type DbClient = Parameters<typeof assertCompanyPermission>[0];
+
+/**
+ * Works out which credits a refund consumes (oldest first). The refund uses the
+ * credit up, so the same credit cannot also be applied to an invoice or bill.
+ */
+async function planCreditUses(
+  supabase: DbClient,
   companyId: string,
   kind: "customer_refund" | "supplier_refund",
   contactId: string,
-): Promise<bigint> {
-  const table = kind === "customer_refund" ? "sales_credit_notes" : "purchase_credit_notes";
+  amount: bigint,
+): Promise<{ available: bigint; uses: CreditUse[] }> {
+  const creditTable = kind === "customer_refund" ? "sales_credit_notes" : "purchase_credit_notes";
   const { data: credits, error } = await supabase
-    .from(table as never)
-    .select("total_minor, amount_allocated_minor, status" as never)
+    .from(creditTable as never)
+    .select("id, total_minor, amount_allocated_minor, credit_date" as never)
     .eq("company_id" as never, companyId as never)
     .eq("contact_id" as never, contactId as never)
-    .eq("status" as never, "authorised" as never);
+    .eq("status" as never, "authorised" as never)
+    .order("credit_date" as never, { ascending: true });
   if (error) throw new Error(error.message);
-  let available = ((credits ?? []) as Array<{ total_minor: number; amount_allocated_minor: number }>).reduce(
-    (sum, row) => sum + BigInt(row.total_minor) - BigInt(row.amount_allocated_minor),
-    0n,
-  );
+  const pools: Array<{ kind: CreditUse["kind"]; id: string; remaining: bigint }> = [];
+  for (const row of (credits ?? []) as Array<{
+    id: string;
+    total_minor: number;
+    amount_allocated_minor: number;
+  }>) {
+    const remaining = BigInt(row.total_minor) - BigInt(row.amount_allocated_minor);
+    if (remaining > 0n) {
+      pools.push({
+        kind: kind === "customer_refund" ? "sales_credit_note" : "purchase_credit_note",
+        id: row.id,
+        remaining,
+      });
+    }
+  }
   if (kind === "customer_refund") {
     const { data: receipts, error: receiptError } = await supabase
       .from("sales_receipts" as never)
-      .select("unallocated_minor" as never)
+      .select("id, unallocated_minor, receipt_date" as never)
       .eq("company_id" as never, companyId as never)
       .eq("contact_id" as never, contactId as never)
-      .eq("status" as never, "posted" as never);
+      .eq("status" as never, "posted" as never)
+      .gt("unallocated_minor" as never, 0 as never)
+      .order("receipt_date" as never, { ascending: true });
     if (receiptError) throw new Error(receiptError.message);
-    for (const row of (receipts ?? []) as Array<{ unallocated_minor: number }>) {
-      available += BigInt(row.unallocated_minor);
+    for (const row of (receipts ?? []) as Array<{ id: string; unallocated_minor: number }>) {
+      pools.push({ kind: "sales_receipt", id: row.id, remaining: BigInt(row.unallocated_minor) });
     }
   }
-  const { data: prior, error: priorError } = await supabase
-    .from("money_documents" as never)
-    .select("total_minor" as never)
+  const available = pools.reduce((sum, pool) => sum + pool.remaining, 0n);
+  const uses: CreditUse[] = [];
+  let left = amount;
+  for (const pool of pools) {
+    if (left <= 0n) break;
+    const take = pool.remaining < left ? pool.remaining : left;
+    uses.push({ kind: pool.kind, id: pool.id, amount: take });
+    left -= take;
+  }
+  return { available, uses };
+}
+
+function creditUseTable(kind: CreditUse["kind"]) {
+  if (kind === "sales_credit_note")
+    return { table: "sales_credit_notes", column: "amount_allocated_minor", sign: 1 };
+  if (kind === "purchase_credit_note")
+    return { table: "purchase_credit_notes", column: "amount_allocated_minor", sign: 1 };
+  return { table: "sales_receipts", column: "unallocated_minor", sign: -1 };
+}
+
+/** Adjust a credit balance only if nobody changed it since we read it. */
+async function adjustCreditBalance(
+  supabase: DbClient,
+  companyId: string,
+  use: { kind: CreditUse["kind"]; id: string; amount: bigint },
+  direction: 1 | -1,
+) {
+  const target = creditUseTable(use.kind);
+  const { data: row, error } = await supabase
+    .from(target.table as never)
+    .select(target.column as never)
+    .eq("id" as never, use.id as never)
     .eq("company_id" as never, companyId as never)
-    .eq("contact_id" as never, contactId as never)
-    .eq("kind" as never, kind as never)
-    .eq("status" as never, "posted" as never);
-  if (priorError) throw new Error(priorError.message);
-  for (const row of (prior ?? []) as Array<{ total_minor: number }>) available -= BigInt(row.total_minor);
-  return available < 0n ? 0n : available;
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row) throw new Error("A credit used by this refund no longer exists");
+  const current = BigInt((row as unknown as Record<string, number>)[target.column] ?? 0);
+  const next = current + BigInt(target.sign * direction) * use.amount;
+  if (next < 0n) throw new Error("The customer or supplier credit has already been used");
+  const { data: updated, error: updateError } = await supabase
+    .from(target.table as never)
+    .update({ [target.column]: Number(next) } as never)
+    .eq("id" as never, use.id as never)
+    .eq("company_id" as never, companyId as never)
+    .eq(target.column as never, Number(current) as never)
+    .select("id");
+  if (updateError) throw new Error(updateError.message);
+  if (!updated || (updated as unknown[]).length === 0) {
+    throw new Error("The credit balance changed while saving. Try again.");
+  }
+}
+
+async function applyCreditUses(
+  supabase: DbClient,
+  companyId: string,
+  documentId: string,
+  uses: CreditUse[],
+) {
+  for (const use of uses) {
+    await adjustCreditBalance(supabase, companyId, use, 1);
+    const { error } = await supabase.from("money_document_credit_uses" as never).insert({
+      company_id: companyId,
+      document_id: documentId,
+      source_kind: use.kind,
+      source_id: use.id,
+      amount_minor: Number(use.amount),
+    } as never);
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function restoreCreditUses(supabase: DbClient, companyId: string, documentId: string) {
+  const { data, error } = await supabase
+    .from("money_document_credit_uses" as never)
+    .select("id, source_kind, source_id, amount_minor" as never)
+    .eq("company_id" as never, companyId as never)
+    .eq("document_id" as never, documentId as never);
+  if (error) throw new Error(error.message);
+  for (const row of (data ?? []) as Array<{
+    id: string;
+    source_kind: CreditUse["kind"];
+    source_id: string;
+    amount_minor: number;
+  }>) {
+    await adjustCreditBalance(
+      supabase,
+      companyId,
+      { kind: row.source_kind, id: row.source_id, amount: BigInt(row.amount_minor) },
+      -1,
+    );
+    await supabase
+      .from("money_document_credit_uses" as never)
+      .delete()
+      .eq("id" as never, row.id as never)
+      .eq("company_id" as never, companyId as never);
+  }
+}
+
+/** Best-effort cleanup of a document that never reached the ledger. Never touches posted journals. */
+async function rollbackDocument(supabase: DbClient, companyId: string, documentId: string) {
+  try {
+    await restoreCreditUses(supabase, companyId, documentId);
+    await supabase
+      .from("money_documents" as never)
+      .update({ deposit_status: "undeposited", deposited_in_id: null } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("deposited_in_id" as never, documentId as never);
+    await supabase
+      .from("money_deposit_items" as never)
+      .delete()
+      .eq("company_id" as never, companyId as never)
+      .eq("deposit_id" as never, documentId as never);
+    await supabase
+      .from("money_document_lines" as never)
+      .delete()
+      .eq("company_id" as never, companyId as never)
+      .eq("document_id" as never, documentId as never);
+    await supabase
+      .from("money_documents" as never)
+      .delete()
+      .eq("company_id" as never, companyId as never)
+      .eq("id" as never, documentId as never)
+      .is("posted_journal_id" as never, null as never);
+  } catch {
+    // Cleanup is best-effort. A leftover unposted document is removed on the next retry.
+  }
 }
 
 async function accountTypes(
@@ -377,7 +563,10 @@ async function accountTypes(
     .in("id" as never, ids as never);
   if (error) throw new Error(error.message);
   return new Map(
-    ((data ?? []) as Array<{ id: string; account_type: string }>).map((row) => [row.id, row.account_type]),
+    ((data ?? []) as Array<{ id: string; account_type: string }>).map((row) => [
+      row.id,
+      row.account_type,
+    ]),
   );
 }
 
@@ -427,7 +616,9 @@ export const createProject = createServerFn({ method: "POST" })
         startDate: input.startDate ? isoDate(input.startDate, "Start date") : null,
         endDate: input.endDate ? isoDate(input.endDate, "End date") : null,
         description: (input.description ?? "").trim().slice(0, 1000) || null,
-        budgetMinor: input.budget ? Number(toMinorUnits(input.budget, input.currencyCode || "GBP")) : null,
+        budgetMinor: input.budget
+          ? Number(toMinorUnits(input.budget, input.currencyCode || "GBP"))
+          : null,
       };
     },
   )
@@ -451,7 +642,9 @@ export const createProject = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const id = (row as { id: string }).id;
-    await audit(context.supabase, data.companyId, "project.create", "project", id, { code: data.code });
+    await audit(context.supabase, data.companyId, "project.create", "project", id, {
+      code: data.code,
+    });
     return { id };
   });
 
@@ -468,7 +661,11 @@ export const uploadInboxDocument = createServerFn({ method: "POST" })
     }) => {
       const fileName = input.fileName.trim().slice(0, 255);
       const sizeBytes = Math.floor(Number(input.sizeBytes) || 0);
-      const check = validateAttachmentFile({ fileName, sizeBytes, contentType: input.contentType ?? null });
+      const check = validateAttachmentFile({
+        fileName,
+        sizeBytes,
+        contentType: input.contentType ?? null,
+      });
       if (!check.ok) throw new Error(check.error);
       const contentBase64 = input.contentBase64.replace(/\s/g, "");
       if (!contentBase64) throw new Error("File content is required");
@@ -528,7 +725,12 @@ export const saveRecurringJournalTemplate = createServerFn({ method: "POST" })
       name: string;
       startDate: string;
       endDate?: string;
-      lines: Array<{ accountId: string; description?: string; debitMinor: number; creditMinor: number }>;
+      lines: Array<{
+        accountId: string;
+        description?: string;
+        debitMinor: number;
+        creditMinor: number;
+      }>;
     }) => {
       const name = input.name.trim().slice(0, 160);
       if (!name) throw new Error("Name is required");
@@ -574,9 +776,16 @@ export const saveRecurringJournalTemplate = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     const id = (row as { id: string }).id;
-    await audit(context.supabase, data.companyId, "recurring_journal.save", "recurring_journal", id, {
-      posted: false,
-    });
+    await audit(
+      context.supabase,
+      data.companyId,
+      "recurring_journal.save",
+      "recurring_journal",
+      id,
+      {
+        posted: false,
+      },
+    );
     return { id, posted: false };
   });
 
@@ -603,7 +812,12 @@ export const generateRecurringJournal = createServerFn({ method: "POST" })
       next_date: string;
       end_date: string | null;
       is_active: boolean;
-      lines: Array<{ accountId: string; description?: string; debitMinor: number; creditMinor: number }>;
+      lines: Array<{
+        accountId: string;
+        description?: string;
+        debitMinor: number;
+        creditMinor: number;
+      }>;
     };
     if (!row.is_active) throw new Error("This recurring journal is paused");
     if (row.end_date && row.next_date > row.end_date) throw new Error("This schedule has ended");
@@ -622,13 +836,16 @@ export const generateRecurringJournal = createServerFn({ method: "POST" })
         credit_minor: BigInt(line.creditMinor),
       })),
     });
-    const { error: occError } = await supabase.from("recurring_journal_occurrences" as never).insert({
-      company_id: data.companyId,
-      template_id: data.templateId,
-      occurrence_date: row.next_date,
-      journal_id: journalId,
-    } as never);
-    if (occError && !occError.message.toLowerCase().includes("duplicate")) throw new Error(occError.message);
+    const { error: occError } = await supabase
+      .from("recurring_journal_occurrences" as never)
+      .insert({
+        company_id: data.companyId,
+        template_id: data.templateId,
+        occurrence_date: row.next_date,
+        journal_id: journalId,
+      } as never);
+    if (occError && !occError.message.toLowerCase().includes("duplicate"))
+      throw new Error(occError.message);
     const next = addMonths(row.next_date, 1);
     await supabase
       .from("recurring_journal_templates" as never)
@@ -646,3 +863,115 @@ function addMonths(iso: string, months: number): string {
   const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), clamped));
   return result.toISOString().slice(0, 10);
 }
+
+export const listMoneyDocuments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; kind?: string; limit?: number }) => ({
+    companyId: assertUuid(input.companyId),
+    kind: input.kind && (KINDS as readonly string[]).includes(input.kind) ? input.kind : null,
+    limit: Math.min(500, Math.max(1, Math.floor(input.limit ?? 200))),
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "banking.view");
+    let query = context.supabase
+      .from("money_documents" as never)
+      .select(
+        "id, kind, document_date, reference, memo, currency_code, total_minor, tax_minor, status, deposit_status, adjustment_type, posted_journal_id, void_journal_id, void_reason, contacts(name)" as never,
+      )
+      .eq("company_id" as never, data.companyId as never)
+      .order("document_date" as never, { ascending: false })
+      .order("created_at" as never, { ascending: false })
+      .limit(data.limit);
+    if (data.kind) query = query.eq("kind" as never, data.kind as never);
+    const { data: rows, error } = await query;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const voidMoneyDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; documentId: string; reason: string }) => {
+    const reason = (input.reason ?? "").trim().slice(0, 300);
+    if (!reason) throw new Error("A reason is required to void a document");
+    return {
+      companyId: assertUuid(input.companyId),
+      documentId: assertUuid(input.documentId, "document"),
+      reason,
+    };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: doc, error } = await supabase
+      .from("money_documents" as never)
+      .select("id, kind, status, deposit_status, posted_journal_id" as never)
+      .eq("id" as never, data.documentId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!doc) throw new Error("Document not found");
+    const row = doc as {
+      id: string;
+      kind: MoneyKind;
+      status: string;
+      deposit_status: string | null;
+      posted_journal_id: string | null;
+    };
+    await assertCompanyPermission(supabase, data.companyId, permissionFor(row.kind));
+    await assertCompanyPermission(supabase, data.companyId, "accounting.post");
+    if (row.status === "void") throw new Error("This document is already void");
+    if (!row.posted_journal_id) throw new Error("This document was never posted");
+    if (row.deposit_status === "deposited") {
+      throw new Error("This receipt has been banked. Void the bank deposit first.");
+    }
+
+    // Reverse the ledger first. A locked period rejects here and nothing else changes.
+    const { journalId: voidJournalId } = await reverseJournal(
+      supabase,
+      row.posted_journal_id,
+      `money_document:${row.id}:void`,
+    );
+
+    if (row.kind === "bank_deposit") {
+      const { error: unclaimError } = await supabase
+        .from("money_documents" as never)
+        .update({ deposit_status: "undeposited", deposited_in_id: null } as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("deposited_in_id" as never, row.id as never);
+      if (unclaimError) throw new Error(unclaimError.message);
+      await supabase
+        .from("money_deposit_items" as never)
+        .delete()
+        .eq("company_id" as never, data.companyId as never)
+        .eq("deposit_id" as never, row.id as never);
+    }
+    if (row.kind === "customer_refund" || row.kind === "supplier_refund") {
+      await restoreCreditUses(supabase, data.companyId, row.id);
+    }
+
+    const { error: updateError } = await supabase
+      .from("money_documents" as never)
+      .update({
+        status: "void",
+        deposit_status:
+          row.kind === "sales_receipt" || row.kind === "receive_money" ? null : undefined,
+        void_journal_id: voidJournalId,
+        voided_at: new Date().toISOString(),
+        voided_by: userId,
+        void_reason: data.reason,
+      } as never)
+      .eq("id" as never, row.id as never)
+      .eq("company_id" as never, data.companyId as never);
+    if (updateError) throw new Error(updateError.message);
+    await audit(
+      supabase,
+      data.companyId,
+      `money_document.${row.kind}.void`,
+      "money_document",
+      row.id,
+      {
+        void_journal_id: voidJournalId,
+        reason: data.reason,
+      },
+    );
+    return { id: row.id, voidJournalId };
+  });

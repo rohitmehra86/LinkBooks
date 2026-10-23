@@ -16,6 +16,7 @@ const items = [
   { to: "/banking/transactions", label: "Unreconciled", search: { statusGroup: "unreconciled" }, countKey: "unreconciled" as const },
   { to: "/banking/transactions", label: "Excluded", search: { status: "excluded" }, countKey: "excluded" as const },
   { to: "/banking/transfers", label: "Transfers" },
+  { to: "/banking/money-documents", label: "Bank documents" },
   { to: "/banking/reconcile", label: "Reconcile" },
   { to: "/banking/rules", label: "Rules" },
   { to: "/banking/import", label: "Import CSV" },

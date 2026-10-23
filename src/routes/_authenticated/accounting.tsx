@@ -8,11 +8,8 @@ import { useActiveCompany } from "@/hooks/use-active-company";
 import {
   ensureLedgerMasters,
   listAccounts,
-  listJournals,
   listPeriods,
   lockPeriod,
-  postManualJournal,
-  reversePostedJournal,
   unlockPeriod,
 } from "@/lib/accounting/accounting.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
@@ -41,6 +38,8 @@ import {
 } from "@/components/ui/table";
 import { ChartAccountsPanel } from "@/components/accounting/ChartAccountsPanel";
 import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
+import { JournalsPanel } from "@/components/accounting/JournalsPanel";
+import { ManualJournalPanel } from "@/components/create-new/JournalPanels";
 
 export const Route = createFileRoute("/_authenticated/accounting")({
   head: () => ({
@@ -78,21 +77,14 @@ export function AccountingWorkspace({
 }) {
   const queryClient = useQueryClient();
   const fetchAccounts = useServerFn(listAccounts);
-  const fetchJournals = useServerFn(listJournals);
   const fetchPeriods = useServerFn(listPeriods);
   const seedMasters = useServerFn(ensureLedgerMasters);
-  const postJournal = useServerFn(postManualJournal);
-  const reverseJournal = useServerFn(reversePostedJournal);
   const doLock = useServerFn(lockPeriod);
   const doUnlock = useServerFn(unlockPeriod);
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", companyId],
     queryFn: () => fetchAccounts({ data: { companyId } }),
-  });
-  const journalsQuery = useQuery({
-    queryKey: ["journals", companyId],
-    queryFn: () => fetchJournals({ data: { companyId } }),
   });
   const periodsQuery = useQuery({
     queryKey: ["periods", companyId],
@@ -108,51 +100,6 @@ export function AccountingWorkspace({
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
-
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [journalDate, setJournalDate] = useState(today);
-  const [memo, setMemo] = useState("");
-  const [debitAccount, setDebitAccount] = useState("");
-  const [creditAccount, setCreditAccount] = useState("");
-  const [amountMajor, setAmountMajor] = useState("100.00");
-
-  const postMutation = useMutation({
-    mutationFn: async () => {
-      const { toMinorUnits } = await import("@/lib/accounting/money");
-      const minor = Number(toMinorUnits(amountMajor, currency));
-      const idem = `manual:${companyId}:${journalDate}:${debitAccount}:${creditAccount}:${minor}:${Date.now()}`;
-      return postJournal({
-        data: {
-          companyId,
-          journalDate,
-          memo,
-          idempotencyKey: idem,
-          lines: [
-            { accountId: debitAccount, debitMinor: minor, creditMinor: 0, description: memo },
-            { accountId: creditAccount, debitMinor: 0, creditMinor: minor, description: memo },
-          ],
-        },
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["journals", companyId] });
-      toast.success("Journal posted");
-      setMemo("");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
-
-  const reverseMutation = useMutation({
-    mutationFn: (journalId: string) => reverseJournal({ data: { journalId } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["journals", companyId] });
-      toast.success("Reversing journal posted");
-    },
-    onError: (e) => toast.error(friendlyAuthError(e)),
-  });
-
-  const accounts = accountsQuery.data ?? [];
-  const postable = accounts.filter((a) => a.is_active && a.is_postable);
 
   return (
     <>
@@ -198,135 +145,16 @@ export function AccountingWorkspace({
         </TabsContent>
 
         <TabsContent value="journals" className="mt-4">
-          {journalsQuery.isPending ? (
-            <LoadingState />
-          ) : journalsQuery.isError ? (
-            <ErrorState
-              title="Could not load journals"
-              description={friendlyAuthError(journalsQuery.error)}
-              onRetry={() => journalsQuery.refetch()}
-            />
-          ) : (journalsQuery.data ?? []).length === 0 ? (
-            <EmptyState
-              title="No journals yet"
-              description="Post a balanced manual journal to populate the ledger."
-            />
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Memo</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(journalsQuery.data ?? []).map((j) => (
-                      <TableRow key={j.id}>
-                        <TableCell>{j.journal_number}</TableCell>
-                        <TableCell>{j.journal_date}</TableCell>
-                        <TableCell className="capitalize">{j.status}</TableCell>
-                        <TableCell>{j.source_type}</TableCell>
-                        <TableCell className="max-w-[240px] truncate">{j.memo ?? "—"}</TableCell>
-                        <TableCell>
-                          {j.status === "posted" && j.source_type !== "reversal" ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={reverseMutation.isPending}
-                              onClick={() => reverseMutation.mutate(j.id)}
-                            >
-                              Reverse
-                            </Button>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+          <JournalsPanel companyId={companyId} currency={currency} />
         </TabsContent>
 
         <TabsContent value="post" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Post manual journal</CardTitle>
+              <CardTitle className="text-base">Manual journal</CardTitle>
             </CardHeader>
-            <CardContent className="grid max-w-xl gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="j-date">Posting date</Label>
-                <Input
-                  id="j-date"
-                  type="date"
-                  value={journalDate}
-                  onChange={(e) => setJournalDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="j-memo">Memo</Label>
-                <Input id="j-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Debit account</Label>
-                <Select value={debitAccount} onValueChange={setDebitAccount}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Credit account</Label>
-                <Select value={creditAccount} onValueChange={setCreditAccount}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="j-amt">Amount ({currency})</Label>
-                <Input
-                  id="j-amt"
-                  value={amountMajor}
-                  onChange={(e) => setAmountMajor(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Stored as integer minor units (e.g. {fromMinorUnits(10000n, currency)} → 10000).
-                </p>
-              </div>
-              <Button
-                size="sm"
-                disabled={
-                  postMutation.isPending ||
-                  !debitAccount ||
-                  !creditAccount ||
-                  debitAccount === creditAccount
-                }
-                onClick={() => postMutation.mutate()}
-              >
-                {postMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                Post balanced journal
-              </Button>
+            <CardContent className="max-w-4xl">
+              <ManualJournalPanel />
             </CardContent>
           </Card>
         </TabsContent>
