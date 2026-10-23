@@ -37,13 +37,13 @@ Source audits: `docs/audit/BUGS_BANKING_REPORTS.md` (RP, AC, TX) and `docs/audit
 | ID    | Status       | Notes                                                                                                                                                                                                                         |
 | ----- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC-01 | Done         | "Financial years" tab creates a full year of periods (`createFinancialYear`, permission `accounting.post`). `postJournal` also creates the missing period on first posting (`ensure_fiscal_period_for_date`).                 |
-| AC-02 | **Not done** | Conversion/opening balances. This needs a dedicated opening-balance posting flow and a conversion date, which I did not build.                                                                                                |
+| AC-02 | Done (wave 2 E) | Accounting > Opening balances: conversion date, opening journals and opening invoices/bills. See `WAVE2_E_ACCOUNTING.md`. |
 | AC-03 | Done         | Saving a system account no longer wipes fields. Locked fields (type, currency, control flags) are blocked once an account has activity (`lockedFieldChanges`).                                                                |
 | AC-04 | Not changed  | `JournalsPanel` only shows Reverse when `canReverseHere` allows it. I did not re-audit this finding beyond reading the code.                                                                                                  |
-| AC-05 | Partial      | The existing multi-line manual journal panel is kept. **Auto-reverse journals are not built** (needs a scheduler).                                                                                                            |
+| AC-05 | Done (wave 2 E) | Manual journals can auto-reverse on a date. Due reversals run from the screen or a documented scheduler hook. See `WAVE2_E_ACCOUNTING.md`. |
 | AC-06 | Done         | Chart balances are financial-year-to-date for income/expense and all-time for balance-sheet accounts, in base currency.                                                                                                       |
 | AC-07 | Done         | Income and expense accounts can be archived when they have no current-year activity (year-end closing journals ignored). Balance-sheet accounts still need a zero balance. Enforced in the database and in `archiveDecision`. |
-| AC-08 | Not done     | Account merge still posts one journal dated today.                                                                                                                                                                            |
+| AC-08 | Done (wave 2 E) | Merge moves the balance period by period with a journal dated in each period. Locked periods are listed and need an explicit choice. See `WAVE2_E_ACCOUNTING.md`. |
 | AC-09 | Done         | "Period close" tab: checklist (bank, drafts, AR/AP tie-out, opening balance equity, tax return filed, year-end journal), optional year-end close, then lock with acknowledgement.                                             |
 
 ### Tax (TX)
@@ -53,7 +53,7 @@ Source audits: `docs/audit/BUGS_BANKING_REPORTS.md` (RP, AC, TX) and `docs/audit
 | TX-01 | Done (internal filing only) | Tax → Returns tab. Boxes are totalled from document tax lines by tax code. Accrual or cash basis. Draft → file and lock (database triggers freeze it). Optional settlement journal (`tax_adjustment`) only after explicit confirmation. UK VAT100 labels for GB, whole-pound filing amounts for boxes 6-9. See limitations. |
 | TX-02 | Done                        | Tax settings save only the fields sent. Filing frequency has a select. Non-recoverable tax account added.                                                                                                                                                                                                                   |
 | TX-03 | Done                        | Tax adjustment journals use a real UUID `source_id` (or null for manual ones), never free text.                                                                                                                                                                                                                             |
-| TX-04 | Partial                     | The cash basis is honoured **in the return** (payments dated in the period, pro rata). The older "Tax summary" report still reads the ledger by posting date.                                                                                                                                                               |
+| TX-04 | Done (wave 2 E) | Tax summary has a cash/accrual choice and uses the same document-line logic as the return. Reverse charge on bills posts input and output tax and fills boxes 1 and 4. See `WAVE2_E_ACCOUNTING.md`. |
 | TX-05 | Done                        | Rates and codes can be edited, end-dated and deactivated (`rate-status.ts`, `TaxRatesPanel`, `TaxCodesPanel`).                                                                                                                                                                                                              |
 | TX-06 | Done                        | Tax account pickers show only valid account types (`account-pickers.ts`).                                                                                                                                                                                                                                                   |
 
@@ -118,11 +118,11 @@ Apply the three migrations to a staging database first.
 ## Known limitations
 
 - Returns are internal records. LinkBooks does not submit to HMRC (MTD), BAS, GSTN, IRS or any other authority.
-- Reverse-charge VAT is counted and flagged but not calculated. Boxes 2, 8 and 9 (EU acquisitions and dispatches) are always 0.
+- Reverse-charge VAT on supplier bills is calculated into boxes 1 and 4 (wave 2 E). Reverse charge on supplier credit notes and bank-coded spend is not. Boxes 2, 8 and 9 (EU acquisitions and dispatches) are always 0.
 - Credit notes and expenses use their own date even on the cash basis.
 - Sales credit note lines have no tax code, so they are classified by amounts. The return warns about uncoded lines.
 - Foreign-currency documents convert at their posted journal's rate; documents without one are skipped and counted in a warning.
-- Not built: AC-02 (conversion balances), AC-05 auto-reverse, AC-08 merge date, Budget vs Actual and Fixed Asset Register reports, U-10/U-11/U-12 (other workstreams' screens).
+- Not built: Budget vs Actual and Fixed Asset Register reports, U-10/U-11/U-12 (other workstreams' screens).
 - No suspense-account check in the period close checklist, because the chart has no suspense system key.
 - Money/date formatting is applied only in screens owned by this workstream.
 - U-14 (Create-new flyover) belongs to another workstream and was not changed.
