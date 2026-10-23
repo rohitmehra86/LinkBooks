@@ -12,6 +12,7 @@ import {
   saveRecurringJournalTemplate,
 } from "@/lib/create-new/money-documents.functions";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
+import { validateAutoReverseDate } from "@/lib/accounting/fx-reval";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +65,7 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
   const [date, setDate] = useState(today);
   const [name, setName] = useState("");
   const [memo, setMemo] = useState("");
+  const [autoReverseOn, setAutoReverseOn] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine(), emptyLine()]);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +90,13 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
     (line) => safeMinor(line.debit, currency) > 0n && safeMinor(line.credit, currency) > 0n,
   );
   const balanced = totals.debit > 0n && totals.difference === 0n;
+  const reverseError = mode === "post" ? validateAutoReverseDate(date, autoReverseOn) : null;
   const canSubmit =
-    balanced && filled.length >= 2 && !bothSides && (mode === "post" || name.trim().length > 0);
+    balanced &&
+    filled.length >= 2 &&
+    !bothSides &&
+    !reverseError &&
+    (mode === "post" || name.trim().length > 0);
 
   function updateLine(index: number, patch: Partial<Line>) {
     setLines((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -110,6 +117,7 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
     setLines([emptyLine(), emptyLine()]);
     setMemo("");
     setName("");
+    setAutoReverseOn("");
     setIdempotencyKey(crypto.randomUUID());
   }
 
@@ -127,6 +135,7 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
           journalDate: date,
           memo,
           idempotencyKey,
+          ...(autoReverseOn ? { autoReverseOn } : {}),
           lines: journalLines,
         },
       });
@@ -198,6 +207,23 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
           <Label htmlFor="journal-memo">Narration</Label>
           <Input id="journal-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
         </div>
+        {mode === "post" ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="journal-auto-reverse">Reverse automatically on (optional)</Label>
+            <Input
+              id="journal-auto-reverse"
+              type="date"
+              min={date}
+              value={autoReverseOn}
+              onChange={(e) => setAutoReverseOn(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              For accruals and prepayments. The reversal is posted when due; process it from
+              Accounting → FX &amp; reversals.
+            </p>
+            {reverseError ? <p className="text-xs text-destructive">{reverseError}</p> : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-2">

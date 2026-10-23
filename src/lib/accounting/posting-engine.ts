@@ -21,6 +21,7 @@ export const JOURNAL_SOURCE_TYPES = [
   "reversal",
   "other",
   "fx_revaluation",
+  "fx_realised",
 ] as const;
 export type JournalSourceType = (typeof JOURNAL_SOURCE_TYPES)[number];
 
@@ -34,6 +35,8 @@ export type PostJournalInput = {
   source_id?: string;
   idempotency_key?: string;
   reverses_journal_id?: string;
+  /** Manual journals only: post it and schedule an automatic reversal on this date (AC-05). */
+  auto_reverse_on?: string;
   lines: JournalLineDraft[];
 };
 
@@ -52,12 +55,14 @@ export async function postJournal(
   }
   assertLinesBalance(input.lines);
 
+  const fxRate = await resolveFxRate(supabase, input);
+
   const payload = {
     company_id: input.company_id,
     journal_date: input.journal_date,
     memo: input.memo ?? null,
     currency_code: input.currency_code ?? null,
-    fx_rate_to_base: input.fx_rate_to_base ?? 1,
+    fx_rate_to_base: fxRate,
     source_type: input.source_type ?? "manual",
     source_id: input.source_id ?? null,
     idempotency_key: input.idempotency_key ?? null,
@@ -81,11 +86,27 @@ export async function postJournal(
     }
   }
 
+  if (input.auto_reverse_on) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.auto_reverse_on)) {
+      throw new Error("auto_reverse_on must be YYYY-MM-DD");
+    }
+    if (input.auto_reverse_on <= input.journal_date) {
+      throw new Error("The reversal date must be after the journal date.");
+    }
+    if ((input.source_type ?? "manual") !== "manual") {
+      throw new Error("Only manual journals can be auto-reversing");
+    }
+  }
+
+  // An auto-reversing journal is posted by `post_auto_reversing_journal`, which calls post_journal
+  // and records the reversal schedule in the same transaction.
   const call = () =>
     supabase.rpc(
-      "post_journal" as never,
+      (input.auto_reverse_on ? "post_auto_reversing_journal" : "post_journal") as never,
       {
-        payload,
+        payload: input.auto_reverse_on
+          ? { ...payload, reverse_on: input.auto_reverse_on }
+          : payload,
       } as never,
     );
   let { data, error } = await call();
@@ -98,8 +119,52 @@ export async function postJournal(
     }
   }
   if (error) throw new Error(error.message);
-  if (!data || typeof data !== "string") throw new Error("Posting failed: no journal id returned");
-  return { journalId: data };
+  const journalId =
+    input.auto_reverse_on && data && typeof data === "object"
+      ? (data as { journal_id?: unknown }).journal_id
+      : data;
+  if (!journalId || typeof journalId !== "string") {
+    throw new Error("Posting failed: no journal id returned");
+  }
+  return { journalId };
+}
+
+/**
+ * The rate a journal is posted at. An explicit rate always wins. A foreign-currency journal with no
+ * rate used to be posted at 1:1 (silently wrong books); it now uses the latest MANUAL rate on or before
+ * the posting date from `exchange_rates`, and fails with a clear message when there is none. There is no
+ * rate feed. Base-currency journals resolve to 1. If the lookup function is not deployed yet the old
+ * default of 1 is kept so older databases keep working.
+ */
+export async function resolveFxRate(
+  supabase: AuthedClient,
+  input: Pick<
+    PostJournalInput,
+    "company_id" | "journal_date" | "currency_code" | "fx_rate_to_base"
+  >,
+): Promise<number> {
+  if (input.fx_rate_to_base != null) return input.fx_rate_to_base;
+  const currency = input.currency_code?.trim().toUpperCase();
+  if (!currency) return 1;
+  const { data, error } = await supabase.rpc(
+    "lookup_fx_rate_to_base" as never,
+    {
+      _company_id: input.company_id,
+      _from_currency: currency,
+      _as_of: input.journal_date,
+    } as never,
+  );
+  if (error) {
+    if (/No exchange rate for/i.test(error.message ?? "")) {
+      throw new Error(
+        `No exchange rate for ${currency} on or before ${input.journal_date}. Enter the rate on the document, or add a manual rate in Settings, then try again.`,
+      );
+    }
+    if (isMissingRpcError(error)) return 1;
+    throw new Error(error.message);
+  }
+  const rate = Number(data);
+  return Number.isFinite(rate) && rate > 0 ? rate : 1;
 }
 
 export function isNoPeriodError(message: string | null | undefined): boolean {

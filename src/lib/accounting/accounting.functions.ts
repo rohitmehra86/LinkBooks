@@ -240,6 +240,8 @@ export const postManualJournal = createServerFn({ method: "POST" })
       journalDate: string;
       memo?: string;
       idempotencyKey?: string;
+      /** AC-05: reverse this journal automatically on this date (must be after the journal date). */
+      autoReverseOn?: string;
       lines: Array<{
         accountId: string;
         description?: string;
@@ -251,6 +253,14 @@ export const postManualJournal = createServerFn({ method: "POST" })
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.journalDate ?? "")) {
         throw new Error("Choose a valid posting date.");
       }
+      const autoReverseOn = (input.autoReverseOn ?? "").trim() || undefined;
+      if (autoReverseOn !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(autoReverseOn))
+          throw new Error("Choose a valid reversal date.");
+        if (autoReverseOn <= input.journalDate) {
+          throw new Error("The reversal date must be after the journal date.");
+        }
+      }
       if (!Array.isArray(input.lines) || input.lines.length < 2) {
         throw new Error("Enter at least two journal lines.");
       }
@@ -259,6 +269,7 @@ export const postManualJournal = createServerFn({ method: "POST" })
         journalDate: input.journalDate,
         memo: (input.memo ?? "").trim().slice(0, 500),
         idempotencyKey: (input.idempotencyKey ?? "").trim().slice(0, 200) || undefined,
+        autoReverseOn,
         lines: input.lines.map((l) => ({
           accountId: assertUuid(l.accountId, "account"),
           description: (l.description ?? "").trim().slice(0, 300),
@@ -288,6 +299,7 @@ export const postManualJournal = createServerFn({ method: "POST" })
       ...(data.memo ? { memo: data.memo } : {}),
       source_type: "manual",
       ...(data.idempotencyKey ? { idempotency_key: data.idempotencyKey } : {}),
+      ...(data.autoReverseOn ? { auto_reverse_on: data.autoReverseOn } : {}),
       lines: data.lines.map((l) => ({
         account_id: l.accountId,
         ...(l.description ? { description: l.description } : {}),
