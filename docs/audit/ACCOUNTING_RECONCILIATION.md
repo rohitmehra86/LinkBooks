@@ -7,7 +7,7 @@
 | BS equation | A = L + E + NI | holds | **PASS** | From nets |
 | Canonical demo unit tests | DEMO_EXPECTED | green | **PASS** | `demo.test.ts` |
 | AR control vs open posted invoices | equal | 480000=480000 | **PASS** | After M1 repair |
-| AP control vs open posted bills | equal | verify after bill links | **PARTIAL** | BILL links applied; re-check AP in next checkpoint |
+| AP control vs open posted bills | equal | `25197bd0` GL 75000 / open 0; `78250720` GL 76000 / open 1000 | **FAIL/PARTIAL** | Open bill subledger understates AP GL — investigate COS/AP journals vs demoted bills in M1 follow-up |
 | Authorised docs have journals | yes | orphans demoted | **PASS** | Repair |
 | Period lock + lock dates | block posting | RPC+trigger | **PASS** | Schema |
 | Idempotent post | same key → same journal | engine | **PASS** | Unit + RPC |

@@ -24,5 +24,8 @@
 - `docs/audit/*`, `docs/plans/*`
 - `package-lock.json` (npm install)
 
+## Open integrity follow-up
+- **AP open vs AP GL** still diverges after invoice-side repair (GL ~75–76k, linked open bills ~0–1k). Next: map which `purchase_bill` / journal keys should remain open without demoting paid canonical bills incorrectly.
+
 ## Blockers
 None blocking M2. External: email/bank/AI providers remain unconfigured (honest Unavailable).
