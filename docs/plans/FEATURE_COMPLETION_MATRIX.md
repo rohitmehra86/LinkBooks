@@ -9,6 +9,12 @@
 | Make Payment | ready | BillMakePaymentPanel | bill-payment.test |
 | Create New menu | partial | `create-new/registry.ts` | menu.test |
 | Enterprise CoA | ready | ChartAccountsPanel | account-kinds tests |
+| AC-02 Conversion / opening balances | ready (needs migrations) | Accounting > Opening balances, `post_conversion_balances` | `conversion-balances.test.ts`, scratch SQL |
+| AR-10 Realised + unrealised FX | ready (needs migrations); manual rates only | Accounting > FX & reversals, triggers `fx_realise_*`, `post_fx_revaluation` | `fx-reval.test.ts`, scratch SQL |
+| AC-05 Auto-reversing journals | ready; scheduler is optional and documented, not installed | `post_auto_reversing_journal`, `process_due_auto_reversals(_system)` | `fx-reval.test.ts`, scratch SQL |
+| AC-08 Account merge with historic dating | ready (needs migration); same-currency accounts only | Chart of accounts > Merge, `merge_accounts_dated` | `account-merge.test.ts`, scratch SQL |
+| TX-04 Tax summary cash/accrual + reverse charge | ready for bills; credit notes not covered | Reports > Tax summary, `reverse-charge.ts`, `postBillAuthorisation` | `reverse-charge.test.ts`, `tax-return-data.test.ts` |
+| Ledger health check | ready (needs migration) | Settings > Accounting, `ledger_health_check` | `ledger-health.test.ts`, scratch SQL |
 | Demo AR/GL reconcile | ready | seed link + SQL repair | DEMO_COMPANY_INTEGRITY |
 | Sales refunds | blocked | registry | — |
 | Bank feeds | unavailable | Integrations tab | — |

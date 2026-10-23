@@ -23,6 +23,11 @@ export type TaxFact = {
   taxBase: bigint;
   /** False when the line had no tax code and was classified from its amounts. */
   coded: boolean;
+  /**
+   * Reverse-charge purchase the buyer accounts for: `taxBase` is notional tax that counts as
+   * output tax (box 1) and, when recoverable, input tax (box 4) at the same time.
+   */
+  selfAssessed?: boolean;
 };
 
 export type BoxKey = "box1" | "box2" | "box3" | "box4" | "box5" | "box6" | "box7" | "box8" | "box9";
@@ -46,6 +51,8 @@ export type ReturnTotals = {
     uncoded: number;
     outOfScope: number;
     reverseCharge: number;
+    /** Reverse-charge lines whose tax was self-assessed into boxes 1 and 4. */
+    selfAssessed: number;
   };
 };
 
@@ -57,7 +64,7 @@ export function computeReturnTotals(facts: TaxFact[]): ReturnTotals {
   let salesNet = 0n;
   let purchasesNet = 0n;
   let nonRecoverableTax = 0n;
-  const counts = { lines: 0, uncoded: 0, outOfScope: 0, reverseCharge: 0 };
+  const counts = { lines: 0, uncoded: 0, outOfScope: 0, reverseCharge: 0, selfAssessed: 0 };
 
   for (const f of facts) {
     counts.lines += 1;
@@ -75,6 +82,10 @@ export function computeReturnTotals(facts: TaxFact[]): ReturnTotals {
       outputTax += tax;
     } else {
       purchasesNet += net;
+      if (f.selfAssessed) {
+        counts.selfAssessed += 1;
+        outputTax += tax;
+      }
       if (f.recoverable) inputTax += tax;
       else nonRecoverableTax += tax;
     }
@@ -88,6 +99,42 @@ export function computeReturnTotals(facts: TaxFact[]): ReturnTotals {
     netTax: outputTax - inputTax,
     counts,
   };
+}
+
+export type TreatmentRow = {
+  side: TaxSide;
+  treatment: string;
+  /** Net of credit notes. */
+  netBase: bigint;
+  taxBase: bigint;
+  lines: number;
+  selfAssessed: boolean;
+};
+
+/** Totals per side and tax treatment, for the Tax Summary report. Uses the same facts as the return. */
+export function summariseByTreatment(facts: TaxFact[]): TreatmentRow[] {
+  const map = new Map<string, TreatmentRow>();
+  for (const f of facts) {
+    const treatment = f.treatment ?? "uncoded";
+    const selfAssessed = Boolean(f.selfAssessed);
+    const key = `${f.side}|${treatment}|${selfAssessed ? "rc" : ""}`;
+    const row = map.get(key) ?? {
+      side: f.side,
+      treatment,
+      netBase: 0n,
+      taxBase: 0n,
+      lines: 0,
+      selfAssessed,
+    };
+    const sign = BigInt(f.sign);
+    row.netBase += sign * f.netBase;
+    row.taxBase += sign * f.taxBase;
+    row.lines += 1;
+    map.set(key, row);
+  }
+  return [...map.values()].sort((a, b) =>
+    a.side === b.side ? a.treatment.localeCompare(b.treatment) : a.side === "sales" ? -1 : 1,
+  );
 }
 
 export type BoxLine = {

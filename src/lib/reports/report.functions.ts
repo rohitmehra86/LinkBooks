@@ -32,6 +32,8 @@ import {
   type Sb,
 } from "@/lib/accounting/ledger-data";
 import { findControlAccountIds, resolveTaxAccountIds } from "@/lib/accounting/control-accounts";
+import { loadTaxFacts } from "@/lib/tax/tax-return-data";
+import { computeReturnTotals, summariseByTreatment } from "@/lib/tax/vat-return";
 import {
   buildBalanceSheetStatement,
   buildPnlStatement,
@@ -792,16 +794,20 @@ export const getCashFlow = createServerFn({ method: "GET" })
 
 export const getTaxReport = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; from: string; to: string }) => ({
+  .inputValidator((input: { companyId: string; from: string; to: string; basis?: string }) => ({
     companyId: companyId(input),
     from: isoDate(input.from, "From"),
     to: isoDate(input.to, "To"),
+    basis: (input.basis === "cash" ? "cash" : input.basis === "accrual" ? "accrual" : null) as
+      "cash" | "accrual" | null,
   }))
   .handler(async ({ data, context }) => {
     const ctx = await loadCtx(context.supabase, data.companyId);
     const { data: settings } = await context.supabase
       .from("company_tax_settings" as never)
-      .select("output_tax_account_id, input_tax_account_id, tax_regime, jurisdiction_code" as never)
+      .select(
+        "output_tax_account_id, input_tax_account_id, tax_regime, jurisdiction_code, tax_basis" as never,
+      )
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
     const s = settings as {
@@ -809,7 +815,20 @@ export const getTaxReport = createServerFn({ method: "GET" })
       input_tax_account_id: string | null;
       tax_regime: string;
       jurisdiction_code: string | null;
+      tax_basis?: string | null;
     } | null;
+    // Same document-line logic as the VAT return, on the chosen basis (TX-04). The default is
+    // the basis the company files on.
+    const settingsBasis: "cash" | "accrual" = s?.tax_basis === "cash" ? "cash" : "accrual";
+    const basis = data.basis ?? settingsBasis;
+    const taxFacts = await loadTaxFacts(ctx.supabase, {
+      companyId: data.companyId,
+      from: data.from,
+      to: data.to,
+      basis,
+      baseCurrency: ctx.meta.baseCurrency,
+    });
+    const totals = computeReturnTotals(taxFacts.facts);
     const taxIds = resolveTaxAccountIds(ctx.accounts, s);
     const lines = taxIds.length
       ? await loadPostedLines(ctx.supabase, ctx.meta.id, ctx.meta.baseCurrency, {
@@ -823,6 +842,29 @@ export const getTaxReport = createServerFn({ method: "GET" })
       regime: s?.tax_regime ?? "none",
       jurisdictionCode: s?.jurisdiction_code ?? null,
       taxAccountCount: taxIds.length,
+      basis,
+      settingsBasis,
+      documents: {
+        count: taxFacts.documents,
+        skippedNoRate: taxFacts.skippedNoRate,
+        output_tax_minor: num(totals.outputTax),
+        input_tax_minor: num(totals.inputTax),
+        net_tax_minor: num(totals.netTax),
+        non_recoverable_tax_minor: num(totals.nonRecoverableTax),
+        sales_net_minor: num(totals.salesNet),
+        purchases_net_minor: num(totals.purchasesNet),
+        reverse_charge_lines: totals.counts.reverseCharge,
+        self_assessed_lines: totals.counts.selfAssessed,
+        uncoded_lines: totals.counts.uncoded,
+        rows: summariseByTreatment(taxFacts.facts).map((r) => ({
+          side: r.side,
+          treatment: r.treatment,
+          self_assessed: r.selfAssessed,
+          lines: r.lines,
+          net_minor: num(r.netBase),
+          tax_minor: num(r.taxBase),
+        })),
+      },
       output_credit_minor: num(result.output_credit_minor),
       input_debit_minor: num(result.input_debit_minor),
       net_payable_minor: num(result.net_payable_minor),
@@ -844,7 +886,7 @@ export const getTaxReport = createServerFn({ method: "GET" })
         credit_minor: num(BigInt(l.credit_minor)),
       })),
       complianceNote:
-        "Movements on the tax control accounts only (includes payments to the tax authority). It is not a VAT/GST return: use Tax → Returns for boxes calculated from document tax lines.",
+        "The totals at the top come from document tax lines on the chosen basis, the same way the VAT return is calculated. The table below lists movements on the tax control accounts by posting date (includes payments to the tax authority), so it can differ on cash basis or when tax was paid.",
     };
   });
 

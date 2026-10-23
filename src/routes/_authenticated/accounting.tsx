@@ -12,13 +12,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartAccountsPanel } from "@/components/accounting/ChartAccountsPanel";
+import { ConversionBalancesPanel } from "@/components/accounting/ConversionBalancesPanel";
+import { FxPanel } from "@/components/accounting/FxPanel";
 import { FinancialYearsPanel } from "@/components/accounting/FinancialYearsPanel";
 import { IndustryCoaPanel } from "@/components/accounting/IndustryCoaPanel";
 import { JournalsPanel } from "@/components/accounting/JournalsPanel";
 import { PeriodClosePanel } from "@/components/accounting/PeriodClosePanel";
 import { ManualJournalPanel } from "@/components/create-new/JournalPanels";
 
-const ACCOUNTING_TABS = ["coa", "industry", "journals", "post", "periods", "close"] as const;
+const ACCOUNTING_TABS = [
+  "coa",
+  "industry",
+  "journals",
+  "post",
+  "periods",
+  "close",
+  "conversion",
+  "fx",
+] as const;
 type AccountingTab = (typeof ACCOUNTING_TABS)[number];
 type AccountingSearch = { tab?: AccountingTab | undefined; journal?: string | undefined };
 
@@ -123,6 +134,8 @@ export function AccountingWorkspace({
           <TabsTrigger value="post">Post manual journal</TabsTrigger>
           <TabsTrigger value="periods">Financial years</TabsTrigger>
           <TabsTrigger value="close">Period close</TabsTrigger>
+          <TabsTrigger value="conversion">Opening balances</TabsTrigger>
+          <TabsTrigger value="fx">FX &amp; reversals</TabsTrigger>
         </TabsList>
 
         <TabsContent value="coa" className="mt-4">
@@ -158,6 +171,14 @@ export function AccountingWorkspace({
 
         <TabsContent value="close" className="mt-4">
           <PeriodClosePanel companyId={companyId} />
+        </TabsContent>
+
+        <TabsContent value="conversion" className="mt-4">
+          <ConversionBalancesPanel companyId={companyId} currency={currency} />
+        </TabsContent>
+
+        <TabsContent value="fx" className="mt-4">
+          <FxPanel companyId={companyId} currency={currency} />
         </TabsContent>
       </Tabs>
     </>

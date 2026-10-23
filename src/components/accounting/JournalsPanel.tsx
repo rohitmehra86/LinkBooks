@@ -46,6 +46,7 @@ const SOURCE_LABEL: Record<string, string> = {
   reversal: "Reversal",
   other: "Bank document",
   fx_revaluation: "FX revaluation",
+  fx_realised: "Realised FX",
 };
 
 /** Only hand-made journals are reversed here. Documents are voided from their own page so the subledger stays in step. */

@@ -15,7 +15,8 @@ import {
   nearDuplicateNames,
   suggestAccountFromDescription,
 } from "@/lib/accounting/account-suggest";
-import { postJournal } from "@/lib/accounting/posting-engine";
+import { isMissingRpcError, postJournal } from "@/lib/accounting/posting-engine";
+import type { MergePlan } from "@/lib/accounting/account-merge";
 import { fiscalYearContaining, todayIso } from "@/lib/accounting/fiscal-year";
 import { fetchLedgerBalances, loadCompanyMeta, type Sb } from "@/lib/accounting/ledger-data";
 
@@ -197,15 +198,86 @@ export const archiveChartAccount = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-export const mergeChartAccounts = createServerFn({ method: "POST" })
+/** AC-08: what a merge would post, period by period, before anything is written. */
+export const previewMergeChartAccounts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { companyId: string; sourceId: string; targetId: string }) => ({
     companyId: assertUuid(input.companyId),
     sourceId: assertUuid(input.sourceId, "account"),
     targetId: assertUuid(input.targetId, "account"),
   }))
+  .handler(async ({ data, context }): Promise<MergePlan | { unavailable: string }> => {
+    await assertCompanyPermission(context.supabase, data.companyId, "accounts.manage");
+    const { data: plan, error } = await context.supabase.rpc(
+      "preview_account_merge" as never,
+      {
+        payload: {
+          company_id: data.companyId,
+          source_id: data.sourceId,
+          target_id: data.targetId,
+        },
+      } as never,
+    );
+    if (error) {
+      if (isMissingRpcError(error)) {
+        return {
+          unavailable:
+            "Dated merges are not available yet: the database migration 20261025120000_account_merge_dated has not been applied.",
+        };
+      }
+      throw new Error(error.message);
+    }
+    return plan as unknown as MergePlan;
+  });
+
+export const mergeChartAccounts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      sourceId: string;
+      targetId: string;
+      postLockedPeriodsToday?: boolean;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      sourceId: assertUuid(input.sourceId, "account"),
+      targetId: assertUuid(input.targetId, "account"),
+      postLockedPeriodsToday: input.postLockedPeriodsToday === true,
+    }),
+  )
   .handler(async ({ data, context }) => {
     await assertCompanyPermission(context.supabase, data.companyId, "accounts.manage");
+
+    // AC-08: one journal per accounting period, dated inside that period.
+    const { data: dated, error: datedError } = await context.supabase.rpc(
+      "merge_accounts_dated" as never,
+      {
+        payload: {
+          company_id: data.companyId,
+          source_id: data.sourceId,
+          target_id: data.targetId,
+          post_locked_periods_today: data.postLockedPeriodsToday,
+        },
+      } as never,
+    );
+    if (!datedError) {
+      const result = dated as unknown as {
+        journal_ids: string[];
+        journal_count: number;
+        archived: boolean;
+        archive_blocked_reason: string | null;
+        locked_periods_posted_today: boolean;
+      };
+      return {
+        journalId: result.journal_ids[0] ?? null,
+        journalCount: result.journal_count,
+        archived: result.archived,
+        archiveBlockedReason: result.archive_blocked_reason,
+      };
+    }
+    if (!isMissingRpcError(datedError)) throw new Error(datedError.message);
+
+    // Migration not applied yet: fall back to the single journal dated today.
     const source = await loadAccount(context.supabase, data.companyId, data.sourceId);
     const target = await loadAccount(context.supabase, data.companyId, data.targetId);
     const allowed = mergeAllowed({
@@ -248,7 +320,12 @@ export const mergeChartAccounts = createServerFn({ method: "POST" })
       .eq("id" as never, source.id as never)
       .eq("company_id" as never, data.companyId as never);
     if (error) throw new Error(error.message);
-    return { journalId };
+    return {
+      journalId,
+      journalCount: journalId ? 1 : 0,
+      archived: true,
+      archiveBlockedReason: null as string | null,
+    };
   });
 
 export const importChartAccounts = createServerFn({ method: "POST" })
