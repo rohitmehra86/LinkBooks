@@ -67,14 +67,14 @@ function columnMode(v: unknown): ColumnMode {
   return COLUMN_MODES.includes(v as ColumnMode) ? (v as ColumnMode) : "none";
 }
 
-type Ctx = {
+export type Ctx = {
   supabase: Sb;
   meta: CompanyMeta;
   accounts: AccountMeta[];
   byId: Map<string, AccountMeta>;
 };
 
-async function loadCtx(supabase: Sb, id: string): Promise<Ctx> {
+export async function loadCtx(supabase: Sb, id: string): Promise<Ctx> {
   await assertCompanyMember(supabase, id);
   const [meta, accounts] = await Promise.all([
     loadCompanyMeta(supabase, id),
@@ -91,7 +91,7 @@ function num(v: bigint): number {
 /* Shared builders                                                     */
 /* ------------------------------------------------------------------ */
 
-async function plFor(ctx: Ctx, from: string, to: string) {
+export async function plFor(ctx: Ctx, from: string, to: string) {
   const bal = await fetchLedgerBalances(ctx.supabase, ctx.meta.id, ctx.meta.baseCurrency, {
     from,
     to,
@@ -103,7 +103,7 @@ async function plFor(ctx: Ctx, from: string, to: string) {
   return buildProfitAndLoss(lines, { from, to });
 }
 
-async function bsFor(ctx: Ctx, asOf: string) {
+export async function bsFor(ctx: Ctx, asOf: string) {
   const fyStart = fiscalYearStart(asOf, ctx.meta.fyEndMonth, ctx.meta.fyEndDay);
   const priorEnd = addDaysIso(fyStart, -1);
   const [prior, current] = await Promise.all([
@@ -514,7 +514,7 @@ function serialiseAged(aged: AgedBase) {
   };
 }
 
-async function controlBalance(
+export async function controlBalance(
   ctx: Ctx,
   role: "ar" | "ap",
   asOf: string,
@@ -688,7 +688,7 @@ export const getAgedPayables = createServerFn({ method: "GET" })
 /* Cash flow                                                           */
 /* ------------------------------------------------------------------ */
 
-async function bankAccountIds(ctx: Ctx): Promise<string[]> {
+export async function bankAccountIds(ctx: Ctx): Promise<string[]> {
   const { data: banks, error } = await ctx.supabase
     .from("bank_accounts" as never)
     .select("gl_account_id" as never)
