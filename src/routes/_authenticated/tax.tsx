@@ -14,6 +14,7 @@ import {
 import { filterTaxAccountPicker, type PickerAccount } from "@/lib/tax/account-pickers";
 import { TaxCodesPanel } from "@/components/tax/TaxCodesPanel";
 import { TaxRatesPanel } from "@/components/tax/TaxRatesPanel";
+import { TaxReturnsPanel } from "@/components/tax/TaxReturnsPanel";
 import {
   packsForCountry,
   suggestedRegimeForCountry,
@@ -199,7 +200,7 @@ function TaxConfigPage() {
     <>
       <PageHeader
         title="Tax"
-        description={`Country-aware configuration for ${orgCountry}. Rates, codes and GL mappings — not filing compliance.`}
+        description={`Country-aware configuration and return figures for ${orgCountry}. Rates, codes, GL mappings and VAT/GST returns.`}
         actions={
           <Button variant="outline" size="sm" asChild>
             <Link to="/reports/$reportId" params={{ reportId: "tax-summary" }}>
@@ -210,7 +211,7 @@ function TaxConfigPage() {
       />
 
       <Alert className="mb-6">
-        <AlertTitle>Calculation &amp; reporting ≠ filing</AlertTitle>
+        <AlertTitle>Calculation &amp; reporting, not e-filing</AlertTitle>
         <AlertDescription>
           LinkBooks calculates tax on documents and reports control-account movements. It does not
           claim MTD, BAS, GSTN, IRS, or electronic filing. Country packs are configuration scaffolds
@@ -221,6 +222,7 @@ function TaxConfigPage() {
       <Tabs defaultValue="registration">
         <TabsList className="mb-4 flex h-auto flex-wrap">
           <TabsTrigger value="registration">Registration</TabsTrigger>
+          <TabsTrigger value="returns">Returns</TabsTrigger>
           <TabsTrigger value="rates">Rates</TabsTrigger>
           <TabsTrigger value="codes">Codes</TabsTrigger>
           <TabsTrigger value="mappings">GL mappings</TabsTrigger>
@@ -421,6 +423,14 @@ function TaxConfigPage() {
               ))}
             </ul>
           </div>
+        </TabsContent>
+
+        <TabsContent value="returns" className="space-y-4">
+          <TaxReturnsPanel
+            companyId={companyId}
+            companyName={company?.name ?? ""}
+            accounts={allAccounts}
+          />
         </TabsContent>
 
         <TabsContent value="rates" className="space-y-4">
