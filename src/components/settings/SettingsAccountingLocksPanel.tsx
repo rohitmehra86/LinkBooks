@@ -116,8 +116,8 @@ export function SettingsAccountingLocksPanel({ companyId, canEdit, canLock }: Pr
       <Alert>
         <AlertTitle>Two-tier lock dates</AlertTitle>
         <AlertDescription>
-          Enforced in <code>post_journal</code> for every posting path (UI, API, import, AI). Period status
-          locks on{" "}
+          Enforced in <code>post_journal</code> for every posting path (UI, API, import, AI). Period
+          status locks on{" "}
           <Link to="/accounting" className="underline">
             Accounting → Periods
           </Link>{" "}
@@ -165,6 +165,13 @@ export function SettingsAccountingLocksPanel({ companyId, canEdit, canLock }: Pr
               disabled={!canLock}
               onChange={(e) => setConversion(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Starting from another system?{" "}
+              <Link to="/accounting" search={{ tab: "conversion" }} className="underline">
+                Enter opening balances
+              </Link>{" "}
+              — it sets this date and posts one balanced opening journal.
+            </p>
           </div>
           <div className="space-y-1">
             <Label>Reason (required, audited)</Label>
@@ -187,7 +194,9 @@ export function SettingsAccountingLocksPanel({ companyId, canEdit, canLock }: Pr
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Accounting preferences</CardTitle>
-          <CardDescription>Warnings and reporting defaults. Do not affect posted journals.</CardDescription>
+          <CardDescription>
+            Warnings and reporting defaults. Do not affect posted journals.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid max-w-xl gap-3">
           <div className="flex items-center justify-between gap-3">
