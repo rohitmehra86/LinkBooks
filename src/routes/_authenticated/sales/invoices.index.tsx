@@ -1,69 +1,86 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { listInvoices } from "@/lib/sales/sales.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { exportInvoicesCsv, listInvoices } from "@/lib/sales/sales.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  ListToolbar,
+  Pager,
+  SortHead,
+  downloadCsv,
+  initialListState,
+  useDebounced,
+  type ListState,
+} from "@/components/sales/ListKit";
+import { money } from "@/components/sales/sales-form-utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
+  TableHead,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_authenticated/sales/invoices/")({
   head: () => ({ meta: [{ title: "Invoices — LinkBooks" }] }),
   component: InvoicesList,
 });
 
+const STATUSES = [
+  { value: "draft", label: "Draft" },
+  { value: "authorised", label: "Authorised" },
+  { value: "partly_paid", label: "Partly paid" },
+  { value: "paid", label: "Paid" },
+  { value: "void", label: "Void" },
+];
+
 function InvoicesList() {
   const { company } = useActiveCompany();
   const fetchInvoices = useServerFn(listInvoices);
-  const [status, setStatus] = useState("all");
-  const [page, setPage] = useState(0);
+  const exportCsv = useServerFn(exportInvoicesCsv);
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
+  const [state, setState] = useState<ListState>(initialListState("invoice_date"));
+  const [overdue, setOverdue] = useState(false);
+  const patch = (p: Partial<ListState>) => setState((s) => ({ ...s, ...p }));
+  const q = useDebounced(state.q);
+
+  const filters = () => ({
+    companyId: companyId!,
+    q,
+    ...(state.status !== "all" ? { status: state.status } : {}),
+    ...(overdue ? { overdue: true } : {}),
+    ...(state.from ? { from: state.from } : {}),
+    ...(state.to ? { to: state.to } : {}),
+    sort: state.sort,
+    dir: state.dir,
+  });
 
   const query = useQuery({
-    queryKey: ["sales-invoices", companyId, status, page],
+    queryKey: ["sales-invoices", companyId, q, state, overdue],
     enabled: Boolean(companyId),
+    placeholderData: keepPreviousData,
     queryFn: () =>
-      fetchInvoices({
-        data: {
-          companyId: companyId!,
-          page,
-          ...(status !== "all" ? { status } : {}),
-        },
-      }),
+      fetchInvoices({ data: { ...filters(), page: state.page, pageSize: state.pageSize } }),
+  });
+  const exporter = useMutation({
+    mutationFn: () => exportCsv({ data: filters() }),
+    onSuccess: (r) => {
+      downloadCsv(r.filename, r.csv);
+      toast.success(`Exported ${r.rowCount} invoices`);
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
   });
 
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
-
-  const rows = (query.data?.rows ?? []) as Array<{
-    id: string;
-    invoice_number: string | null;
-    invoice_date: string;
-    due_date: string;
-    status: string;
-    total_minor: number;
-    amount_paid_minor: number;
-    amount_credited_minor: number;
-    contacts: { name: string } | null;
-  }>;
+  const rows = query.data?.rows ?? [];
+  const today = query.data?.today ?? "";
 
   return (
     <>
@@ -76,23 +93,27 @@ function InvoicesList() {
           </Button>
         }
       />
-
-      <div className="mb-4 flex flex-wrap gap-3">
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(0); }}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="authorised">Authorised</SelectItem>
-            <SelectItem value="partly_paid">Partly paid</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="void">Void</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
+      <ListToolbar
+        state={state}
+        onChange={patch}
+        statuses={STATUSES}
+        searchPlaceholder="Search number, memo or customer"
+        onExport={() => exporter.mutate()}
+        exporting={exporter.isPending}
+        extra={
+          <label className="flex items-center gap-2 pb-2 text-sm">
+            <input
+              type="checkbox"
+              checked={overdue}
+              onChange={(e) => {
+                setOverdue(e.target.checked);
+                patch({ page: 0 });
+              }}
+            />
+            Overdue only
+          </label>
+        }
+      />
       {query.isPending ? (
         <LoadingState />
       ) : query.isError ? (
@@ -104,26 +125,39 @@ function InvoicesList() {
       ) : rows.length === 0 ? (
         <EmptyState
           title="No invoices"
-          description="Create a customer invoice to start."
-          actionLabel="New invoice"
+          description={
+            q || state.status !== "all" || overdue || state.from || state.to
+              ? "No invoices match these filters."
+              : "Create a customer invoice to start."
+          }
         />
       ) : (
         <>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Number</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Due</TableHead>
+                <SortHead label="Number" column="invoice_number" state={state} onChange={patch} />
+                <SortHead label="Date" column="invoice_date" state={state} onChange={patch} />
+                <SortHead label="Due" column="due_date" state={state} onChange={patch} />
                 <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
+                <SortHead label="Status" column="status" state={state} onChange={patch} />
+                <SortHead
+                  label="Total"
+                  column="total_minor"
+                  state={state}
+                  onChange={patch}
+                  className="text-right"
+                />
                 <TableHead className="text-right">Outstanding</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((inv) => {
-                const out =
-                  inv.total_minor - inv.amount_paid_minor - inv.amount_credited_minor;
+                const live = ["authorised", "partly_paid"].includes(inv.status);
+                const out = live
+                  ? inv.total_minor - inv.amount_paid_minor - inv.amount_credited_minor
+                  : 0;
+                const isOverdue = live && out > 0 && inv.due_date < today;
                 return (
                   <TableRow key={inv.id}>
                     <TableCell>
@@ -138,35 +172,20 @@ function InvoicesList() {
                     <TableCell>{inv.invoice_date}</TableCell>
                     <TableCell>{inv.due_date}</TableCell>
                     <TableCell>{inv.contacts?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{inv.status}</Badge>
+                    <TableCell className="space-x-1">
+                      <Badge variant="secondary">{inv.status.replace("_", " ")}</Badge>
+                      {isOverdue ? <Badge variant="destructive">overdue</Badge> : null}
                     </TableCell>
                     <TableCell className="text-right">
-                      {fromMinorUnits(BigInt(Math.max(0, out)), currency)}
+                      {money(inv.total_minor, inv.currency_code)}
                     </TableCell>
+                    <TableCell className="text-right">{money(out, inv.currency_code)}</TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
-          <div className="mt-4 flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={rows.length < (query.data?.pageSize ?? 50)}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
+          <Pager total={query.data?.total ?? 0} state={state} onChange={patch} />
         </>
       )}
     </>

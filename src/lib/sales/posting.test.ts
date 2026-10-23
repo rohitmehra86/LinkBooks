@@ -13,6 +13,13 @@ vi.mock("@/lib/purchases/accounts", () => ({
   requireAccountByCode: (...args: unknown[]) => requireAccountByCode(...args),
 }));
 
+// AR control account is now resolved by system_key first; in these unit tests it resolves via the
+// same mocked code lookup so the posting assertions below are unchanged.
+vi.mock("@/lib/sales/ar-accounts", () => ({
+  resolveArAccount: (supabase: unknown, companyId: string) =>
+    requireAccountByCode(supabase, companyId, "1100"),
+}));
+
 import {
   postInvoiceAuthorisation,
   postCustomerReceipt,

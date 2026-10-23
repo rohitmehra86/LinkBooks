@@ -4,15 +4,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Printer } from "lucide-react";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { getCustomerStatement, listCustomers } from "@/lib/sales/sales.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { listCustomers } from "@/lib/sales/sales.functions";
+import { getCustomerStatement } from "@/lib/sales/sales-statements.functions";
+import { money } from "@/components/sales/sales-form-utils";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/sales/statements")({
   head: () => ({ meta: [{ title: "Customer statements — LinkBooks" }] }),
@@ -22,7 +30,6 @@ export const Route = createFileRoute("/_authenticated/sales/statements")({
 export function Statements() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
   const fetchCustomers = useServerFn(listCustomers);
   const fetchStatement = useServerFn(getCustomerStatement);
   const [contactId, setContactId] = useState("");
@@ -95,93 +102,110 @@ export function Statements() {
         </div>
       </div>
       {!contactId ? (
-        <EmptyState title="Choose a customer" description="Select a customer to view their statement." />
+        <EmptyState
+          title="Choose a customer"
+          description="Select a customer to view their statement."
+        />
       ) : stmtQ.isPending ? (
         <LoadingState />
       ) : stmtQ.isError ? (
         <ErrorState title="Could not load statement" description={friendlyAuthError(stmtQ.error)} />
       ) : (
-        <div className="space-y-4 print:space-y-2">
+        <div className="space-y-6 print:space-y-3">
           <div>
             <h2 className="text-lg font-semibold">{company.name ?? "Organisation"}</h2>
-            <p className="text-sm text-muted-foreground">Statement for {customerName}</p>
+            <p className="text-sm text-muted-foreground">
+              Statement for {customerName}
+              {stmtQ.data.from || stmtQ.data.to
+                ? ` · ${stmtQ.data.from ?? "start"} to ${stmtQ.data.to ?? "today"}`
+                : ""}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <span>
-              Invoice outstanding{" "}
-              <strong>{fromMinorUnits(stmtQ.data!.outstandingMinor, currency)}</strong>
-            </span>
-            <span>
-              Unapplied credits{" "}
-              <strong>
-                {fromMinorUnits((stmtQ.data as { unappliedCreditMinor?: number }).unappliedCreditMinor ?? 0, currency)}
-              </strong>
-            </span>
-            <span>
-              Unapplied receipts{" "}
-              <strong>
-                {fromMinorUnits((stmtQ.data as { unappliedReceiptMinor?: number }).unappliedReceiptMinor ?? 0, currency)}
-              </strong>
-            </span>
-            <span>
-              Closing (activity){" "}
-              <strong>
-                {fromMinorUnits((stmtQ.data as { closingBalanceMinor?: number }).closingBalanceMinor ?? 0, currency)}
-              </strong>
-            </span>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead className="text-right">Debit</TableHead>
-                <TableHead className="text-right">Credit</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(
-                (stmtQ.data as {
-                  lines?: Array<{
-                    date: string;
-                    type: string;
-                    id: string;
-                    reference: string | null;
-                    debit_minor: number;
-                    credit_minor: number;
-                    balance_minor: number;
-                  }>;
-                }).lines ?? []
-              ).map((l) => (
-                <TableRow key={`${l.type}-${l.id}`}>
-                  <TableCell>{l.date}</TableCell>
-                  <TableCell className="capitalize">{l.type.replace("_", " ")}</TableCell>
-                  <TableCell>{l.reference ?? l.id.slice(0, 8)}</TableCell>
-                  <TableCell className="text-right">
-                    {l.debit_minor ? fromMinorUnits(l.debit_minor, currency) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {l.credit_minor ? fromMinorUnits(l.credit_minor, currency) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {fromMinorUnits(l.balance_minor, currency)}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(stmtQ.data as { lines?: unknown[] }).lines?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    No posted activity in this period.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
+          {stmtQ.data.currencies.length === 0 ? (
+            <EmptyState title="No activity" description="No posted activity for this customer." />
+          ) : null}
+          {stmtQ.data.currencies.map((c) => {
+            const pos = stmtQ.data.position.find((p) => p.currency_code === c.currency_code);
+            return (
+              <section key={c.currency_code} className="space-y-2">
+                <h3 className="text-sm font-medium">{c.currency_code}</h3>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <span>
+                    Opening balance{" "}
+                    <strong>{money(c.opening_balance_minor, c.currency_code)}</strong>
+                  </span>
+                  <span>
+                    Closing balance{" "}
+                    <strong>{money(c.closing_balance_minor, c.currency_code)}</strong>
+                  </span>
+                  {pos ? (
+                    <>
+                      <span>
+                        Invoices outstanding today{" "}
+                        <strong>{money(pos.outstandingMinor, c.currency_code)}</strong>
+                      </span>
+                      <span>
+                        Unapplied credits{" "}
+                        <strong>{money(pos.unappliedCreditMinor, c.currency_code)}</strong>
+                      </span>
+                      <span>
+                        Unallocated receipts{" "}
+                        <strong>{money(pos.unappliedReceiptMinor, c.currency_code)}</strong>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Debit</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-muted-foreground">
+                        Opening balance
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {money(c.opening_balance_minor, c.currency_code)}
+                      </TableCell>
+                    </TableRow>
+                    {c.lines.map((l) => (
+                      <TableRow key={`${l.type}-${l.id}-${l.date}`}>
+                        <TableCell>{l.date}</TableCell>
+                        <TableCell className="capitalize">{l.type.replace("_", " ")}</TableCell>
+                        <TableCell>{l.reference ?? l.id.slice(0, 8)}</TableCell>
+                        <TableCell className="text-right">
+                          {l.debit_minor ? money(l.debit_minor, c.currency_code) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {l.credit_minor ? money(l.credit_minor, c.currency_code) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money(l.balance_minor, c.currency_code)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {c.lines.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          No posted activity in this period.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </section>
+            );
+          })}
           <p className="text-xs text-muted-foreground">
-            Opening balance for activity-only statements starts at zero for the selected window.
-            Outstanding is derived from open invoices; unapplied amounts are reported separately.
+            Opening balance is everything owed before the start date. Each currency is shown on its
+            own and never added to another.
           </p>
         </div>
       )}

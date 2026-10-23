@@ -2,8 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { getSalesOverview, listInvoices } from "@/lib/sales/sales.functions";
-import { fromMinorUnits } from "@/lib/accounting/money";
+import { listInvoices } from "@/lib/sales/sales.functions";
+import { getSalesOverview } from "@/lib/sales/sales-statements.functions";
+import { money } from "@/components/sales/sales-form-utils";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { StatCard } from "@/components/common/stat-card";
@@ -31,7 +32,6 @@ export const Route = createFileRoute("/_authenticated/sales/")({
 function SalesOverview() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
-  const currency = company?.base_currency ?? "GBP";
   const fetchOverview = useServerFn(getSalesOverview);
   const fetchInvoices = useServerFn(listInvoices);
 
@@ -43,7 +43,10 @@ function SalesOverview() {
   const invoicesQ = useQuery({
     queryKey: ["sales-invoices-recent", companyId],
     enabled: Boolean(companyId),
-    queryFn: () => fetchInvoices({ data: { companyId: companyId!, page: 0 } }),
+    queryFn: () =>
+      fetchInvoices({
+        data: { companyId: companyId!, page: 0, pageSize: 10, sort: "invoice_date", dir: "desc" },
+      }),
   });
 
   if (!companyId) return <EmptyState title="No organisation" description="Select a company." />;
@@ -74,18 +77,32 @@ function SalesOverview() {
           onRetry={() => overviewQ.refetch()}
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StatCard label="Draft" value={String(overviewQ.data.draftCount)} hint="Draft invoices" />
-          <StatCard
-            label="Awaiting payment"
-            value={fromMinorUnits(BigInt(overviewQ.data.awaitingMinor), currency)}
-            hint={currency}
-          />
-          <StatCard
-            label="Overdue"
-            value={fromMinorUnits(BigInt(overviewQ.data.overdueMinor), currency)}
-            hint={currency}
-          />
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard
+              label="Draft"
+              value={String(overviewQ.data.draftCount)}
+              hint="Draft invoices"
+            />
+          </div>
+          {overviewQ.data.byCurrency.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No invoices awaiting payment.</p>
+          ) : (
+            overviewQ.data.byCurrency.map((c) => (
+              <div key={c.currency_code} className="grid gap-4 sm:grid-cols-3">
+                <StatCard
+                  label="Awaiting payment"
+                  value={money(c.awaitingMinor, c.currency_code)}
+                  hint={c.currency_code}
+                />
+                <StatCard
+                  label="Overdue"
+                  value={money(c.overdueMinor, c.currency_code)}
+                  hint={`${c.currency_code} · ${c.overdueCount} invoice${c.overdueCount === 1 ? "" : "s"}`}
+                />
+              </div>
+            ))
+          )}
         </div>
       )}
 
@@ -93,7 +110,10 @@ function SalesOverview() {
       {invoicesQ.isPending ? (
         <LoadingState />
       ) : invoicesQ.isError ? (
-        <ErrorState title="Could not load invoices" description={friendlyAuthError(invoicesQ.error)} />
+        <ErrorState
+          title="Could not load invoices"
+          description={friendlyAuthError(invoicesQ.error)}
+        />
       ) : (invoicesQ.data?.rows ?? []).length === 0 ? (
         <EmptyState
           title="No invoices yet"
@@ -111,16 +131,14 @@ function SalesOverview() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(invoicesQ.data!.rows as Array<{
-              id: string;
-              invoice_date: string;
-              status: string;
-              total_minor: number;
-              contacts: { name: string } | null;
-            }>).slice(0, 10).map((inv) => (
+            {invoicesQ.data!.rows.slice(0, 10).map((inv) => (
               <TableRow key={inv.id}>
                 <TableCell>
-                  <Link to="/sales/invoices/$invoiceId" params={{ invoiceId: inv.id }} className="underline-offset-2 hover:underline">
+                  <Link
+                    to="/sales/invoices/$invoiceId"
+                    params={{ invoiceId: inv.id }}
+                    className="underline-offset-2 hover:underline"
+                  >
                     {inv.invoice_date}
                   </Link>
                 </TableCell>
@@ -129,7 +147,7 @@ function SalesOverview() {
                   <Badge variant="secondary">{inv.status}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  {fromMinorUnits(BigInt(inv.total_minor), currency)}
+                  {money(inv.total_minor, inv.currency_code)}
                 </TableCell>
               </TableRow>
             ))}
