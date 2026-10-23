@@ -4,7 +4,7 @@ import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-compa
 import { assertUuid } from "@/lib/company-validation";
 import { isMissingFunctionError } from "@/lib/purchases/db-safety";
 import { aggregateOutstanding } from "@/lib/contacts/balances";
-import { buildIlikeOr } from "@/lib/purchases/search-terms";
+import { buildIlikeOr, escapeLikeTerm } from "@/lib/purchases/search-terms";
 import {
   buildContactsCsv,
   contactImportTemplateCsv,
@@ -272,7 +272,7 @@ export const upsertContact = createServerFn({ method: "POST" })
       .select("id, name" as never)
       .eq("company_id" as never, data.companyId as never)
       .eq("is_active" as never, true as never)
-      .ilike("name" as never, data.name as never);
+      .ilike("name" as never, escapeLikeTerm(data.name) as never);
     const conflict = ((dup ?? []) as Array<{ id: string; name: string }>).find(
       (c) => c.name.toLowerCase() === data.name.toLowerCase() && c.id !== data.id,
     );

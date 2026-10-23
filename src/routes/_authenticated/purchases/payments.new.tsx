@@ -266,7 +266,7 @@ export function NewPayment() {
             options={bankOptions}
             value={bankAccountId}
             onChange={setBankAccountId}
-            placeholder="Deposit from"
+            placeholder="Paid from (bank or cash account)"
             allowClear={false}
           />
         </div>

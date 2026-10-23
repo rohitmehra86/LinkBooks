@@ -9,7 +9,7 @@ import {
   deriveCreditNoteStatus,
   nextBillStatus,
 } from "@/lib/purchases/status";
-import { buildIlikeOr, ilikePattern } from "@/lib/purchases/search-terms";
+import { buildIlikeOr, escapeLikeTerm, ilikePattern } from "@/lib/purchases/search-terms";
 import { isBankOrCashAccount, type AccountCandidate } from "@/lib/purchases/bank-account-rules";
 import { dueDateFromBillDate, impliedDiscountMinor } from "@/lib/purchases/po-convert";
 import { describeBillEdits, type BillEditSnapshot } from "@/lib/purchases/bill-history";
@@ -1040,7 +1040,10 @@ export const checkDuplicateSupplierBill = createServerFn({ method: "GET" })
       .eq("company_id" as never, data.companyId as never)
       .eq("contact_id" as never, data.contactId as never)
       .neq("status" as never, "void" as never)
-      .ilike("supplier_invoice_number" as never, data.supplierInvoiceNumber as never)
+      .ilike(
+        "supplier_invoice_number" as never,
+        escapeLikeTerm(data.supplierInvoiceNumber) as never,
+      )
       .limit(5);
     if (data.excludeBillId) q = q.neq("id" as never, data.excludeBillId as never);
     const { data: rows, error } = await q;

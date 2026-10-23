@@ -783,7 +783,11 @@ function BillDocumentWorkspace() {
                     Make a payment
                   </Button>
                 ) : null}
-                {bill.status !== "void" && can("purchases.authorise") ? (
+                {bill.status !== "void" &&
+                bill.status !== "paid" &&
+                bill.amount_paid_minor === 0 &&
+                bill.amount_credited_minor === 0 &&
+                can("purchases.authorise") ? (
                   <Button
                     size="sm"
                     variant="destructive"
