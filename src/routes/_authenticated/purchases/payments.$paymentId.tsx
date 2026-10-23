@@ -1,15 +1,25 @@
+import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
-import { getSupplierPayment, reverseSupplierPayment } from "@/lib/purchases/purchases.functions";
+import {
+  allocateSupplierPayment,
+  getSupplierPayment,
+  listBills,
+  reverseSupplierPayment,
+} from "@/lib/purchases/purchases.functions";
+import { useCan } from "@/hooks/use-can";
+import { minorOrZero, parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { formatHistoryDay } from "@/lib/purchases/bill-history";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -36,12 +46,87 @@ function PaymentDocument() {
   const queryClient = useQueryClient();
   const fetchPayment = useServerFn(getSupplierPayment);
   const reversePayment = useServerFn(reverseSupplierPayment);
+  const fetchBills = useServerFn(listBills);
+  const doAllocate = useServerFn(allocateSupplierPayment);
+  const { can } = useCan();
+  const [allocs, setAllocs] = useState<Record<string, string>>({});
   const companyId = company?.id;
 
   const query = useQuery({
     queryKey: ["supplier-payment", companyId, paymentId],
     enabled: Boolean(companyId),
     queryFn: () => fetchPayment({ data: { companyId: companyId!, paymentId } }),
+  });
+
+  const pay = query.data as
+    | { contact_id: string; currency_code: string; status: string; unallocated_minor: number }
+    | undefined;
+  const canAllocate = Boolean(pay && pay.status === "paid" && pay.unallocated_minor > 0);
+  const payCurrency = (pay?.currency_code || company?.base_currency || "GBP").toUpperCase();
+
+  // Open bills in the payment's currency, oldest due date first.
+  const billsQ = useQuery({
+    queryKey: ["bills-for-payment", companyId, pay?.contact_id, payCurrency],
+    enabled: Boolean(companyId && pay?.contact_id && canAllocate),
+    queryFn: () =>
+      fetchBills({
+        data: {
+          companyId: companyId!,
+          contactId: pay!.contact_id,
+          tab: "to_pay",
+          currencyCode: payCurrency,
+          sortBy: "due_date",
+          sortDir: "asc",
+          limit: 100,
+        },
+      }),
+  });
+  const openBills = useMemo(() => {
+    const rows = ((billsQ.data as { rows?: unknown[] } | undefined)?.rows ?? []) as Array<{
+      id: string;
+      total_minor: number;
+      amount_paid_minor: number;
+      amount_credited_minor: number;
+      supplier_invoice_number: string | null;
+      bill_number: string | null;
+      due_date: string;
+    }>;
+    return rows
+      .map((b) => ({
+        ...b,
+        outstanding: b.total_minor - b.amount_paid_minor - b.amount_credited_minor,
+      }))
+      .filter((b) => b.outstanding > 0);
+  }, [billsQ.data]);
+  const unallocated = pay?.unallocated_minor ?? 0;
+  const allocInvalid = Object.values(allocs).some((v) => tryParseMinor(v || "0", payCurrency) === null);
+  const allocTotal = Object.values(allocs).reduce(
+    (n, v) => n + Number(minorOrZero(v || "0", payCurrency)),
+    0,
+  );
+
+  const allocateM = useMutation({
+    mutationFn: () =>
+      doAllocate({
+        data: {
+          companyId: companyId!,
+          paymentId,
+          allocations: Object.entries(allocs)
+            .map(([billId, amt]) => ({
+              billId,
+              amountMinor: Number(parseMinorOrThrow(amt || "0", payCurrency, "Allocation")),
+            }))
+            .filter((a) => a.amountMinor > 0),
+        },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["supplier-payment", companyId, paymentId] });
+      await queryClient.invalidateQueries({ queryKey: ["bills", companyId] });
+      await queryClient.invalidateQueries({ queryKey: ["bills-for-payment", companyId] });
+      setAllocs({});
+      toast.success("Payment allocated to bills");
+    },
+    onError: (error) => toast.error(friendlyAuthError(error)),
   });
 
   const reverseM = useMutation({
@@ -78,7 +163,7 @@ function PaymentDocument() {
         title={payment.supplier_name ?? "Supplier payment"}
         description={`${formatHistoryDay(payment.payment_date)} · ${fromMinorUnits(BigInt(payment.amount_minor), currency)} ${currency}`}
         actions={
-          payment.status !== "void" && payment.posted_journal_id ? (
+          payment.status !== "void" && payment.posted_journal_id && can("purchases.payment") ? (
             <Button
               size="sm"
               variant="outline"
@@ -143,6 +228,79 @@ function PaymentDocument() {
           </div>
         </dl>
       </section>
+
+      {canAllocate && can("purchases.payment") ? (
+        <section className="space-y-3 rounded-lg border border-border bg-background p-4">
+          <h2 className="text-sm font-semibold">
+            Allocate the unallocated {fromMinorUnits(BigInt(unallocated), payCurrency)} {payCurrency}
+          </h2>
+          {openBills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No open {payCurrency} bills for this supplier.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {openBills.map((b) => {
+                const checked = b.id in allocs;
+                return (
+                  <li key={b.id} className="flex flex-wrap items-center gap-3 rounded border px-3 py-2 text-sm">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) =>
+                        setAllocs((prev) => {
+                          const next = { ...prev };
+                          if (!v) {
+                            delete next[b.id];
+                            return next;
+                          }
+                          const already = Object.entries(prev).reduce(
+                            (n, [id, amt]) =>
+                              id === b.id ? n : n + Number(minorOrZero(amt || "0", payCurrency)),
+                            0,
+                          );
+                          next[b.id] = fromMinorUnits(
+                            BigInt(Math.max(0, Math.min(b.outstanding, unallocated - already))),
+                            payCurrency,
+                          );
+                          return next;
+                        })
+                      }
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p>{b.supplier_invoice_number ?? b.bill_number ?? b.id.slice(0, 8)}</p>
+                      <p className="text-muted-foreground">
+                        Due {b.due_date} · Outstanding{" "}
+                        {fromMinorUnits(BigInt(b.outstanding), payCurrency)}
+                      </p>
+                    </div>
+                    {checked ? (
+                      <Input
+                        className="w-28"
+                        inputMode="decimal"
+                        value={allocs[b.id] ?? ""}
+                        onChange={(e) => setAllocs((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {allocTotal > unallocated ? (
+            <p className="text-xs text-destructive">
+              Allocations exceed the unallocated amount by{" "}
+              {fromMinorUnits(BigInt(allocTotal - unallocated), payCurrency)}.
+            </p>
+          ) : null}
+          <Button
+            size="sm"
+            disabled={allocateM.isPending || allocInvalid || allocTotal <= 0 || allocTotal > unallocated}
+            onClick={() => allocateM.mutate()}
+          >
+            Allocate
+          </Button>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-border bg-background p-4">
         <h2 className="mb-3 text-sm font-semibold">Allocated to bills</h2>
