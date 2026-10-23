@@ -27,7 +27,7 @@ export async function ensureV2ForLegacyRecurringBill(
       .maybeSingle();
     if (sched) {
       return {
-        scheduleId: (sched as { id: string }).id,
+        scheduleId: (sched as unknown as { id: string }).id,
         templateVersionId: row.current_version_id,
       };
     }
@@ -41,7 +41,7 @@ export async function ensureV2ForLegacyRecurringBill(
   if (rbErr) throw new Error(rbErr.message);
   if (!rb) throw new Error("Recurring bill not found");
 
-  const bill = rb as {
+  const bill = rb as unknown as {
     company_id: string;
     contact_id: string;
     name: string;
@@ -129,13 +129,13 @@ export async function patchV2ScheduleFromRecurringBill(
 ): Promise<void> {
   const { data: rb, error: rbErr } = await supabase
     .from("recurring_bills" as never)
-    .select("template, auto_authorise, is_active" as never)
+    .select("company_id, created_by, template, auto_authorise, is_active" as never)
     .eq("id" as never, recurringBillId as never)
     .maybeSingle();
   if (rbErr) throw new Error(rbErr.message);
   if (!rb) return;
 
-  const template = (rb as { template: { scheduleOptions?: unknown } }).template ?? {};
+  const template = (rb as unknown as { template: { scheduleOptions?: unknown } }).template ?? {};
   let scheduleOptions;
   try {
     scheduleOptions = parseScheduleOptions(template.scheduleOptions ?? {});
@@ -150,7 +150,13 @@ export async function patchV2ScheduleFromRecurringBill(
     .maybeSingle();
   if (!tpl) return;
 
-  const bill = rb as { auto_authorise: boolean; is_active: boolean };
+  const bill = rb as unknown as {
+    company_id: string;
+    created_by: string;
+    auto_authorise: boolean;
+    is_active: boolean;
+    template: unknown;
+  };
   await supabase
     .from("recurring_schedules" as never)
     .update({
@@ -163,5 +169,39 @@ export async function patchV2ScheduleFromRecurringBill(
       is_paused: !bill.is_active,
       updated_at: new Date().toISOString(),
     } as never)
-    .eq("template_id" as never, (tpl as { id: string }).id as never);
+    .eq("template_id" as never, (tpl as unknown as { id: string }).id as never);
+
+  const templateId = (tpl as unknown as { id: string }).id;
+  const payload = {
+    source: "legacy_recurring_bill",
+    template: bill.template,
+    auto_authorise: bill.auto_authorise,
+    is_active: bill.is_active,
+  };
+  const { data: latest } = await supabase
+    .from("recurring_template_versions" as never)
+    .select("version_no, payload" as never)
+    .eq("template_id" as never, templateId as never)
+    .order("version_no" as never, { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const previous = latest as { version_no: number; payload: unknown } | null;
+  if (previous && JSON.stringify(previous.payload) === JSON.stringify(payload)) return;
+
+  const { data: version, error: vErr } = await supabase
+    .from("recurring_template_versions" as never)
+    .insert({
+      company_id: bill.company_id,
+      template_id: templateId,
+      version_no: Number(previous?.version_no ?? 0) + 1,
+      payload,
+      created_by: bill.created_by,
+    } as never)
+    .select("id")
+    .single();
+  if (vErr) throw new Error(vErr.message);
+  await supabase
+    .from("recurring_templates" as never)
+    .update({ current_version_id: (version as { id: string }).id } as never)
+    .eq("id" as never, templateId as never);
 }

@@ -212,8 +212,8 @@ function TaxConfigPage() {
       await qc.invalidateQueries({ queryKey: ["tax-codes", companyId] });
       await qc.invalidateQueries({ queryKey: ["tax-settings", companyId] });
       const detail =
-        res.result && typeof res.result === "object"
-          ? ` Added ${(res.result as { added_rates?: number }).added_rates ?? 0} rates, ${(res.result as { added_codes?: number }).added_codes ?? 0} codes.`
+        res.result
+          ? ` Added ${res.result.added_rates ?? 0} rates, ${res.result.added_codes ?? 0} codes.`
           : "";
       toast.success(`Pack applied (idempotent — existing codes kept).${detail}`);
     },

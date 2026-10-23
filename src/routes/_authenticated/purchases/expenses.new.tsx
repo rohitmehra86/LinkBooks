@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_authenticated/purchases/expenses/new")({
   component: NewExpense,
 });
 
-function NewExpense() {
+export function NewExpense() {
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

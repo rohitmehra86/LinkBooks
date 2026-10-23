@@ -9,25 +9,20 @@ import {
 } from "@/lib/settings/dimension-helpers";
 
 async function audit(
-  supabase: {
-    rpc: (
-      fn: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ error: { message: string } | null }>;
-  },
+  supabase: Parameters<typeof assertCompanyPermission>[0],
   companyId: string,
   action: string,
   entityType: string,
   entityId: string | null,
   details: Record<string, unknown>,
 ) {
-  await supabase.rpc("record_audit_event", {
+  await supabase.rpc("record_audit_event" as never, {
     _company_id: companyId,
     _action: action,
     _entity_type: entityType,
     _entity_id: entityId,
     _details: details,
-  });
+  } as never);
 }
 
 export const listTrackingDimensions = createServerFn({ method: "GET" })

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/sales/quotes/new")({
   component: NewQuote,
 });
 
-function NewQuote() {
+export function NewQuote() {
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const qc = useQueryClient();

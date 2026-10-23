@@ -309,9 +309,14 @@ export const seedTaxPack = createServerFn({ method: "POST" })
         _company_id: data.companyId,
       } as never);
       if (e2) throw new Error(error.message);
-      return { ok: true, result: null, fallback: true as const };
+      return { ok: true as const, result: null, fallback: true as const };
     }
-    return { ok: true, result, fallback: false as const };
+    const packed: unknown = result;
+    const shaped =
+      packed && typeof packed === "object"
+        ? (packed as { added_rates?: number; added_codes?: number })
+        : null;
+    return { ok: true as const, result: shaped, fallback: false as const };
   });
 
 export const listTaxCountryPacks = createServerFn({ method: "GET" })

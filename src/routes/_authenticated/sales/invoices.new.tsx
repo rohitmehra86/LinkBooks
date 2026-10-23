@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/sales/invoices/new")({
   component: NewInvoice,
 });
 
-function NewInvoice() {
+export function NewInvoice() {
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

@@ -58,7 +58,7 @@ export const Route = createFileRoute("/_authenticated/products-services")({
   component: ProductsPage,
 });
 
-function ProductsPage() {
+export function ProductsPage() {
   const { company, isPending } = useActiveCompany();
   if (isPending) return <LoadingState />;
   if (!company) {

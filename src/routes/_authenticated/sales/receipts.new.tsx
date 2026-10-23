@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/sales/receipts/new")({
 
 type AllocRow = { invoiceId: string; amount: string; outstanding: number; label: string };
 
-function NewReceipt() {
+export function NewReceipt() {
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const qc = useQueryClient();

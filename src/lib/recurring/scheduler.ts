@@ -42,7 +42,7 @@ export async function runDuePurchaseBillSchedules(
 
   for (const row of dueRows ?? []) {
     stats.examined += 1;
-    const sched = row as { id: string; company_id: string; template_id: string };
+    const sched = row as unknown as { id: string; company_id: string; template_id: string };
     const { data: tpl, error: tErr } = await supabase
       .from("recurring_templates" as never)
       .select(

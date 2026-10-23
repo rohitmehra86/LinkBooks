@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_authenticated/purchases/credit-notes/new
   component: NewCreditNote,
 });
 
-function NewCreditNote() {
+export function NewCreditNote() {
   const { company } = useActiveCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

@@ -19,11 +19,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RecurringBillOverlay } from "@/components/recurring/RecurringBillOverlay";
 import { NewRecurringBillDialog } from "@/components/recurring/NewRecurringBillDialog";
 import {
+  archiveRecurringBill,
   duplicateRecurringBill,
   getRecurringForecast,
   listRecurringExceptions,
   listRecurringWorkspace,
 } from "@/lib/recurring/recurring-api.functions";
+import { generateRecurringBill } from "@/lib/purchases/purchases.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +36,11 @@ const searchSchema = z.object({
   view: z.enum(["schedules", "exceptions", "forecast"]).optional(),
   q: z.string().optional(),
   page: z.coerce.number().optional(),
+  status: z.enum(["active", "paused", "error"]).optional(),
+  frequency: z.enum(["weekly", "monthly", "quarterly", "yearly"]).optional(),
+  supplier: z.string().optional(),
+  nextFrom: z.string().optional(),
+  nextTo: z.string().optional(),
 });
 
 export const Route = createFileRoute("/_authenticated/purchases/recurring")({
@@ -57,9 +64,21 @@ function RecurringTransactionsPage() {
   const fetchExceptions = useServerFn(listRecurringExceptions);
   const fetchForecast = useServerFn(getRecurringForecast);
   const dup = useServerFn(duplicateRecurringBill);
+  const archive = useServerFn(archiveRecurringBill);
+  const generate = useServerFn(generateRecurringBill);
 
   const workspaceQ = useQuery({
-    queryKey: ["recurring-workspace", companyId, qDraft, page],
+    queryKey: [
+      "recurring-workspace",
+      companyId,
+      qDraft,
+      page,
+      search.status,
+      search.frequency,
+      search.supplier,
+      search.nextFrom,
+      search.nextTo,
+    ],
     enabled: Boolean(companyId) && view === "schedules",
     queryFn: () =>
       fetchWorkspace({
@@ -69,6 +88,11 @@ function RecurringTransactionsPage() {
           q: qDraft,
           page,
           pageSize: 25,
+          ...(search.status ? { status: search.status } : {}),
+          ...(search.frequency ? { frequency: search.frequency } : {}),
+          ...(search.supplier ? { supplier: search.supplier } : {}),
+          ...(search.nextFrom ? { nextFrom: search.nextFrom } : {}),
+          ...(search.nextTo ? { nextTo: search.nextTo } : {}),
         },
       }),
   });
@@ -92,6 +116,26 @@ function RecurringTransactionsPage() {
       toast.success("Duplicated");
       await qc.invalidateQueries({ queryKey: ["recurring-workspace", companyId] });
       navigate({ search: (prev) => ({ ...prev, id: r.id, tab: "details" }) });
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const archiveM = useMutation({
+    mutationFn: (recurringBillId: string) =>
+      archive({ data: { companyId: companyId!, recurringBillId } }),
+    onSuccess: async () => {
+      toast.success("Archived. Generated bills are unchanged.");
+      await qc.invalidateQueries({ queryKey: ["recurring-workspace", companyId] });
+    },
+    onError: (e) => toast.error(friendlyAuthError(e)),
+  });
+
+  const retryM = useMutation({
+    mutationFn: (recurringBillId: string) =>
+      generate({ data: { companyId: companyId!, recurringId: recurringBillId } }),
+    onSuccess: async () => {
+      toast.success("Retry submitted");
+      await qc.invalidateQueries({ queryKey: ["recurring-exceptions", companyId] });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -145,6 +189,73 @@ function RecurringTransactionsPage() {
               placeholder="Search schedules…"
               value={qDraft}
               onChange={(e) => setQDraft(e.target.value)}
+            />
+            <Input
+              className="max-w-[10rem]"
+              placeholder="Supplier"
+              defaultValue={search.supplier ?? ""}
+              onBlur={(e) =>
+                navigate({
+                  search: (prev) => ({ ...prev, supplier: e.target.value || undefined, page: 0 }),
+                })
+              }
+            />
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={search.status ?? ""}
+              onChange={(e) =>
+                navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    status: (e.target.value || undefined) as typeof search.status,
+                    page: 0,
+                  }),
+                })
+              }
+            >
+              <option value="">Any status</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="error">Schedule error</option>
+            </select>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={search.frequency ?? ""}
+              onChange={(e) =>
+                navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    frequency: (e.target.value || undefined) as typeof search.frequency,
+                    page: 0,
+                  }),
+                })
+              }
+            >
+              <option value="">Any frequency</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <Input
+              className="max-w-[10rem]"
+              type="date"
+              value={search.nextFrom ?? ""}
+              onChange={(e) =>
+                navigate({
+                  search: (prev) => ({ ...prev, nextFrom: e.target.value || undefined, page: 0 }),
+                })
+              }
+            />
+            <Input
+              className="max-w-[10rem]"
+              type="date"
+              value={search.nextTo ?? ""}
+              onChange={(e) =>
+                navigate({
+                  search: (prev) => ({ ...prev, nextTo: e.target.value || undefined, page: 0 }),
+                })
+              }
             />
             <Button variant="default" size="sm" onClick={() => setCreateOpen(true)}>
               New recurring bill
@@ -231,6 +342,17 @@ function RecurringTransactionsPage() {
                             >
                               Duplicate
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!window.confirm("Archive this template? Generated bills stay in Purchases.")) return;
+                                archiveM.mutate(legacyId);
+                              }}
+                            >
+                              Archive
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
@@ -275,6 +397,7 @@ function RecurringTransactionsPage() {
                   <TableHead>Template</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Error</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,14 +407,35 @@ function RecurringTransactionsPage() {
                     scheduled_date: string;
                     status: string;
                     error_message: string | null;
-                  }) => (
+                    recurring_schedules?:
+                      | { recurring_templates?: { name?: string; legacy_recurring_bill_id?: string | null } }
+                      | Array<{ recurring_templates?: { name?: string; legacy_recurring_bill_id?: string | null } }>;
+                  }) => {
+                    const sched = Array.isArray(r.recurring_schedules)
+                      ? r.recurring_schedules[0]
+                      : r.recurring_schedules;
+                    const legacyId = sched?.recurring_templates?.legacy_recurring_bill_id;
+                    return (
                     <TableRow key={r.id}>
                       <TableCell>{r.scheduled_date}</TableCell>
-                      <TableCell>—</TableCell>
+                      <TableCell>{sched?.recurring_templates?.name ?? "—"}</TableCell>
                       <TableCell>{r.status}</TableCell>
                       <TableCell>{r.error_message ?? "—"}</TableCell>
+                      <TableCell>
+                        {r.status === "failed" && legacyId ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={retryM.isPending}
+                            onClick={() => retryM.mutate(legacyId)}
+                          >
+                            Retry
+                          </Button>
+                        ) : null}
+                      </TableCell>
                     </TableRow>
-                  ),
+                    );
+                  },
                 )}
               </TableBody>
             </Table>

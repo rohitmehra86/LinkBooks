@@ -3,6 +3,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import { previewOccurrences, nextOccurrenceAfter } from "@/lib/recurring/recurrence-engine";
+import { previewOccurrencesFromSpec } from "@/lib/recurring/recurrence-rules";
+import { parseScheduleOptions } from "@/lib/recurring/recurring-schedule-options";
 import { legacyFrequencyToRrule } from "@/lib/recurring/legacy-frequency";
 import type { LegacyRecurrenceFrequency } from "@/lib/recurring/legacy-frequency";
 
@@ -19,12 +21,22 @@ export const listRecurringWorkspace = createServerFn({ method: "GET" })
       q?: string;
       page?: number;
       pageSize?: number;
+      status?: "active" | "paused" | "error";
+      frequency?: LegacyRecurrenceFrequency;
+      supplier?: string;
+      nextFrom?: string;
+      nextTo?: string;
     }) => ({
       companyId: assertUuid(input.companyId),
       documentType: input.documentType ?? "purchase_bill",
       q: (input.q ?? "").trim().slice(0, 100),
       page: Math.max(0, Math.floor(Number(input.page ?? 0))),
       pageSize: Math.min(100, Math.max(10, Math.floor(Number(input.pageSize ?? 25)))),
+      status: input.status,
+      frequency: input.frequency,
+      supplier: (input.supplier ?? "").trim().slice(0, 100),
+      nextFrom: input.nextFrom && /^\d{4}-\d{2}-\d{2}$/.test(input.nextFrom) ? input.nextFrom : undefined,
+      nextTo: input.nextTo && /^\d{4}-\d{2}-\d{2}$/.test(input.nextTo) ? input.nextTo : undefined,
     }),
   )
   .handler(async ({ data, context }) => {
@@ -32,10 +44,15 @@ export const listRecurringWorkspace = createServerFn({ method: "GET" })
     const from = data.page * data.pageSize;
     const to = from + data.pageSize - 1;
 
+    const scheduleFiltered = Boolean(
+      data.status || data.frequency || data.nextFrom || data.nextTo,
+    );
+    const schedules = scheduleFiltered ? "recurring_schedules!inner" : "recurring_schedules";
+    const contacts = data.supplier ? "contacts!inner" : "contacts";
     let q = context.supabase
       .from("recurring_templates" as never)
       .select(
-        "id, name, document_type, is_active, currency_code, contact_id, legacy_recurring_bill_id, legacy_sales_recurring_invoice_id, contacts(name), recurring_schedules(id, next_occurrence_date, mode, auto_authorise, is_paused, last_error, frequency_legacy)" as never,
+        `id, name, document_type, is_active, currency_code, contact_id, legacy_recurring_bill_id, legacy_sales_recurring_invoice_id, ${contacts}(name), ${schedules}(id, next_occurrence_date, mode, auto_authorise, is_paused, last_error, frequency_legacy)` as never,
         { count: "exact" },
       )
       .eq("company_id" as never, data.companyId as never)
@@ -46,6 +63,25 @@ export const listRecurringWorkspace = createServerFn({ method: "GET" })
 
     if (data.q) {
       q = q.ilike("name" as never, `%${data.q}%` as never);
+    }
+    if (data.supplier) {
+      q = q.ilike("contacts.name" as never, `%${data.supplier}%` as never);
+    }
+    if (data.frequency) {
+      q = q.eq("recurring_schedules.frequency_legacy" as never, data.frequency as never);
+    }
+    if (data.status === "paused") {
+      q = q.eq("recurring_schedules.is_paused" as never, true as never);
+    } else if (data.status === "active") {
+      q = q.eq("is_active" as never, true as never).eq("recurring_schedules.is_paused" as never, false as never);
+    } else if (data.status === "error") {
+      q = q.not("recurring_schedules.last_error" as never, "is", null as never);
+    }
+    if (data.nextFrom) {
+      q = q.gte("recurring_schedules.next_occurrence_date" as never, data.nextFrom as never);
+    }
+    if (data.nextTo) {
+      q = q.lte("recurring_schedules.next_occurrence_date" as never, data.nextTo as never);
     }
 
     const { data: rows, error, count } = await q;
@@ -111,11 +147,11 @@ export const updateRecurringBillWorkspace = createServerFn({ method: "POST" })
     }
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (data.name) patch.name = data.name;
-    if (data.nextDueDate) patch.next_due_date = data.nextDueDate;
-    if (data.frequency) patch.frequency = data.frequency;
-    if (data.autoAuthorise !== undefined) patch.auto_authorise = data.autoAuthorise;
-    if (data.isActive !== undefined) patch.is_active = data.isActive;
+    if (data.name) patch["name"] = data.name;
+    if (data.nextDueDate) patch["next_due_date"] = data.nextDueDate;
+    if (data.frequency) patch["frequency"] = data.frequency;
+    if (data.autoAuthorise !== undefined) patch["auto_authorise"] = data.autoAuthorise;
+    if (data.isActive !== undefined) patch["is_active"] = data.isActive;
 
     const { error } = await supabase
       .from("recurring_bills" as never)
@@ -131,18 +167,18 @@ export const updateRecurringBillWorkspace = createServerFn({ method: "POST" })
       .maybeSingle();
     if (tpl) {
       const schedPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (data.nextDueDate) schedPatch.next_occurrence_date = data.nextDueDate;
+      if (data.nextDueDate) schedPatch["next_occurrence_date"] = data.nextDueDate;
       if (data.frequency) {
-        schedPatch.frequency_legacy = data.frequency;
-        schedPatch.rrule = legacyFrequencyToRrule(data.frequency);
+        schedPatch["frequency_legacy"] = data.frequency;
+        schedPatch["rrule"] = legacyFrequencyToRrule(data.frequency);
       }
-      if (data.autoAuthorise !== undefined) schedPatch.auto_authorise = data.autoAuthorise;
-      if (data.isActive !== undefined) schedPatch.is_paused = !data.isActive;
-      if (data.mode) schedPatch.mode = data.mode;
+      if (data.autoAuthorise !== undefined) schedPatch["auto_authorise"] = data.autoAuthorise;
+      if (data.isActive !== undefined) schedPatch["is_paused"] = !data.isActive;
+      if (data.mode) schedPatch["mode"] = data.mode;
       await supabase
         .from("recurring_schedules" as never)
         .update(schedPatch as never)
-        .eq("template_id" as never, (tpl as { id: string }).id as never);
+        .eq("template_id" as never, (tpl as unknown as { id: string }).id as never);
     }
 
     return { ok: true };
@@ -159,18 +195,24 @@ export const previewRecurringSchedule = createServerFn({ method: "GET" })
     await assertCompanyPermission(context.supabase, data.companyId, "purchases.view");
     const { data: rb } = await context.supabase
       .from("recurring_bills" as never)
-      .select("next_due_date, frequency" as never)
+      .select("next_due_date, frequency, template" as never)
       .eq("id" as never, data.recurringBillId as never)
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
     if (!rb) throw new Error("Not found");
-    const row = rb as { next_due_date: string; frequency: LegacyRecurrenceFrequency };
-    const rrule = legacyFrequencyToRrule(row.frequency);
-    const dates = previewOccurrences(
-      { dtstart: row.next_due_date, rrule },
-      row.next_due_date,
-      data.count,
-    );
+    const row = rb as {
+      next_due_date: string;
+      frequency: LegacyRecurrenceFrequency;
+      template?: { scheduleOptions?: unknown };
+    };
+    const recurrence = parseScheduleOptions(row.template?.scheduleOptions ?? {}).recurrence;
+    const dates = recurrence
+      ? previewOccurrencesFromSpec(recurrence, row.next_due_date, data.count)
+      : previewOccurrences(
+          { dtstart: row.next_due_date, rrule: legacyFrequencyToRrule(row.frequency) },
+          row.next_due_date,
+          data.count,
+        );
     return { dates };
   });
 
@@ -190,7 +232,15 @@ export const listRecurringOccurrenceHistory = createServerFn({ method: "GET" })
     const schedule = (tpl as { recurring_schedules?: { id: string } | { id: string }[] } | null)
       ?.recurring_schedules;
     const scheduleId = Array.isArray(schedule) ? schedule[0]?.id : schedule?.id;
-    if (!scheduleId) return { rows: [] };
+    if (!scheduleId) return { rows: [], versions: [] };
+
+    const templateId = (tpl as unknown as { id: string }).id;
+    const { data: versions } = await context.supabase
+      .from("recurring_template_versions" as never)
+      .select("id, version_no, created_at" as never)
+      .eq("template_id" as never, templateId as never)
+      .order("version_no" as never, { ascending: false })
+      .limit(20);
 
     const { data: rows, error } = await context.supabase
       .from("recurring_occurrences" as never)
@@ -202,7 +252,7 @@ export const listRecurringOccurrenceHistory = createServerFn({ method: "GET" })
       .order("scheduled_date" as never, { ascending: false })
       .limit(50);
     if (error) throw new Error(error.message);
-    return { rows: rows ?? [] };
+    return { rows: rows ?? [], versions: versions ?? [] };
   });
 
 export const skipNextRecurringBillOccurrence = createServerFn({ method: "POST" })
@@ -228,7 +278,7 @@ export const skipNextRecurringBillOccurrence = createServerFn({ method: "POST" }
       .select("id, recurring_schedules(id, dtstart, rrule)" as never)
       .eq("legacy_recurring_bill_id" as never, data.recurringBillId as never)
       .maybeSingle();
-    const schedRaw = (tpl as { recurring_schedules?: { id: string; dtstart: string; rrule: string } | { id: string; dtstart: string; rrule: string }[] })?.recurring_schedules;
+    const schedRaw = (tpl as unknown as { recurring_schedules?: { id: string; dtstart: string; rrule: string } | { id: string; dtstart: string; rrule: string }[] })?.recurring_schedules;
     const sched = Array.isArray(schedRaw) ? schedRaw[0] : schedRaw;
     if (!sched) throw new Error("Schedule not found");
 
@@ -266,7 +316,7 @@ export const listRecurringExceptions = createServerFn({ method: "GET" })
     const { data: rows, error } = await context.supabase
       .from("recurring_occurrences" as never)
       .select(
-        "id, schedule_id, scheduled_date, status, error_message, purchase_bill_id, sales_invoice_id, recurring_schedules(recurring_templates(name, document_type))" as never,
+        "id, schedule_id, scheduled_date, status, error_message, purchase_bill_id, sales_invoice_id, recurring_schedules(recurring_templates(name, document_type, legacy_recurring_bill_id))" as never,
       )
       .eq("company_id" as never, data.companyId as never)
       .in("status" as never, ["failed", "needs_input"] as never)
@@ -375,4 +425,43 @@ export const duplicateRecurringBill = createServerFn({ method: "POST" })
     const { ensureV2ForLegacyRecurringBill } = await import("@/lib/recurring/v2-sync");
     await ensureV2ForLegacyRecurringBill(supabase, id);
     return { id };
+  });
+
+/** Hides the template from the active list. Generated bills and journals stay. */
+export const archiveRecurringBill = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; recurringBillId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    recurringBillId: assertUuid(input.recurringBillId),
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("recurring_bills" as never)
+      .update({ is_active: false, updated_at: now } as never)
+      .eq("id" as never, data.recurringBillId as never)
+      .eq("company_id" as never, data.companyId as never);
+    if (error) throw new Error(error.message);
+
+    const { data: tpl } = await supabase
+      .from("recurring_templates" as never)
+      .select("id" as never)
+      .eq("legacy_recurring_bill_id" as never, data.recurringBillId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (!tpl) return { ok: true };
+    const templateId = (tpl as unknown as { id: string }).id;
+    const { error: tErr } = await supabase
+      .from("recurring_templates" as never)
+      .update({ archived_at: now, is_active: false, updated_at: now } as never)
+      .eq("id" as never, templateId as never);
+    if (tErr) throw new Error(tErr.message);
+    const { error: sErr } = await supabase
+      .from("recurring_schedules" as never)
+      .update({ is_paused: true, updated_at: now } as never)
+      .eq("template_id" as never, templateId as never);
+    if (sErr) throw new Error(sErr.message);
+    return { ok: true };
   });

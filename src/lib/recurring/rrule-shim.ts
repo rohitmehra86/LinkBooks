@@ -9,10 +9,14 @@ export type { Options } from "rrule";
 type RRuleCtor = typeof import("rrule").RRule;
 
 function resolveRRule(): RRuleCtor {
-  const ns = rruleNS as Record<string, unknown>;
-  if (ns.RRule) return ns.RRule as RRuleCtor;
-  const d = ns.default as Record<string, unknown> | undefined;
-  if (d?.RRule) return d.RRule as RRuleCtor;
+  const ns = rruleNS as unknown as Record<string, unknown>;
+  const named = ns["RRule"];
+  if (named) return named as RRuleCtor;
+  const wrapped = ns["default"];
+  if (wrapped && typeof wrapped === "object") {
+    const inner = (wrapped as Record<string, unknown>)["RRule"];
+    if (inner) return inner as RRuleCtor;
+  }
   throw new Error("rrule: RRule export not found");
 }
 

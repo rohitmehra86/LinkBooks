@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_authenticated/sales/statements")({
   component: Statements,
 });
 
-function Statements() {
+export function Statements() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";

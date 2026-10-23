@@ -43,7 +43,7 @@ type ContactRow = {
   is_active: boolean;
 };
 
-function ContactsPage() {
+export function ContactsPage({ initialKind = "customer" }: { initialKind?: string } = {}) {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
@@ -56,7 +56,7 @@ function ContactsPage() {
   const [view, setView] = useState("all");
   const [q, setQ] = useState("");
   const [name, setName] = useState("");
-  const [newKind, setNewKind] = useState("customer");
+  const [newKind, setNewKind] = useState(initialKind);
   const [email, setEmail] = useState("");
   const [terms, setTerms] = useState("30");
   const [showAdvanced, setShowAdvanced] = useState(false);

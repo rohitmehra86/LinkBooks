@@ -43,6 +43,7 @@ export const PERMISSIONS = [
   "products.manage",
   "ai.use",
   "ai.apply_suggestion",
+  "recurring.auto_authorise",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -86,6 +87,7 @@ export const ROLE_PERMISSION_MATRIX: Record<CompanyRole, readonly Permission[]> 
     "products.manage",
     "ai.use",
     "ai.apply_suggestion",
+    "recurring.auto_authorise",
   ],
   accountant: [
     "company.view",
@@ -118,6 +120,7 @@ export const ROLE_PERMISSION_MATRIX: Record<CompanyRole, readonly Permission[]> 
     "products.manage",
     "ai.use",
     "ai.apply_suggestion",
+    "recurring.auto_authorise",
   ],
   bookkeeper: [
     "company.view",
