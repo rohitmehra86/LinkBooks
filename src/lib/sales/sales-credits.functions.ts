@@ -7,12 +7,6 @@ import { postSalesCreditAuthorisation } from "@/lib/sales/posting";
 import { callSalesRpc, requireRpc, type SalesClient } from "@/lib/sales/rpc";
 import { deleteDraftDocument, saveSalesDocument } from "@/lib/sales/doc-save";
 import {
-  validateCreditAllocations,
-  deriveSalesInvoiceStatus,
-  deriveCreditNoteStatus,
-  type AllocatableInvoice,
-} from "@/lib/sales/allocation-rules";
-import {
   type ListQuery,
   assertReason,
   isIsoDate,
@@ -463,162 +457,16 @@ export const allocateCreditNote = createServerFn({ method: "POST" })
         amount_minor: a.amountMinor,
       })),
     });
-    if (!rpc.missing) {
-      return {
-        allocatedMinor: Number(rpc.data.allocated_minor),
-        remainingMinor: Number(rpc.data.remaining_minor),
-      };
-    }
-
-    // ---- fallback: validate everything first, apply with optimistic guards + compensation ----
-    const { data: cn, error } = await supabase
-      .from("sales_credit_notes" as never)
-      .select("id, status, contact_id, total_minor, amount_allocated_minor, currency_code" as never)
-      .eq("id" as never, data.creditNoteId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!cn) throw new Error("Credit note not found");
-    const credit = cn as {
-      status: string;
-      contact_id: string;
-      total_minor: number;
-      amount_allocated_minor: number;
-      currency_code: string;
-    };
-    const invoices = await loadAllocatableInvoices(
-      supabase,
-      data.companyId,
-      data.allocations.map((a) => a.invoiceId),
+    const done = requireRpc(
+      rpc,
+      "allocate_sales_credit_note",
+      "20261024110200_sales_ar_receipt_credit_rpcs.sql",
     );
-    const { allocatedMinor } = validateCreditAllocations({
-      credit: {
-        contactId: credit.contact_id,
-        currencyCode: credit.currency_code,
-        status: credit.status,
-        totalMinor: Number(credit.total_minor),
-        amountAllocatedMinor: Number(credit.amount_allocated_minor),
-      },
-      allocations: data.allocations,
-      invoices,
-    });
-
-    const undo: Array<() => Promise<unknown>> = [];
-    try {
-      for (const alloc of data.allocations) {
-        const inv = invoices.get(alloc.invoiceId)!;
-        const { error: aErr } = await supabase.from("sales_credit_allocations" as never).insert({
-          company_id: data.companyId,
-          credit_note_id: data.creditNoteId,
-          invoice_id: alloc.invoiceId,
-          amount_minor: alloc.amountMinor,
-          created_by: userId,
-        } as never);
-        if (aErr) {
-          throw new Error(
-            aErr.code === "23505" ? "Already allocated to this invoice" : aErr.message,
-          );
-        }
-        undo.push(async () =>
-          supabase
-            .from("sales_credit_allocations" as never)
-            .delete()
-            .eq("credit_note_id" as never, data.creditNoteId as never)
-            .eq("invoice_id" as never, alloc.invoiceId as never),
-        );
-        const newCredited = inv.amountCreditedMinor + alloc.amountMinor;
-        const status = deriveSalesInvoiceStatus({
-          totalMinor: inv.totalMinor,
-          amountPaidMinor: inv.amountPaidMinor,
-          amountCreditedMinor: newCredited,
-        });
-        const { data: bumped, error: bErr } = await supabase
-          .from("sales_invoices" as never)
-          .update({
-            amount_credited_minor: newCredited,
-            status,
-            updated_at: new Date().toISOString(),
-          } as never)
-          .eq("id" as never, alloc.invoiceId as never)
-          .eq("amount_paid_minor" as never, inv.amountPaidMinor as never)
-          .eq("amount_credited_minor" as never, inv.amountCreditedMinor as never)
-          .select("id");
-        if (bErr) throw new Error(bErr.message);
-        if (!bumped || (bumped as unknown[]).length === 0) {
-          throw new Error("An invoice changed while the credit was being applied — please retry");
-        }
-        undo.push(async () =>
-          supabase
-            .from("sales_invoices" as never)
-            .update({ amount_credited_minor: inv.amountCreditedMinor, status: inv.status } as never)
-            .eq("id" as never, alloc.invoiceId as never),
-        );
-      }
-      const total = Number(credit.amount_allocated_minor) + allocatedMinor;
-      const { error: cErr } = await supabase
-        .from("sales_credit_notes" as never)
-        .update({
-          amount_allocated_minor: total,
-          status: deriveCreditNoteStatus({
-            totalMinor: Number(credit.total_minor),
-            amountAllocatedMinor: total,
-          }),
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id" as never, data.creditNoteId as never)
-        .eq("amount_allocated_minor" as never, Number(credit.amount_allocated_minor) as never);
-      if (cErr) throw new Error(cErr.message);
-      return { allocatedMinor: total, remainingMinor: Number(credit.total_minor) - total };
-    } catch (e) {
-      for (const fn of undo.reverse()) {
-        try {
-          await fn();
-        } catch {
-          /* best effort */
-        }
-      }
-      throw e instanceof Error ? e : new Error("Allocation failed");
-    }
+    return {
+      allocatedMinor: Number(done.allocated_minor),
+      remainingMinor: Number(done.remaining_minor),
+    };
   });
-
-async function loadAllocatableInvoices(
-  supabase: SalesClient,
-  companyId: string,
-  ids: string[],
-): Promise<Map<string, AllocatableInvoice>> {
-  const map = new Map<string, AllocatableInvoice>();
-  if (!ids.length) return map;
-  const { data, error } = await supabase
-    .from("sales_invoices" as never)
-    .select(
-      "id, invoice_number, status, contact_id, total_minor, amount_paid_minor, amount_credited_minor, currency_code" as never,
-    )
-    .eq("company_id" as never, companyId as never)
-    .in("id" as never, ids as never);
-  if (error) throw new Error(error.message);
-  for (const r of (data ?? []) as Array<{
-    id: string;
-    invoice_number: string | null;
-    status: string;
-    contact_id: string;
-    total_minor: number;
-    amount_paid_minor: number;
-    amount_credited_minor: number;
-    currency_code: string;
-  }>) {
-    map.set(r.id, {
-      id: r.id,
-      number: r.invoice_number,
-      contactId: r.contact_id,
-      currencyCode: r.currency_code,
-      status: r.status,
-      totalMinor: Number(r.total_minor),
-      amountPaidMinor: Number(r.amount_paid_minor),
-      amountCreditedMinor: Number(r.amount_credited_minor),
-    });
-  }
-  return map;
-}
 
 // ---- corrections ----
 
