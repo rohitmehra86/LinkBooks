@@ -23,10 +23,28 @@ export type PostedLine = {
   currency_code?: string | null;
   journal_id?: string;
   journal_number?: number;
+  /** Company base currency; with currency_code enables decimal-aware conversion (RP-07). */
+  base_currency?: string | null;
   memo?: string | null;
   source_type?: string;
+  source_id?: string | null;
   description?: string | null;
+  /** Account classification used for control-account and cash-flow decisions. */
+  account_kind?: string | null;
+  system_key?: string | null;
+  fs_line?: string | null;
+  cash_flow_class?: string | null;
 };
+
+/** Memo prefix that identifies a user-confirmed year-end closing journal (source_type 'other'). */
+export const YEAR_END_CLOSE_MEMO_PREFIX = "Year-end close";
+
+export function isYearEndCloseLine(l: {
+  source_type?: string | undefined;
+  memo?: string | null | undefined;
+}): boolean {
+  return l.source_type === "other" && (l.memo ?? "").startsWith(YEAR_END_CLOSE_MEMO_PREFIX);
+}
 
 export type TrialBalanceRow = {
   account_id: string;
@@ -34,6 +52,8 @@ export type TrialBalanceRow = {
   name: string;
   account_type: AccountType;
   subtype?: string | null;
+  account_kind?: string | null;
+  system_key?: string | null;
   debit_minor: bigint;
   credit_minor: bigint;
 };
@@ -125,6 +145,16 @@ function asBig(v: bigint | number): bigint {
   return typeof v === "number" ? BigInt(v) : v;
 }
 
+/** The ONE converter for every report path (RP-07): journal snapshot rate, decimal-aware. */
+export function lineAmountToBase(line: PostedLine, amount: bigint | number): bigint {
+  return lineToBaseMinor(amount, line.fx_rate_to_base, line.currency_code, line.base_currency);
+}
+
+/** Signed (debit - credit) amount of a line in base currency. */
+export function lineNetBase(line: PostedLine): bigint {
+  return lineAmountToBase(line, line.debit_minor) - lineAmountToBase(line, line.credit_minor);
+}
+
 export function inDateRange(date: string, from?: string, to?: string): boolean {
   if (from && date < from) return false;
   if (to && date > to) return false;
@@ -152,12 +182,14 @@ export function buildTrialBalance(
       name: line.account_name,
       account_type: line.account_type,
       subtype: line.account_subtype ?? null,
+      account_kind: line.account_kind ?? null,
+      system_key: line.system_key ?? null,
       debit_minor: 0n,
       credit_minor: 0n,
     };
     if (!existing.subtype && line.account_subtype) existing.subtype = line.account_subtype;
-    existing.debit_minor += lineToBaseMinor(line.debit_minor, line.fx_rate_to_base);
-    existing.credit_minor += lineToBaseMinor(line.credit_minor, line.fx_rate_to_base);
+    existing.debit_minor += lineAmountToBase(line, line.debit_minor);
+    existing.credit_minor += lineAmountToBase(line, line.credit_minor);
     map.set(line.account_id, existing);
   }
 
@@ -178,11 +210,7 @@ export function buildTrialBalance(
 }
 
 export type ProfitAndLossSectionId =
-  | "revenue"
-  | "contra_revenue"
-  | "cost_of_sales"
-  | "operating_expense"
-  | "other";
+  "revenue" | "contra_revenue" | "cost_of_sales" | "operating_expense" | "other";
 
 export const PROFIT_AND_LOSS_SECTION_LABELS: Record<ProfitAndLossSectionId, string> = {
   revenue: "Revenue",
@@ -238,9 +266,11 @@ export function buildProfitAndLoss(
     total_minor: bigint;
   }>;
 } {
+  // Year-end closing journals zero the P&L into retained earnings; they are not trading activity.
   const filtered = lines.filter(
     (l) =>
       (l.account_type === "income" || l.account_type === "expense") &&
+      !isYearEndCloseLine(l) &&
       inDateRange(l.journal_date, opts.from, opts.to),
   );
   const { rows } = buildTrialBalance(filtered, opts);
@@ -315,24 +345,62 @@ export function buildProfitAndLoss(
   };
 }
 
-export function buildBalanceSheet(
-  lines: PostedLine[],
-  opts: { asOf: string },
-): {
+export type BalanceSheetResult = {
   assets: bigint;
   liabilities: bigint;
   equity: bigint;
   rows: TrialBalanceRow[];
   sections: ReturnType<typeof groupBalanceSheetRows>;
   equationHolds: boolean;
+  /** Earnings of all fiscal years before `fyStart` that are not yet closed into retained earnings. */
   retainedEarningsMinor: bigint;
-} {
+  /** Earnings from `fyStart` to `asOf`. */
+  currentYearEarningsMinor: bigint;
+  fyStart: string | null;
+};
+
+const PRIOR_EARNINGS_ID = "__retained_earnings__";
+const CURRENT_EARNINGS_ID = "__current_year_earnings__";
+
+function isRetainedEarningsRow(r: TrialBalanceRow): boolean {
+  return (
+    r.account_type === "equity" &&
+    (r.system_key === "retained_earnings" ||
+      r.account_kind === "retained_earnings" ||
+      (r.subtype ?? "") === "retained")
+  );
+}
+
+/**
+ * Balance sheet as at `asOf`. With `fyStart`, earnings are split (RP-04):
+ *  - P&L before fyStart → Retained earnings (merged into the retained-earnings account row),
+ *  - P&L from fyStart → Current year earnings.
+ * Without `fyStart` all P&L is current-year (legacy behaviour).
+ */
+export function buildBalanceSheet(
+  lines: PostedLine[],
+  opts: { asOf: string; fyStart?: string },
+): BalanceSheetResult {
   const bsLines = lines.filter(
     (l) =>
-      (l.account_type === "asset" || l.account_type === "liability" || l.account_type === "equity") &&
+      (l.account_type === "asset" ||
+        l.account_type === "liability" ||
+        l.account_type === "equity") &&
       l.journal_date <= opts.asOf,
   );
-  const pl = buildProfitAndLoss(lines, { from: "0001-01-01", to: opts.asOf });
+  const fyStart = opts.fyStart ?? null;
+  // Closing journals are real ledger lines: keep them in the BS maths (they zero closed years).
+  const plAll = lines.filter(
+    (l) =>
+      (l.account_type === "income" || l.account_type === "expense") && l.journal_date <= opts.asOf,
+  );
+  let prior = 0n;
+  let current = 0n;
+  for (const l of plAll) {
+    const net = lineAmountToBase(l, l.credit_minor) - lineAmountToBase(l, l.debit_minor);
+    if (fyStart && l.journal_date < fyStart) prior += net;
+    else current += net;
+  }
   const { rows } = buildTrialBalance(bsLines, { to: opts.asOf });
 
   let assets = 0n;
@@ -343,18 +411,36 @@ export function buildBalanceSheet(
     if (row.account_type === "liability") liabilities += row.credit_minor - row.debit_minor;
     if (row.account_type === "equity") equity += row.credit_minor - row.debit_minor;
   }
-  equity += pl.net;
-  // Present retained earnings as a synthetic equity row for sectioned BS
-  const rowsWithRe: TrialBalanceRow[] = [...rows];
-  if (pl.net !== 0n) {
+  equity += prior + current;
+
+  const rowsWithRe: TrialBalanceRow[] = rows.map((r) => ({ ...r }));
+  if (prior !== 0n) {
+    const reRow = rowsWithRe.find(isRetainedEarningsRow);
+    if (reRow) {
+      const net = reRow.credit_minor - reRow.debit_minor + prior;
+      reRow.debit_minor = net < 0n ? -net : 0n;
+      reRow.credit_minor = net > 0n ? net : 0n;
+    } else {
+      rowsWithRe.push({
+        account_id: PRIOR_EARNINGS_ID,
+        code: "RE",
+        name: "Retained earnings",
+        account_type: "equity",
+        subtype: "equity",
+        debit_minor: prior < 0n ? -prior : 0n,
+        credit_minor: prior > 0n ? prior : 0n,
+      });
+    }
+  }
+  if (current !== 0n) {
     rowsWithRe.push({
-      account_id: "__retained_earnings__",
-      code: "CYRE",
+      account_id: CURRENT_EARNINGS_ID,
+      code: "CYE",
       name: "Current year earnings",
       account_type: "equity",
       subtype: "equity",
-      debit_minor: pl.net < 0n ? -pl.net : 0n,
-      credit_minor: pl.net > 0n ? pl.net : 0n,
+      debit_minor: current < 0n ? -current : 0n,
+      credit_minor: current > 0n ? current : 0n,
     });
   }
   return {
@@ -363,8 +449,88 @@ export function buildBalanceSheet(
     equity,
     rows: rowsWithRe,
     sections: groupBalanceSheetRows(rowsWithRe),
-    retainedEarningsMinor: pl.net,
+    retainedEarningsMinor: prior,
+    currentYearEarningsMinor: current,
+    fyStart,
     equationHolds: assets === liabilities + equity,
+  };
+}
+
+/**
+ * Trial balance as at `to` with fiscal-year-to-date P&L (RP-04):
+ * balance-sheet accounts are cumulative; income/expense accounts show only fyStart..to;
+ * earnings of earlier years are rolled into the retained-earnings row (or a synthetic row).
+ */
+export function buildFiscalTrialBalance(
+  lines: PostedLine[],
+  opts: { to: string; fyStart: string },
+): {
+  rows: TrialBalanceRow[];
+  totalDebit: bigint;
+  totalCredit: bigint;
+  balances: boolean;
+  priorYearsEarningsMinor: bigint;
+} {
+  const upTo = lines.filter((l) => l.journal_date <= opts.to);
+  const bs = upTo.filter((l) => l.account_type !== "income" && l.account_type !== "expense");
+  const plCurrent = upTo.filter(
+    (l) =>
+      (l.account_type === "income" || l.account_type === "expense") &&
+      l.journal_date >= opts.fyStart,
+  );
+  let prior = 0n;
+  for (const l of upTo) {
+    if (
+      (l.account_type === "income" || l.account_type === "expense") &&
+      l.journal_date < opts.fyStart
+    ) {
+      prior += lineAmountToBase(l, l.credit_minor) - lineAmountToBase(l, l.debit_minor);
+    }
+  }
+  const base = buildTrialBalance([...bs, ...plCurrent]);
+  const rows = base.rows.map((r) => ({ ...r }));
+  if (prior !== 0n) {
+    const reRow = rows.find(isRetainedEarningsRow);
+    if (reRow) {
+      const net = reRow.credit_minor - reRow.debit_minor + prior;
+      reRow.debit_minor = net < 0n ? -net : 0n;
+      reRow.credit_minor = net > 0n ? net : 0n;
+    } else {
+      rows.push({
+        account_id: PRIOR_EARNINGS_ID,
+        code: "RE",
+        name: "Retained earnings (prior years)",
+        account_type: "equity",
+        subtype: "retained",
+        debit_minor: prior < 0n ? -prior : 0n,
+        credit_minor: prior > 0n ? prior : 0n,
+      });
+      rows.sort((a, b) => a.code.localeCompare(b.code));
+    }
+  }
+  let totalDebit = 0n;
+  let totalCredit = 0n;
+  for (const r of rows) {
+    totalDebit += r.debit_minor;
+    totalCredit += r.credit_minor;
+  }
+  return {
+    rows,
+    totalDebit,
+    totalCredit,
+    balances: totalDebit === totalCredit,
+    priorYearsEarningsMinor: prior,
+  };
+}
+
+/** Copy of a line with debit/credit expressed in base currency (idempotent). */
+export function toBaseLine(l: PostedLine): PostedLine {
+  return {
+    ...l,
+    debit_minor: lineAmountToBase(l, l.debit_minor),
+    credit_minor: lineAmountToBase(l, l.credit_minor),
+    fx_rate_to_base: null,
+    ...(l.base_currency ? { currency_code: l.base_currency } : {}),
   };
 }
 
@@ -376,6 +542,7 @@ export function buildGeneralLedger(
     .filter(
       (l) => l.account_id === opts.accountId && inDateRange(l.journal_date, opts.from, opts.to),
     )
+    .map(toBaseLine)
     .sort((a, b) => {
       const d = a.journal_date.localeCompare(b.journal_date);
       if (d !== 0) return d;
@@ -401,7 +568,7 @@ export function buildAccountTransactions(
   for (const l of lines) {
     if (l.account_id !== opts.accountId) continue;
     if (l.journal_date < opts.from) {
-      opening += asBig(l.debit_minor) - asBig(l.credit_minor);
+      opening += lineNetBase(l);
     }
   }
   const period = buildGeneralLedger(lines, opts);
@@ -505,10 +672,102 @@ export function buildAgingReport(
   };
 }
 
+export type CashFlowSection = "operating" | "investing" | "financing";
+
+export type CashFlowDetailRow = {
+  section: CashFlowSection;
+  label: string;
+  amount_minor: bigint;
+};
+
 /**
- * Cash movement report from bank GL accounts (direct method proxy).
- * Classifies by counterpart account_type on the same journal.
- * Not a full IAS 7 statement — see jurisdiction docs.
+ * Classify the non-bank side of a cash journal (RP-03). Explicit `cash_flow_class` on the account
+ * wins; otherwise by account class/kind:
+ *  - investing: fixed / non-current assets
+ *  - financing: equity, loans and other non-current liabilities
+ *  - operating: everything else (AR, AP, inventory, prepayments, tax, current liabilities,
+ *    income and expense accounts)
+ */
+export function classifyCashCounterpart(l: {
+  account_type: AccountType;
+  account_subtype?: string | null | undefined;
+  account_kind?: string | null | undefined;
+  system_key?: string | null | undefined;
+  cash_flow_class?: string | null | undefined;
+  account_code?: string | undefined;
+}): { section: CashFlowSection; label: string } {
+  const sub = (l.account_subtype ?? "").toLowerCase();
+  const kind = (l.account_kind ?? "").toLowerCase();
+  const key = (l.system_key ?? "").toLowerCase();
+  const isReceivable = key === "ar" || kind === "accounts_receivable" || sub === "receivable";
+  const isPayable = key === "ap" || kind === "accounts_payable" || sub === "payable";
+  const isTax = key === "tax" || sub === "tax";
+
+  const explicit = (l.cash_flow_class ?? "").toLowerCase();
+  const explicitSection: CashFlowSection | null =
+    explicit === "investing" || explicit === "financing" || explicit === "operating"
+      ? explicit
+      : null;
+
+  let section: CashFlowSection;
+  let label: string;
+  if (l.account_type === "equity") {
+    section = "financing";
+    label = "Owner / equity contributions and drawings";
+  } else if (
+    l.account_type === "liability" &&
+    (kind === "non_current_liability" ||
+      sub.includes("non_current") ||
+      sub.includes("loan") ||
+      key === "loan")
+  ) {
+    section = "financing";
+    label = "Loans and other non-current borrowings";
+  } else if (
+    l.account_type === "asset" &&
+    (kind === "fixed_asset" ||
+      kind === "non_current_asset" ||
+      sub.includes("non_current") ||
+      sub.includes("fixed") ||
+      sub.includes("depreciation"))
+  ) {
+    section = "investing";
+    label = "Purchase and sale of fixed / non-current assets";
+  } else if (isReceivable) {
+    section = "operating";
+    label = "Receipts from customers";
+  } else if (isPayable) {
+    section = "operating";
+    label = "Payments to suppliers";
+  } else if (isTax) {
+    section = "operating";
+    label = "Tax (VAT / GST) paid and received";
+  } else if (l.account_type === "income") {
+    section = "operating";
+    label = "Income received directly";
+  } else if (l.account_type === "expense") {
+    section = "operating";
+    label = "Expenses paid directly";
+  } else if (l.account_type === "asset") {
+    section = "operating";
+    label = "Inventory, prepayments and other current assets";
+  } else {
+    section = "operating";
+    label = "Other current liabilities";
+  }
+  if (explicitSection && explicitSection !== section) {
+    // Honour an explicit override but never move equity/loans out of financing silently.
+    if (section !== "financing") section = explicitSection;
+  }
+  return { section, label };
+}
+
+/**
+ * Cash movement report from bank GL accounts (direct method, classified per counterpart line).
+ * Every non-bank line of a journal that touches a bank account contributes -(debit-credit) to cash,
+ * so multi-line journals (e.g. receipt = bank / AR / VAT) are split exactly across their
+ * counterpart lines. Journals that only move between bank accounts net to zero.
+ * Not a full IAS 7 statement — indirect reconciliation is not produced.
  */
 export type CashFlowLine = PostedLine & { counterpart_type?: AccountType | "unknown" };
 
@@ -530,6 +789,7 @@ export function buildCashFlowFromBank(
   closing_cash_ledger: bigint;
   reconciles: boolean;
   rows: Array<{ category: string; amount_minor: bigint }>;
+  detail: CashFlowDetailRow[];
   limitation: string;
 } {
   const bankSet = new Set(opts.bankAccountIds);
@@ -537,7 +797,7 @@ export function buildCashFlowFromBank(
   let closingLedger = 0n;
   for (const l of lines) {
     if (!bankSet.has(l.account_id)) continue;
-    const net = asBig(l.debit_minor) - asBig(l.credit_minor);
+    const net = lineNetBase(l);
     if (l.journal_date < opts.from) opening += net;
     if (l.journal_date <= opts.to) closingLedger += net;
   }
@@ -552,16 +812,15 @@ export function buildCashFlowFromBank(
     byJournal.set(l.journal_id, arr);
   }
 
-  let operating = 0n;
-  let investing = 0n;
-  let financing = 0n;
+  const totals: Record<CashFlowSection, bigint> = { operating: 0n, investing: 0n, financing: 0n };
+  const detailMap = new Map<string, CashFlowDetailRow>();
 
   for (const [, jlines] of byJournal) {
     const bankLines = jlines.filter((l) => bankSet.has(l.account_id));
     if (!bankLines.length) continue;
     const others = jlines.filter((l) => !bankSet.has(l.account_id));
     let bankNet = 0n;
-    for (const b of bankLines) bankNet += asBig(b.debit_minor) - asBig(b.credit_minor);
+    for (const b of bankLines) bankNet += lineNetBase(b);
 
     // Opening-balance / conversion journals are starting cash, not period activity.
     const source = (bankLines[0]?.source_type ?? others[0]?.source_type ?? "").toLowerCase();
@@ -569,47 +828,51 @@ export function buildCashFlowFromBank(
       opening += bankNet;
       continue;
     }
-
-    const counterpart = others[0]?.account_type ?? "unknown";
-    // Prefer counterpart semantics: loans (non-current liability) → financing; PPE → investing
-    const counterpartSubtype = (others[0]?.account_subtype ?? "").toLowerCase();
-    if (counterpart === "equity" || counterpartSubtype.includes("loan")) {
-      financing += bankNet;
-    } else if (
-      counterpart === "asset" &&
-      (counterpartSubtype.includes("non_current") ||
-        counterpartSubtype.includes("fixed") ||
-        others.some((o) => o.account_code.startsWith("15")))
-    ) {
-      investing += bankNet;
-    } else if (counterpart === "income" || counterpart === "expense" || counterpart === "liability") {
-      operating += bankNet;
-    } else if (counterpart === "asset") {
-      investing += bankNet;
-    } else {
-      operating += bankNet;
+    if (!others.length) {
+      // Bank-to-bank journal: no change in total cash.
+      continue;
+    }
+    for (const o of others) {
+      // Cash effect of this counterpart line = -(debit - credit).
+      const cash = -lineNetBase(o);
+      if (cash === 0n) continue;
+      const cls = classifyCashCounterpart(o);
+      totals[cls.section] += cash;
+      const key = `${cls.section}|${cls.label}`;
+      const row = detailMap.get(key) ?? {
+        section: cls.section,
+        label: cls.label,
+        amount_minor: 0n,
+      };
+      row.amount_minor += cash;
+      detailMap.set(key, row);
     }
   }
 
-  const net = operating + investing + financing;
+  const net = totals.operating + totals.investing + totals.financing;
   const closingFromMovements = opening + net;
+  const order: CashFlowSection[] = ["operating", "investing", "financing"];
+  const detail = [...detailMap.values()].sort(
+    (a, b) => order.indexOf(a.section) - order.indexOf(b.section) || a.label.localeCompare(b.label),
+  );
   return {
-    operating,
-    investing,
-    financing,
+    operating: totals.operating,
+    investing: totals.investing,
+    financing: totals.financing,
     net_change: net,
     opening_cash: opening,
     closing_cash: closingFromMovements,
     closing_cash_ledger: closingLedger,
     reconciles: closingFromMovements === closingLedger,
     rows: [
-      { category: "Operating", amount_minor: operating },
-      { category: "Investing", amount_minor: investing },
-      { category: "Financing", amount_minor: financing },
+      { category: "Operating", amount_minor: totals.operating },
+      { category: "Investing", amount_minor: totals.investing },
+      { category: "Financing", amount_minor: totals.financing },
       { category: "Net change in cash", amount_minor: net },
     ],
+    detail,
     limitation:
-      "Bank GL direct-method proxy. Opening-balance journals are treated as opening cash, not period inflows. Not a full IAS 7 / local-GAAP cash-flow statement.",
+      "Direct method from bank ledger movements, classified by the account on the other side of each journal. Opening-balance journals are treated as opening cash. Not a full IAS 7 / local-GAAP statement (no indirect reconciliation).",
   };
 }
 
@@ -625,9 +888,9 @@ export function buildTaxSummary(
   detail: PostedLine[];
 } {
   const taxSet = new Set(opts.taxAccountIds);
-  const detail = lines.filter(
-    (l) => taxSet.has(l.account_id) && inDateRange(l.journal_date, opts.from, opts.to),
-  );
+  const detail = lines
+    .filter((l) => taxSet.has(l.account_id) && inDateRange(l.journal_date, opts.from, opts.to))
+    .map(toBaseLine);
   const { rows } = buildTrialBalance(detail, opts);
   let output = 0n;
   let input = 0n;
@@ -688,20 +951,18 @@ export function buildJournalReport(
         total_credit_minor: c,
       };
     })
-    .sort((a, b) => a.journal_date.localeCompare(b.journal_date) || a.journal_number - b.journal_number);
+    .sort(
+      (a, b) => a.journal_date.localeCompare(b.journal_date) || a.journal_number - b.journal_number,
+    );
 }
 
 /** Control account balance from posted lines as-of date. */
-export function accountBalanceAsOf(
-  lines: PostedLine[],
-  accountId: string,
-  asOf: string,
-): bigint {
+export function accountBalanceAsOf(lines: PostedLine[], accountId: string, asOf: string): bigint {
   let bal = 0n;
   for (const l of lines) {
     if (l.account_id !== accountId) continue;
     if (l.journal_date > asOf) continue;
-    bal += asBig(l.debit_minor) - asBig(l.credit_minor);
+    bal += lineNetBase(l);
   }
   return bal;
 }

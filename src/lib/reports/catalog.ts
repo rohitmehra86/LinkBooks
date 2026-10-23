@@ -37,7 +37,12 @@ export type ReportDef = {
     | "journals"
     | "tax"
     | "audit"
+    | "general_ledger_all"
+    | "equity"
+    | "link"
     | "none";
+  /** For runner "link": the existing screen that already does this job. */
+  linkTo?: "/banking/reconcile" | "/sales/statements" | "/purchases/statements";
 };
 
 export const REPORT_CATEGORIES: Array<{ id: ReportCategoryId; label: string }> = [
@@ -59,7 +64,8 @@ export const REPORT_CATALOG: ReportDef[] = [
   {
     id: "profit-and-loss",
     title: "Profit and Loss",
-    description: "Income, cost of sales, gross profit, expenses and net profit from posted journals.",
+    description:
+      "Income, cost of sales, gross profit, expenses and net profit from posted journals.",
     category: "financial_statements",
     tags: ["pl", "income", "pnl"],
     status: "ready",
@@ -96,21 +102,32 @@ export const REPORT_CATALOG: ReportDef[] = [
   {
     id: "statement-of-changes-in-equity",
     title: "Statement of Changes in Equity",
-    description: "Opening equity, profit, contributions and closing equity.",
+    description:
+      "Opening equity, movement by equity account, profit for the period and closing equity.",
     category: "financial_statements",
-    tags: ["equity"],
-    status: "depends",
-    dependency: "Dedicated equity movement report not yet wired; use Balance Sheet equity section + P&L.",
-    runner: "none",
+    tags: ["equity", "soce"],
+    status: "ready",
+    runner: "equity",
   },
   {
     id: "general-ledger",
-    title: "General Ledger / Account Transactions",
-    description: "Posted lines for an account with running balance and source journals.",
+    title: "Account Transactions",
+    description:
+      "Posted lines for one account with running balance, journal and source-document links.",
     category: "ledger",
-    tags: ["gl", "ledger"],
+    tags: ["gl", "ledger", "account"],
     status: "ready",
     runner: "general_ledger",
+  },
+  {
+    id: "general-ledger-all",
+    title: "General Ledger (all accounts)",
+    description:
+      "Every account with activity: opening balance, lines with running balance, closing balance.",
+    category: "ledger",
+    tags: ["gl", "ledger", "all accounts"],
+    status: "ready",
+    runner: "general_ledger_all",
   },
   {
     id: "journal-report",
@@ -125,7 +142,7 @@ export const REPORT_CATALOG: ReportDef[] = [
     id: "aged-receivables",
     title: "Aged Receivables",
     description:
-      "Outstanding posted customer invoices by ageing bucket, reconciled to AR control (1100).",
+      "Outstanding posted customer invoices by ageing bucket, reconciled to the receivables control account.",
     category: "sales",
     tags: ["ar", "ageing"],
     status: "ready",
@@ -135,7 +152,7 @@ export const REPORT_CATALOG: ReportDef[] = [
     id: "aged-payables",
     title: "Aged Payables",
     description:
-      "Outstanding posted supplier bills by ageing bucket, reconciled to AP control (2000).",
+      "Outstanding posted supplier bills by ageing bucket, reconciled to the payables control account.",
     category: "purchases",
     tags: ["ap", "ageing"],
     status: "ready",
@@ -152,8 +169,8 @@ export const REPORT_CATALOG: ReportDef[] = [
   },
   {
     id: "audit-log",
-    title: "Audit Log",
-    description: "Organisation audit events (actor, action, entity, details).",
+    title: "Audit Trail",
+    description: "Who did what and when: user, action, entity and details, with filters.",
     category: "audit",
     tags: ["audit"],
     status: "ready",
@@ -161,13 +178,14 @@ export const REPORT_CATALOG: ReportDef[] = [
   },
   {
     id: "bank-reconciliation",
-    title: "Bank Reconciliation Summary",
-    description: "Reconciled vs unreconciled bank statement lines.",
+    title: "Bank Reconciliation Report",
+    description:
+      "Reconciled vs unreconciled bank statement lines. Opens the Banking reconciliation screen.",
     category: "banking",
     tags: ["bank", "recon"],
-    status: "depends",
-    dependency: "Use Banking module reconciliation screens; dedicated report runner pending.",
-    runner: "none",
+    status: "ready",
+    runner: "link",
+    linkTo: "/banking/reconcile",
   },
   {
     id: "budget-vs-actual",
@@ -192,24 +210,29 @@ export const REPORT_CATALOG: ReportDef[] = [
   {
     id: "customer-statement",
     title: "Customer Statement",
-    description: "Customer activity and balance for a date range.",
+    description: "Customer activity and balance for a date range. Opens Sales → Statements.",
     category: "sales",
     tags: ["statement"],
-    status: "depends",
-    dependency: "Available under Sales → Statements; deep-link runner pending.",
-    runner: "none",
+    status: "ready",
+    runner: "link",
+    linkTo: "/sales/statements",
   },
   {
     id: "supplier-statement",
     title: "Supplier Statement",
-    description: "Supplier activity and balance for a date range.",
+    description: "Supplier activity and balance for a date range. Opens Purchases → Statements.",
     category: "purchases",
     tags: ["statement"],
-    status: "depends",
-    dependency: "Available under Purchases → Statements; deep-link runner pending.",
-    runner: "none",
+    status: "ready",
+    runner: "link",
+    linkTo: "/purchases/statements",
   },
 ];
+
+/** Categories that have at least one report matching the list (RP-10: no empty headings). */
+export function nonEmptyCategories(reports: ReportDef[] = REPORT_CATALOG) {
+  return REPORT_CATEGORIES.filter((c) => reports.some((r) => r.category === c.id));
+}
 
 export function getReportById(id: string): ReportDef | undefined {
   return REPORT_CATALOG.find((r) => r.id === id);
