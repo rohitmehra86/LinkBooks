@@ -11,8 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SavedViews } from "./SavedViews";
 
 export type ReportCtx = {
+  /** Catalogue id of the report; enables saved views. */
+  reportId?: string;
   companyId: string;
   companyName: string;
   currency: string;
@@ -153,6 +156,8 @@ export function ReportShell({
           </Button>
         </div>
       </div>
+
+      <SavedViews ctx={ctx} />
 
       {children}
     </div>

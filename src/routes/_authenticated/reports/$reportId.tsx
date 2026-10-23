@@ -115,6 +115,7 @@ function ReportPage() {
   }
 
   const ctx: ReportCtx = {
+    reportId: report.id,
     companyId: company.id,
     companyName: company.name,
     currency: company.base_currency,
