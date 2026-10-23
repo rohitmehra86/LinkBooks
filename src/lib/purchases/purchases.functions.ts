@@ -3,6 +3,16 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import { deriveBillStatus, sumLines } from "@/lib/purchases/line-math";
+import {
+  assertAllocationsAllowed,
+  type AllocatableBill,
+} from "@/lib/purchases/allocation";
+import {
+  creditRemainingMinor,
+  deriveCreditNoteStatus,
+  nextBillStatus,
+} from "@/lib/purchases/status";
+import { buildIlikeOr, ilikePattern } from "@/lib/purchases/search-terms";
 import { describeBillEdits, type BillEditSnapshot } from "@/lib/purchases/bill-history";
 import { type RecurringTemplateDocument } from "@/lib/purchases/recurring-template";
 import {
@@ -11,7 +21,20 @@ import {
   validateAttachmentFile,
   type TaxCalculationMode,
 } from "@/lib/purchases/bill-form-helpers";
-import { requireAccountInCompany } from "@/lib/purchases/accounts";
+import {
+  requireAccountInCompany,
+  requireBankAccount,
+  loadBankGlAccountIds,
+} from "@/lib/purchases/accounts";
+import {
+  insertNewBillLines,
+  replaceBillLines,
+  isMissingFunctionError,
+  adjustBillSettlement,
+  restoreBillSettlement,
+  type BillLineRow,
+  type BillSettlement,
+} from "@/lib/purchases/db-safety";
 import {
   postBillAuthorisation,
   postCreditNoteAuthorisation,
@@ -699,6 +722,16 @@ export const getBill = createServerFn({ method: "GET" })
       currency_code: string | null;
       fx_rate_to_base: number | null;
       payment_terms_days: number | null;
+      payment_term_id: string | null;
+      due_date_manual_override: boolean | null;
+      tax_calculation: string | null;
+      duplicate_override: boolean | null;
+      supplier_address_line1: string | null;
+      supplier_address_line2: string | null;
+      supplier_address_city: string | null;
+      supplier_address_region: string | null;
+      supplier_address_postal: string | null;
+      supplier_address_country: string | null;
       posted_journal_id: string | null;
       contact_id: string;
       approval_comment: string | null;
@@ -719,6 +752,13 @@ export const getBill = createServerFn({ method: "GET" })
         class_id: string | null;
         location_id: string | null;
         project_id: string | null;
+        product_id: string | null;
+        tax_code_id: string | null;
+        class_option_id: string | null;
+        location_option_id: string | null;
+        project_option_id: string | null;
+        customer_contact_id: string | null;
+        is_billable: boolean | null;
       }> | null;
     };
     const contactRaw = b.contacts;
@@ -762,6 +802,16 @@ export const getBill = createServerFn({ method: "GET" })
       currency_code: b.currency_code,
       fx_rate_to_base: b.fx_rate_to_base,
       payment_terms_days: b.payment_terms_days,
+      payment_term_id: b.payment_term_id ?? null,
+      due_date_manual_override: Boolean(b.due_date_manual_override),
+      tax_calculation: b.tax_calculation ?? "exclusive",
+      duplicate_override: Boolean(b.duplicate_override),
+      supplier_address_line1: b.supplier_address_line1 ?? null,
+      supplier_address_line2: b.supplier_address_line2 ?? null,
+      supplier_address_city: b.supplier_address_city ?? null,
+      supplier_address_region: b.supplier_address_region ?? null,
+      supplier_address_postal: b.supplier_address_postal ?? null,
+      supplier_address_country: b.supplier_address_country ?? null,
       total_minor: total,
       tax_minor: Number(b.tax_minor ?? 0),
       subtotal_minor: Number(b.subtotal_minor ?? 0),
@@ -938,47 +988,122 @@ export const saveBillDraft = createServerFn({ method: "POST" })
           country: (input.supplierAddress?.country ?? "").trim().slice(0, 100) || null,
         },
         lines: validateBillLines(input.lines, taxCalculation),
+        rawLines: input.lines,
+        /**
+         * Which optional header fields the caller actually sent. When editing an existing
+         * bill, anything not sent is left exactly as stored instead of being reset to a
+         * default (P-01 / P-02 defence in depth - a partial caller can no longer wipe the
+         * tax mode, FX rate, terms, address or duplicate acknowledgement).
+         */
+        provided: {
+          taxCalculation: input.taxCalculation !== undefined,
+          paymentTermId: input.paymentTermId !== undefined,
+          paymentTermsDays: input.paymentTermsDays !== undefined,
+          dueDateManualOverride: input.dueDateManualOverride !== undefined,
+          acknowledgeDuplicate: input.acknowledgeDuplicate !== undefined,
+          fxRateToBase: input.fxRateToBase !== undefined,
+          supplierAddress: input.supplierAddress !== undefined,
+        },
       };
     },
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
-    for (const line of data.lines) {
-      await requireAccountInCompany(supabase, data.companyId, line.accountId);
-    }
     if (data.fxRateToBase != null && (!(data.fxRateToBase > 0) || !Number.isFinite(data.fxRateToBase))) {
       throw new Error("Exchange rate must be a positive number");
     }
-    const totals = sumLines(data.lines);
 
-    const headerFields = {
+    // Validate everything that can be validated BEFORE any write.
+    for (const accountId of new Set(data.lines.map((l) => l.accountId))) {
+      await requireAccountInCompany(supabase, data.companyId, accountId);
+    }
+    const { data: supplierRow, error: supplierErr } = await supabase
+      .from("contacts" as never)
+      .select("id, name" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.contactId as never)
+      .maybeSingle();
+    if (supplierErr) throw new Error(supplierErr.message);
+    if (!supplierRow) throw new Error("Supplier not found in this organisation");
+
+    type ExistingBill = {
+      id: string;
+      status: string;
+      contact_id: string;
+      bill_date: string;
+      due_date: string;
+      supplier_invoice_number: string | null;
+      memo: string | null;
+      total_minor: number;
+      tax_minor: number;
+      currency_code: string;
+      tax_calculation: string | null;
+    };
+    let existing: ExistingBill | null = null;
+    let priorHeader: Record<string, unknown> | null = null;
+    if (data.billId) {
+      const { data: row, error: exErr } = await supabase
+        .from("purchase_bills" as never)
+        .select("*" as never)
+        .eq("id" as never, data.billId as never)
+        .eq("company_id" as never, data.companyId as never)
+        .maybeSingle();
+      if (exErr) throw new Error(exErr.message);
+      if (!row) throw new Error("Bill not found");
+      priorHeader = row as Record<string, unknown>;
+      existing = row as unknown as ExistingBill;
+      if (existing.status !== "draft" && existing.status !== "awaiting_approval") {
+        throw new Error("Only draft or awaiting-approval bills can be edited");
+      }
+    }
+
+    // When editing, a caller that did not send the tax mode keeps the stored one.
+    const effectiveTaxCalculation: TaxCalculationMode =
+      existing && !data.provided.taxCalculation
+        ? existing.tax_calculation === "inclusive" || existing.tax_calculation === "none"
+          ? existing.tax_calculation
+          : "exclusive"
+        : data.taxCalculation;
+    const lines =
+      effectiveTaxCalculation === data.taxCalculation
+        ? data.lines
+        : validateBillLines(data.rawLines, effectiveTaxCalculation);
+    const totals = sumLines(lines);
+
+    const isEdit = Boolean(existing);
+    const sends = (key: keyof typeof data.provided) => !isEdit || data.provided[key];
+    const headerFields: Record<string, unknown> = {
       contact_id: data.contactId,
       bill_date: data.billDate,
       due_date: data.dueDate,
       supplier_invoice_number: data.supplierInvoiceNumber,
       memo: data.memo,
       currency_code: data.currencyCode,
-      tax_calculation: data.taxCalculation,
-      payment_term_id: data.paymentTermId,
-      payment_terms_days: data.paymentTermsDays,
-      due_date_manual_override: data.dueDateManualOverride,
-      duplicate_override: data.acknowledgeDuplicate,
-      fx_rate_to_base: data.fxRateToBase,
-      supplier_address_line1: data.supplierAddress.line1,
-      supplier_address_line2: data.supplierAddress.line2,
-      supplier_address_city: data.supplierAddress.city,
-      supplier_address_region: data.supplierAddress.region,
-      supplier_address_postal: data.supplierAddress.postal,
-      supplier_address_country: data.supplierAddress.country,
+      tax_calculation: effectiveTaxCalculation,
       subtotal_minor: Number(totals.subtotal_minor),
       tax_minor: Number(totals.tax_minor),
       total_minor: Number(totals.total_minor),
       updated_at: new Date().toISOString(),
     };
+    if (sends("paymentTermId")) headerFields["payment_term_id"] = data.paymentTermId;
+    if (sends("paymentTermsDays")) headerFields["payment_terms_days"] = data.paymentTermsDays;
+    if (sends("dueDateManualOverride")) {
+      headerFields["due_date_manual_override"] = data.dueDateManualOverride;
+    }
+    if (sends("acknowledgeDuplicate")) headerFields["duplicate_override"] = data.acknowledgeDuplicate;
+    if (sends("fxRateToBase")) headerFields["fx_rate_to_base"] = data.fxRateToBase;
+    if (sends("supplierAddress")) {
+      headerFields["supplier_address_line1"] = data.supplierAddress.line1;
+      headerFields["supplier_address_line2"] = data.supplierAddress.line2;
+      headerFields["supplier_address_city"] = data.supplierAddress.city;
+      headerFields["supplier_address_region"] = data.supplierAddress.region;
+      headerFields["supplier_address_postal"] = data.supplierAddress.postal;
+      headerFields["supplier_address_country"] = data.supplierAddress.country;
+    }
 
     const lineRows = (billId: string) =>
-      data.lines.map((l, i) => ({
+      lines.map((l, i) => ({
         company_id: data.companyId,
         bill_id: billId,
         line_no: i + 1,
@@ -999,36 +1124,25 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         is_billable: l.isBillable,
       }));
 
-    if (data.billId) {
-      const { data: existing, error: exErr } = await supabase
-        .from("purchase_bills" as never)
-        .select(
-          "id, status, contact_id, bill_date, due_date, supplier_invoice_number, memo, total_minor, tax_minor, currency_code" as never,
-        )
-        .eq("id" as never, data.billId as never)
-        .eq("company_id" as never, data.companyId as never)
-        .maybeSingle();
-      if (exErr) throw new Error(exErr.message);
-      if (!existing) throw new Error("Bill not found");
-      const prior = existing as {
-        status: string;
-        contact_id: string;
-        bill_date: string;
-        due_date: string;
-        supplier_invoice_number: string | null;
-        memo: string | null;
-        total_minor: number;
-        tax_minor: number;
-        currency_code: string;
-      };
-      if (prior.status !== "draft" && prior.status !== "awaiting_approval") {
-        throw new Error("Only draft or awaiting-approval bills can be edited");
-      }
-      const { data: priorLines } = await supabase
+    const duplicateMessage =
+      "A bill with this supplier invoice number already exists. Acknowledge the duplicate to continue.";
+
+    if (data.billId && existing && priorHeader) {
+      const { data: priorLineRows, error: priorLinesErr } = await supabase
         .from("purchase_bill_lines" as never)
-        .select("description, quantity, unit_price_minor, net_minor" as never)
-        .eq("bill_id" as never, data.billId as never);
-      const contactIds = [...new Set([prior.contact_id, data.contactId])];
+        .select("*" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("bill_id" as never, data.billId as never)
+        .order("line_no" as never);
+      if (priorLinesErr) throw new Error(priorLinesErr.message);
+      const priorLines = (priorLineRows ?? []) as unknown as Array<{
+        description: string;
+        quantity: number;
+        unit_price_minor: number;
+        net_minor: number;
+      }>;
+
+      const contactIds = [...new Set([existing.contact_id, data.contactId])];
       const { data: contactRows } = await supabase
         .from("contacts" as never)
         .select("id, name" as never)
@@ -1037,13 +1151,13 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         ((contactRows ?? []) as Array<{ id: string; name: string }>).map((row) => [row.id, row.name]),
       );
       const before: BillEditSnapshot = {
-        totalMinor: Number(prior.total_minor),
-        taxMinor: Number(prior.tax_minor),
-        billDate: prior.bill_date,
-        dueDate: prior.due_date,
-        supplierInvoiceNumber: prior.supplier_invoice_number,
-        memo: prior.memo,
-        supplierName: contactNames.get(prior.contact_id) ?? null,
+        totalMinor: Number(existing.total_minor),
+        taxMinor: Number(existing.tax_minor),
+        billDate: existing.bill_date,
+        dueDate: existing.due_date,
+        supplierInvoiceNumber: existing.supplier_invoice_number,
+        memo: existing.memo,
+        supplierName: contactNames.get(existing.contact_id) ?? null,
       };
       const after: BillEditSnapshot = {
         totalMinor: Number(totals.total_minor),
@@ -1054,48 +1168,56 @@ export const saveBillDraft = createServerFn({ method: "POST" })
         memo: data.memo,
         supplierName: contactNames.get(data.contactId) ?? null,
       };
-      const oldLineKey = ((priorLines ?? []) as Array<{
-        description: string;
-        quantity: number;
-        unit_price_minor: number;
-        net_minor: number;
-      }>)
+      const oldLineKey = priorLines
         .map((line) =>
           [line.description, line.quantity, line.unit_price_minor, line.net_minor].join("|"),
         )
         .sort()
         .join("\n");
-      const newLineKey = data.lines
+      const newLineKey = lines
         .map((line) =>
           [line.description, line.quantity, line.unitPriceMinor, Number(line.net_minor)].join("|"),
         )
         .sort()
         .join("\n");
       const changes = describeBillEdits(before, after, data.currencyCode, oldLineKey !== newLineKey);
+
       const { error: upErr } = await supabase
         .from("purchase_bills" as never)
         .update(headerFields as never)
-        .eq("id" as never, data.billId as never);
+        .eq("id" as never, data.billId as never)
+        .eq("company_id" as never, data.companyId as never);
       if (upErr) {
         if (upErr.message.toLowerCase().includes("duplicate") || upErr.code === "23505") {
-          throw new Error(
-            "A bill with this supplier invoice number already exists. Acknowledge the duplicate to continue.",
-          );
+          throw new Error(duplicateMessage);
         }
         throw new Error(upErr.message);
       }
-      await supabase
-        .from("purchase_bill_lines" as never)
-        .delete()
-        .eq("bill_id" as never, data.billId as never);
-      const { error: lineErr } = await supabase
-        .from("purchase_bill_lines" as never)
-        .insert(lineRows(data.billId) as never);
-      if (lineErr) throw new Error(lineErr.message);
+
+      try {
+        await replaceBillLines(
+          supabase,
+          data.companyId,
+          data.billId,
+          lineRows(data.billId),
+          priorLineRows as unknown as BillLineRow[],
+        );
+      } catch (lineError) {
+        // Put the header back so header totals and lines still agree.
+        const restore: Record<string, unknown> = {};
+        for (const key of Object.keys(headerFields)) restore[key] = priorHeader[key] ?? null;
+        await supabase
+          .from("purchase_bills" as never)
+          .update(restore as never)
+          .eq("id" as never, data.billId as never)
+          .eq("company_id" as never, data.companyId as never);
+        throw lineError;
+      }
+
       await recordBillAudit(supabase, data.companyId, "bill.draft.update", data.billId, {
         total_minor: Number(totals.total_minor),
         previous_total_minor: before.totalMinor,
-        line_count: data.lines.length,
+        line_count: lines.length,
         changes,
       });
       return { id: data.billId };
@@ -1121,27 +1243,17 @@ export const saveBillDraft = createServerFn({ method: "POST" })
       .single();
     if (error) {
       if (error.message.toLowerCase().includes("duplicate") || error.code === "23505") {
-        throw new Error(
-          "A bill with this supplier invoice number already exists. Acknowledge the duplicate to continue.",
-        );
+        throw new Error(duplicateMessage);
       }
       throw new Error(error.message);
     }
     const billId = (inserted as { id: string }).id;
-    const { error: lineErr } = await supabase
-      .from("purchase_bill_lines" as never)
-      .insert(lineRows(billId) as never);
-    if (lineErr) throw new Error(lineErr.message);
-    const { data: supplier } = await supabase
-      .from("contacts" as never)
-      .select("name" as never)
-      .eq("id" as never, data.contactId as never)
-      .maybeSingle();
+    await insertNewBillLines(supabase as never, data.companyId, billId, lineRows(billId));
     await recordBillAudit(supabase, data.companyId, "bill.draft.create", billId, {
       bill_number: billNumber,
       total_minor: Number(totals.total_minor),
-      line_count: data.lines.length,
-      supplier_name: (supplier as { name?: string } | null)?.name ?? "",
+      line_count: lines.length,
+      supplier_name: (supplierRow as { name?: string } | null)?.name ?? "",
     });
     return { id: billId };
   });
@@ -1200,17 +1312,36 @@ export async function authoriseBillInternal(
     })),
   });
 
-  const { error: upErr } = await supabase
-    .from("purchase_bills" as never)
-    .update({
-      status: "authorised",
-      posted_journal_id: journalId,
-      authorised_at: new Date().toISOString(),
-      authorised_by: userId,
-      updated_at: new Date().toISOString(),
-    } as never)
-    .eq("id" as never, billId as never);
-  if (upErr) throw new Error(upErr.message);
+  // The journal is already posted (idempotent on `purchase_bill:<id>:authorise`). If the status
+  // update fails, retry once; if it still fails, say so plainly - clicking Authorise again is safe
+  // because the same journal is returned, never a second one.
+  let linkError: { message: string } | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data: updated, error: upErr } = await supabase
+      .from("purchase_bills" as never)
+      .update({
+        status: "authorised",
+        posted_journal_id: journalId,
+        authorised_at: new Date().toISOString(),
+        authorised_by: userId,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id" as never, billId as never)
+      .eq("company_id" as never, companyId as never)
+      .in("status" as never, ["draft", "awaiting_approval"] as never)
+      .select("id");
+    linkError = upErr;
+    if (!upErr && updated && (updated as unknown[]).length > 0) {
+      linkError = null;
+      break;
+    }
+    if (!upErr) linkError = { message: "The bill changed while it was being authorised" };
+  }
+  if (linkError) {
+    throw new Error(
+      `The journal was posted but the bill could not be marked authorised (${linkError.message}). Open the bill and click Authorise again - it will not post twice.`,
+    );
+  }
   await recordBillAudit(supabase, companyId, "bill.authorise", billId, { journal_id: journalId });
   return { journalId };
 }
@@ -1579,41 +1710,38 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
-    await requireAccountInCompany(supabase, data.companyId, data.bankAccountId);
+    await requireBankAccount(supabase, data.companyId, data.bankAccountId);
 
-    // Validate bills outstanding
-    for (const alloc of data.allocations) {
-      const { data: bill, error } = await supabase
+    // 1. Validate everything before writing anything.
+    const { data: supplier, error: supplierErr } = await supabase
+      .from("contacts" as never)
+      .select("id, name" as never)
+      .eq("id" as never, data.contactId as never)
+      .eq("company_id" as never, data.companyId as never)
+      .maybeSingle();
+    if (supplierErr) throw new Error(supplierErr.message);
+    if (!supplier) throw new Error("Supplier not found in this organisation");
+
+    const billIds = [...new Set(data.allocations.map((a) => a.billId))];
+    let billRows: AllocatableBill[] = [];
+    if (billIds.length) {
+      const { data: rows, error } = await supabase
         .from("purchase_bills" as never)
         .select(
-          "id, status, contact_id, total_minor, amount_paid_minor, amount_credited_minor" as never,
+          "id, status, contact_id, currency_code, total_minor, amount_paid_minor, amount_credited_minor" as never,
         )
-        .eq("id" as never, alloc.billId as never)
         .eq("company_id" as never, data.companyId as never)
-        .maybeSingle();
+        .in("id" as never, billIds as never);
       if (error) throw new Error(error.message);
-      if (!bill) throw new Error("Bill not found for allocation");
-      const b = bill as {
-        status: string;
-        contact_id: string;
-        total_minor: number;
-        amount_paid_minor: number;
-        amount_credited_minor: number;
-      };
-      if (b.contact_id !== data.contactId) throw new Error("Bill belongs to a different supplier");
-      if (!["authorised", "partly_paid"].includes(b.status)) {
-        throw new Error(
-          "Can only pay authorised or partly paid bills (not draft, awaiting approval, paid, or void)",
-        );
-      }
-      const outstanding =
-        b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
-      if (outstanding <= 0) throw new Error("Bill has no outstanding balance");
-      if (alloc.amountMinor > outstanding) {
-        throw new Error("Allocation exceeds bill outstanding balance — overpayment blocked");
-      }
+      billRows = (rows ?? []) as unknown as AllocatableBill[];
     }
+    assertAllocationsAllowed(billRows, data.allocations, {
+      contactId: data.contactId,
+      currencyCode: data.currencyCode,
+      kind: "payment",
+    });
 
+    // 2. Draft payment, then allocations. Every step is checked and undone on failure.
     const { data: payment, error } = await supabase
       .from("supplier_payments" as never)
       .insert({
@@ -1634,6 +1762,20 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const paymentId = (payment as { id: string }).id;
 
+    const discardDraftPayment = async () => {
+      await supabase
+        .from("supplier_payment_allocations" as never)
+        .delete()
+        .eq("company_id" as never, data.companyId as never)
+        .eq("payment_id" as never, paymentId as never);
+      await supabase
+        .from("supplier_payments" as never)
+        .delete()
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, paymentId as never)
+        .is("posted_journal_id" as never, null as never);
+    };
+
     if (data.allocations.length) {
       const { error: aErr } = await supabase.from("supplier_payment_allocations" as never).insert(
         data.allocations.map((a) => ({
@@ -1643,69 +1785,94 @@ export const createAndPostPayment = createServerFn({ method: "POST" })
           amount_minor: a.amountMinor,
         })) as never,
       );
-      if (aErr) throw new Error(aErr.message);
+      if (aErr) {
+        await discardDraftPayment();
+        throw new Error(aErr.message);
+      }
     }
 
-    const journalId = await postSupplierPayment(supabase, {
-      company_id: data.companyId,
-      payment_id: paymentId,
-      payment_date: data.paymentDate,
-      currency_code: data.currencyCode,
-      bank_account_id: data.bankAccountId,
-      amount_minor: data.amountMinor,
-      ...(data.memo || data.reference
-        ? { memo: (data.memo ?? data.reference) as string }
-        : {}),
-    });
-
-    const fullyPaidBillIds: string[] = [];
-    for (const alloc of data.allocations) {
-      const { data: bill, error: billErr } = await supabase
-        .from("purchase_bills" as never)
-        .select("total_minor, amount_paid_minor, amount_credited_minor, status" as never)
-        .eq("id" as never, alloc.billId as never)
-        .maybeSingle();
-      if (billErr) throw new Error(billErr.message);
-      if (!bill) throw new Error("Bill not found while applying payment");
-      const b = bill as unknown as {
-        total_minor: number;
-        amount_paid_minor: number;
-        amount_credited_minor: number;
-        status: string;
-      };
-      const amountPaid = b.amount_paid_minor + alloc.amountMinor;
-      const nextStatus = deriveBillStatus({
-        status: b.status,
-        total_minor: b.total_minor,
-        amount_paid_minor: amountPaid,
-        amount_credited_minor: b.amount_credited_minor,
+    // 3. Post the journal (idempotent per payment).
+    let journalId: string;
+    try {
+      journalId = await postSupplierPayment(supabase, {
+        company_id: data.companyId,
+        payment_id: paymentId,
+        payment_date: data.paymentDate,
+        currency_code: data.currencyCode,
+        bank_account_id: data.bankAccountId,
+        amount_minor: data.amountMinor,
+        ...(data.memo || data.reference ? { memo: (data.memo ?? data.reference) as string } : {}),
       });
-      if (nextStatus === "paid") fullyPaidBillIds.push(alloc.billId);
-      await supabase
-        .from("purchase_bills" as never)
+    } catch (postError) {
+      await discardDraftPayment();
+      throw postError;
+    }
+
+    // 4. Apply to the bills with compare-and-set; undo everything (including the journal) on failure.
+    const applied: Array<{ billId: string; prev: BillSettlement }> = [];
+    const fullyPaidBillIds: string[] = [];
+    try {
+      for (const alloc of data.allocations) {
+        const prev = await adjustBillSettlement(
+          supabase,
+          data.companyId,
+          alloc.billId,
+          { paid: alloc.amountMinor },
+          nextBillStatus,
+        );
+        applied.push({ billId: alloc.billId, prev });
+      }
+      const { data: marked, error: markErr } = await supabase
+        .from("supplier_payments" as never)
         .update({
-          amount_paid_minor: amountPaid,
-          status: nextStatus,
+          status: "paid",
+          posted_journal_id: journalId,
           updated_at: new Date().toISOString(),
         } as never)
-        .eq("id" as never, alloc.billId as never);
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, paymentId as never)
+        .select("id");
+      if (markErr) throw new Error(markErr.message);
+      if (!marked || (marked as unknown[]).length === 0) {
+        throw new Error("The payment record could not be marked as posted");
+      }
+    } catch (applyError) {
+      for (const done of applied.reverse()) {
+        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
+      }
+      await voidPostedDocument(supabase, journalId, `supplier_payment:${paymentId}:rollback`).catch(
+        () => undefined,
+      );
+      await supabase
+        .from("supplier_payment_allocations" as never)
+        .delete()
+        .eq("company_id" as never, data.companyId as never)
+        .eq("payment_id" as never, paymentId as never);
+      await supabase
+        .from("supplier_payments" as never)
+        .update({
+          status: "void",
+          posted_journal_id: journalId,
+          memo: `Auto-reversed: ${(applyError as Error).message}`.slice(0, 500),
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, paymentId as never);
+      throw new Error(
+        `The payment could not be completed and was reversed (${(applyError as Error).message}). Nothing was paid - please try again.`,
+      );
     }
-
-    await supabase
-      .from("supplier_payments" as never)
-      .update({
-        status: "paid",
-        posted_journal_id: journalId,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("id" as never, paymentId as never);
-
-    const { data: supplier } = await supabase
-      .from("contacts" as never)
-      .select("name" as never)
-      .eq("id" as never, data.contactId as never)
-      .eq("company_id" as never, data.companyId as never)
-      .maybeSingle();
+    for (const done of applied) {
+      const alloc = data.allocations.find((a) => a.billId === done.billId);
+      if (!alloc) continue;
+      const after = nextBillStatus({
+        status: done.prev.status,
+        total_minor: billRows.find((b) => b.id === done.billId)?.total_minor ?? 0,
+        amount_paid_minor: done.prev.paid + alloc.amountMinor,
+        amount_credited_minor: done.prev.credited,
+      });
+      if (after === "paid") fullyPaidBillIds.push(done.billId);
+    }
 
     await recordBillAudit(supabase, data.companyId, "supplier_payment.post", null, {
       payment_id: paymentId,
@@ -1764,71 +1931,81 @@ export const reverseSupplierPayment = createServerFn({ method: "POST" })
       .eq("payment_id" as never, data.paymentId as never);
     if (aErr) throw new Error(aErr.message);
 
-    const voidJournalId = await voidPostedDocument(
-      supabase,
-      p.posted_journal_id,
-      `supplier_payment:${data.paymentId}:void`,
-    );
+    const allocRows = (allocs ?? []) as Array<{ bill_id: string; amount_minor: number }>;
 
-    for (const alloc of (allocs ?? []) as Array<{
-      bill_id: string;
-      amount_minor: number;
-    }>) {
-      const { data: bill, error: billErr } = await supabase
-        .from("purchase_bills" as never)
-        .select("total_minor, amount_paid_minor, amount_credited_minor, status" as never)
-        .eq("id" as never, alloc.bill_id as never)
-        .eq("company_id" as never, data.companyId as never)
-        .maybeSingle();
-      if (billErr) throw new Error(billErr.message);
-      if (!bill) continue;
-      const b = bill as {
-        total_minor: number;
-        amount_paid_minor: number;
-        amount_credited_minor: number;
-        status: string;
-      };
-      if (b.status === "void") continue;
-      const amountPaid = Math.max(0, Number(b.amount_paid_minor) - Number(alloc.amount_minor));
-      const nextStatus = deriveBillStatus({
-        status: b.status === "paid" || b.status === "partly_paid" ? "authorised" : b.status,
-        total_minor: b.total_minor,
-        amount_paid_minor: amountPaid,
-        amount_credited_minor: b.amount_credited_minor,
-      });
-      await supabase
-        .from("purchase_bills" as never)
-        .update({
-          amount_paid_minor: amountPaid,
-          status: nextStatus,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id" as never, alloc.bill_id as never);
+    // Reverse the bill balances first (compare-and-set). If any bill cannot be restored, undo the
+    // ones already done and stop - the ledger has not been touched yet.
+    const restoredBills: Array<{ billId: string; prev: BillSettlement }> = [];
+    try {
+      for (const alloc of allocRows) {
+        const { data: billRow, error: billErr } = await supabase
+          .from("purchase_bills" as never)
+          .select("status" as never)
+          .eq("id" as never, alloc.bill_id as never)
+          .eq("company_id" as never, data.companyId as never)
+          .maybeSingle();
+        if (billErr) throw new Error(billErr.message);
+        if (!billRow || (billRow as { status: string }).status === "void") continue;
+        const prev = await adjustBillSettlement(
+          supabase,
+          data.companyId,
+          alloc.bill_id,
+          { paid: -Number(alloc.amount_minor) },
+          nextBillStatus,
+        );
+        restoredBills.push({ billId: alloc.bill_id, prev });
+      }
+    } catch (restoreError) {
+      for (const done of restoredBills.reverse()) {
+        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
+      }
+      throw restoreError;
     }
 
+    let voidJournalId: string;
+    try {
+      voidJournalId = await voidPostedDocument(
+        supabase,
+        p.posted_journal_id,
+        `supplier_payment:${data.paymentId}:void`,
+      );
+    } catch (reverseError) {
+      for (const done of restoredBills.reverse()) {
+        await restoreBillSettlement(supabase, data.companyId, done.billId, done.prev);
+      }
+      throw reverseError;
+    }
+
+    const names = await lookupActorNames(supabase, [userId]);
     const voidMemo = [
       p.memo,
       data.reason ? `Reversed: ${data.reason}` : "Reversed",
-      `by ${userId.slice(0, 8)}`,
+      `by ${names.get(userId) ?? "a team member"}`,
     ]
       .filter(Boolean)
       .join(" · ")
       .slice(0, 500);
 
-    await supabase
+    const { error: voidErr } = await supabase
       .from("supplier_payments" as never)
       .update({
         status: "void",
         memo: voidMemo,
         updated_at: new Date().toISOString(),
       } as never)
+      .eq("company_id" as never, data.companyId as never)
       .eq("id" as never, data.paymentId as never);
+    if (voidErr) {
+      throw new Error(
+        `The payment was reversed in the ledger but its record could not be marked void (${voidErr.message}). Reload and try Reverse again - it will not post twice.`,
+      );
+    }
 
     await recordBillAudit(supabase, data.companyId, "supplier_payment.reverse", null, {
       payment_id: data.paymentId,
       void_journal_id: voidJournalId,
       reason: data.reason,
-      bill_ids: ((allocs ?? []) as Array<{ bill_id: string }>).map((a) => a.bill_id),
+      bill_ids: allocRows.map((a) => a.bill_id),
     });
 
     return { ok: true, voidJournalId };
@@ -1853,6 +2030,271 @@ export const listCreditNotes = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+type CreditLineIn = {
+  description: string;
+  accountId: string;
+  netMinor: number;
+  taxMinor?: number;
+};
+
+function normaliseCreditLines(lines: CreditLineIn[] | undefined) {
+  if (!lines?.length) throw new Error("Add at least one credit line");
+  return lines.map((l, i) => {
+    const description = (l.description ?? "").trim();
+    if (!description) throw new Error(`Line ${i + 1}: description required`);
+    const net = Number(l.netMinor);
+    const tax = Number(l.taxMinor ?? 0);
+    if (!Number.isInteger(net) || net < 0) throw new Error(`Line ${i + 1}: invalid net amount`);
+    if (!Number.isInteger(tax) || tax < 0) throw new Error(`Line ${i + 1}: invalid tax amount`);
+    return {
+      description,
+      accountId: assertUuid(l.accountId, "account"),
+      netMinor: net,
+      taxMinor: tax,
+    };
+  });
+}
+
+type SupabaseDb = Parameters<typeof assertCompanyPermission>[0];
+
+async function loadBillsForAllocation(
+  supabase: SupabaseDb,
+  companyId: string,
+  billIds: string[],
+): Promise<AllocatableBill[]> {
+  if (!billIds.length) return [];
+  const { data: rows, error } = await supabase
+    .from("purchase_bills" as never)
+    .select(
+      "id, status, contact_id, currency_code, total_minor, amount_paid_minor, amount_credited_minor" as never,
+    )
+    .eq("company_id" as never, companyId as never)
+    .in("id" as never, [...new Set(billIds)] as never);
+  if (error) throw new Error(error.message);
+  return (rows ?? []) as unknown as AllocatableBill[];
+}
+
+/**
+ * Apply part of an authorised credit note to bills. Every step is checked; if any bill cannot be
+ * updated, the bills and allocation rows already written are put back and the error is thrown.
+ * The credit's own `amount_allocated_minor` / status are updated last.
+ */
+async function applyCreditAllocations(
+  supabase: SupabaseDb,
+  companyId: string,
+  credit: {
+    id: string;
+    contact_id: string;
+    currency_code: string;
+    status: string;
+    total_minor: number;
+    amount_allocated_minor: number;
+  },
+  allocations: Array<{ billId: string; amountMinor: number }>,
+): Promise<{ allocatedMinor: number; status: string }> {
+  if (!["authorised", "partly_paid"].includes(credit.status)) {
+    throw new Error("Credit note must be authorised before allocation");
+  }
+  if (!allocations.length) throw new Error("At least one allocation is required");
+  const requested = allocations.reduce((s, a) => s + a.amountMinor, 0);
+  const remaining = Number(creditRemainingMinor(credit));
+  if (requested > remaining) throw new Error("Allocations exceed the unallocated credit");
+
+  const bills = await loadBillsForAllocation(
+    supabase,
+    companyId,
+    allocations.map((a) => a.billId),
+  );
+  assertAllocationsAllowed(bills, allocations, {
+    contactId: credit.contact_id,
+    currencyCode: credit.currency_code,
+    kind: "credit",
+  });
+
+  const done: Array<{ billId: string; prev: BillSettlement; allocationId: string | null }> = [];
+  try {
+    for (const alloc of allocations) {
+      const { data: row, error: aErr } = await supabase
+        .from("purchase_credit_allocations" as never)
+        .insert({
+          company_id: companyId,
+          credit_note_id: credit.id,
+          bill_id: alloc.billId,
+          amount_minor: alloc.amountMinor,
+        } as never)
+        .select("id")
+        .single();
+      if (aErr) {
+        if (aErr.code === "23505") throw new Error("Already allocated to this bill");
+        throw new Error(aErr.message);
+      }
+      const allocationId = (row as { id: string }).id;
+      const prev = await adjustBillSettlement(
+        supabase,
+        companyId,
+        alloc.billId,
+        { credited: alloc.amountMinor },
+        nextBillStatus,
+      );
+      done.push({ billId: alloc.billId, prev, allocationId });
+    }
+    const allocatedMinor = credit.amount_allocated_minor + requested;
+    const status = deriveCreditNoteStatus({
+      status: credit.status,
+      total_minor: credit.total_minor,
+      amount_allocated_minor: allocatedMinor,
+    });
+    const { data: updated, error: cnErr } = await supabase
+      .from("purchase_credit_notes" as never)
+      .update({
+        amount_allocated_minor: allocatedMinor,
+        status,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("id" as never, credit.id as never)
+      .eq("amount_allocated_minor" as never, credit.amount_allocated_minor as never)
+      .select("id");
+    if (cnErr) throw new Error(cnErr.message);
+    if (!updated || (updated as unknown[]).length === 0) {
+      throw new Error("The credit note changed while saving. Reload and try again.");
+    }
+    return { allocatedMinor, status };
+  } catch (error) {
+    for (const item of done.reverse()) {
+      await restoreBillSettlement(supabase, companyId, item.billId, item.prev);
+      if (item.allocationId) {
+        await supabase
+          .from("purchase_credit_allocations" as never)
+          .delete()
+          .eq("company_id" as never, companyId as never)
+          .eq("id" as never, item.allocationId as never);
+      }
+    }
+    // The failed insert (if any) may have created a row that never got a bill update.
+    throw error;
+  }
+}
+
+async function loadCreditNote(supabase: SupabaseDb, companyId: string, creditNoteId: string) {
+  const { data, error } = await supabase
+    .from("purchase_credit_notes" as never)
+    .select(
+      "id, status, contact_id, currency_code, credit_date, credit_number, memo, total_minor, amount_allocated_minor, posted_journal_id, purchase_credit_note_lines(*)" as never,
+    )
+    .eq("id" as never, creditNoteId as never)
+    .eq("company_id" as never, companyId as never)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Credit note not found");
+  return data as unknown as {
+    id: string;
+    status: string;
+    contact_id: string;
+    currency_code: string;
+    credit_date: string;
+    credit_number: string | null;
+    memo: string | null;
+    total_minor: number;
+    amount_allocated_minor: number;
+    posted_journal_id: string | null;
+    purchase_credit_note_lines: Array<{
+      description: string;
+      account_id: string;
+      net_minor: number;
+      tax_minor: number;
+      line_no: number;
+    }>;
+  };
+}
+
+/** Post a draft credit note and (optionally) apply it. Safe to retry: posting is idempotent. */
+async function authoriseCreditNoteInternal(
+  supabase: SupabaseDb,
+  companyId: string,
+  creditNoteId: string,
+  allocations: Array<{ billId: string; amountMinor: number }>,
+): Promise<{ journalId: string; allocatedMinor: number; allocationError: string | null }> {
+  await assertCompanyPermission(supabase, companyId, "purchases.authorise");
+  const credit = await loadCreditNote(supabase, companyId, creditNoteId);
+  if (credit.status !== "draft") throw new Error("Only draft credit notes can be authorised");
+
+  // Validate the allocations BEFORE posting so a bad request never leaves a half-done credit.
+  if (allocations.length) {
+    const requested = allocations.reduce((s, a) => s + a.amountMinor, 0);
+    if (requested > credit.total_minor) throw new Error("Credit allocations exceed credit total");
+    const bills = await loadBillsForAllocation(
+      supabase,
+      companyId,
+      allocations.map((a) => a.billId),
+    );
+    assertAllocationsAllowed(bills, allocations, {
+      contactId: credit.contact_id,
+      currencyCode: credit.currency_code,
+      kind: "credit",
+    });
+  }
+
+  const journalId = await postCreditNoteAuthorisation(supabase as never, {
+    company_id: companyId,
+    credit_note_id: creditNoteId,
+    credit_date: credit.credit_date,
+    currency_code: credit.currency_code,
+    ...(credit.memo ? { memo: credit.memo } : {}),
+    lines: [...credit.purchase_credit_note_lines]
+      .sort((a, b) => a.line_no - b.line_no)
+      .map((l) => ({
+        account_id: l.account_id,
+        description: l.description,
+        net_minor: l.net_minor,
+        tax_minor: l.tax_minor,
+      })),
+  });
+
+  const { data: marked, error: markErr } = await supabase
+    .from("purchase_credit_notes" as never)
+    .update({
+      status: "authorised",
+      posted_journal_id: journalId,
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq("company_id" as never, companyId as never)
+    .eq("id" as never, creditNoteId as never)
+    .eq("status" as never, "draft" as never)
+    .select("id");
+  if (markErr || !marked || (marked as unknown[]).length === 0) {
+    throw new Error(
+      `The journal was posted but the credit note could not be marked authorised (${markErr?.message ?? "it changed while saving"}). Open it and click Authorise again - it will not post twice.`,
+    );
+  }
+
+  let allocatedMinor = 0;
+  let allocationError: string | null = null;
+  if (allocations.length) {
+    try {
+      const result = await applyCreditAllocations(
+        supabase,
+        companyId,
+        { ...credit, status: "authorised", amount_allocated_minor: 0 },
+        allocations,
+      );
+      allocatedMinor = result.allocatedMinor;
+    } catch (error) {
+      // The credit itself is valid and posted; only the application to bills failed.
+      allocationError = (error as Error).message;
+    }
+  }
+  await recordBillAudit(
+    supabase,
+    companyId,
+    "credit_note.authorise",
+    creditNoteId,
+    { journal_id: journalId, allocated_minor: allocatedMinor },
+    "purchase_credit_note",
+  );
+  return { journalId, allocatedMinor, allocationError };
+}
+
 export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -1862,31 +2304,17 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
       creditDate: string;
       currencyCode: string;
       memo?: string;
-      lines: Array<{ description: string; accountId: string; netMinor: number; taxMinor?: number }>;
+      lines: CreditLineIn[];
       allocations?: Array<{ billId: string; amountMinor: number }>;
       authorise: boolean;
     }) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.creditDate)) throw new Error("Credit date required");
-      if (!input.lines?.length) throw new Error("Add at least one credit line");
-      const lines = input.lines.map((l, i) => {
-        const description = (l.description ?? "").trim();
-        if (!description) throw new Error(`Line ${i + 1}: description required`);
-        const net = Number(l.netMinor);
-        const tax = Number(l.taxMinor ?? 0);
-        if (!Number.isInteger(net) || net < 0) throw new Error("Invalid net amount");
-        if (!Number.isInteger(tax) || tax < 0) throw new Error("Invalid tax amount");
-        return {
-          description,
-          accountId: assertUuid(l.accountId, "account"),
-          netMinor: net,
-          taxMinor: tax,
-        };
-      });
+      const lines = normaliseCreditLines(input.lines);
       return {
         companyId: assertUuid(input.companyId),
         contactId: assertUuid(input.contactId, "supplier"),
         creditDate: input.creditDate,
-        currencyCode: input.currencyCode.toUpperCase(),
+        currencyCode: (input.currencyCode ?? "").toUpperCase(),
         memo: (input.memo ?? "").trim().slice(0, 500) || null,
         lines,
         allocations: (input.allocations ?? []).map((a) => ({
@@ -1900,16 +2328,44 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    if (data.authorise) {
+      // Fail before inserting anything if the user may not authorise.
+      await assertCompanyPermission(supabase, data.companyId, "purchases.authorise");
+    }
+    if (!/^[A-Z]{3}$/.test(data.currencyCode)) throw new Error("Currency code required");
+    for (const accountId of new Set(data.lines.map((l) => l.accountId))) {
+      await requireAccountInCompany(supabase, data.companyId, accountId);
+    }
     const subtotal = data.lines.reduce((s, l) => s + l.netMinor, 0);
     const tax = data.lines.reduce((s, l) => s + l.taxMinor, 0);
     const total = subtotal + tax;
     if (total <= 0) throw new Error("Credit total must be greater than zero");
+    if (data.allocations.length && !data.authorise) {
+      throw new Error("A credit note must be authorised before it can be applied to bills");
+    }
+
+    const { data: supplier, error: supplierErr } = await supabase
+      .from("contacts" as never)
+      .select("id" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.contactId as never)
+      .maybeSingle();
+    if (supplierErr) throw new Error(supplierErr.message);
+    if (!supplier) throw new Error("Supplier not found in this organisation");
+
+    const { allocateDocumentNumber } = await import("@/lib/settings/document-numbering");
+    const creditNumber = await allocateDocumentNumber(
+      supabase as never,
+      data.companyId,
+      "purchase_credit_note",
+    );
 
     const { data: cn, error } = await supabase
       .from("purchase_credit_notes" as never)
       .insert({
         company_id: data.companyId,
         contact_id: data.contactId,
+        credit_number: creditNumber,
         credit_date: data.creditDate,
         currency_code: data.currencyCode,
         memo: data.memo,
@@ -1934,81 +2390,200 @@ export const saveAndAuthoriseCreditNote = createServerFn({ method: "POST" })
         tax_minor: l.taxMinor,
       })) as never,
     );
-    if (lineErr) throw new Error(lineErr.message);
-
-    if (!data.authorise) return { id: creditId, journalId: null as string | null };
-
-    await assertCompanyPermission(supabase, data.companyId, "purchases.authorise");
-    const journalId = await postCreditNoteAuthorisation(supabase, {
-      company_id: data.companyId,
-      credit_note_id: creditId,
-      credit_date: data.creditDate,
-      currency_code: data.currencyCode,
-      ...(data.memo ? { memo: data.memo } : {}),
-      lines: data.lines.map((l) => ({
-        account_id: l.accountId,
-        description: l.description,
-        net_minor: l.netMinor,
-        tax_minor: l.taxMinor,
-      })),
-    });
-
-    let allocated = 0;
-    for (const alloc of data.allocations) {
-      const { data: bill } = await supabase
-        .from("purchase_bills" as never)
-        .select("total_minor, amount_paid_minor, amount_credited_minor, status, contact_id" as never)
-        .eq("id" as never, alloc.billId as never)
-        .eq("company_id" as never, data.companyId as never)
-        .maybeSingle();
-      if (!bill) throw new Error("Bill not found for credit allocation");
-      const b = bill as {
-        contact_id: string;
-        total_minor: number;
-        amount_paid_minor: number;
-        amount_credited_minor: number;
-        status: string;
-      };
-      if (b.contact_id !== data.contactId) throw new Error("Credit allocation supplier mismatch");
-      const outstanding = b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
-      if (alloc.amountMinor > outstanding) throw new Error("Credit allocation exceeds outstanding");
-      allocated += alloc.amountMinor;
-      if (allocated > total) throw new Error("Credit allocations exceed credit total");
-      await supabase.from("purchase_credit_allocations" as never).insert({
-        company_id: data.companyId,
-        credit_note_id: creditId,
-        bill_id: alloc.billId,
-        amount_minor: alloc.amountMinor,
-      } as never);
-      const amountCredited = b.amount_credited_minor + alloc.amountMinor;
-      const nextStatus = deriveBillStatus({
-        status: b.status,
-        total_minor: b.total_minor,
-        amount_paid_minor: b.amount_paid_minor,
-        amount_credited_minor: amountCredited,
-      });
+    if (lineErr) {
       await supabase
-        .from("purchase_bills" as never)
-        .update({
-          amount_credited_minor: amountCredited,
-          status: nextStatus,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id" as never, alloc.billId as never);
+        .from("purchase_credit_notes" as never)
+        .delete()
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, creditId as never)
+        .eq("status" as never, "draft" as never);
+      throw new Error(`Could not save credit note lines: ${lineErr.message}`);
     }
 
-    await supabase
+    if (!data.authorise) return { id: creditId, journalId: null as string | null, allocationError: null as string | null };
+
+    try {
+      const result = await authoriseCreditNoteInternal(
+        supabase,
+        data.companyId,
+        creditId,
+        data.allocations,
+      );
+      return { id: creditId, journalId: result.journalId, allocationError: result.allocationError };
+    } catch (authoriseError) {
+      throw new Error(
+        `The credit note was saved as draft ${creditNumber} but could not be authorised: ${(authoriseError as Error).message}`,
+      );
+    }
+  });
+
+export const authoriseCreditNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      creditNoteId: string;
+      allocations?: Array<{ billId: string; amountMinor: number }>;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      creditNoteId: assertUuid(input.creditNoteId, "credit note"),
+      allocations: (input.allocations ?? []).map((a) => ({
+        billId: assertUuid(a.billId, "bill"),
+        amountMinor: Number(a.amountMinor),
+      })),
+    }),
+  )
+  .handler(async ({ data, context }) =>
+    authoriseCreditNoteInternal(context.supabase, data.companyId, data.creditNoteId, data.allocations),
+  );
+
+export const updateCreditNoteDraft = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      creditNoteId: string;
+      contactId: string;
+      creditDate: string;
+      memo?: string;
+      lines: CreditLineIn[];
+    }) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.creditDate)) throw new Error("Credit date required");
+      return {
+        companyId: assertUuid(input.companyId),
+        creditNoteId: assertUuid(input.creditNoteId, "credit note"),
+        contactId: assertUuid(input.contactId, "supplier"),
+        creditDate: input.creditDate,
+        memo: (input.memo ?? "").trim().slice(0, 500) || null,
+        lines: normaliseCreditLines(input.lines),
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    const credit = await loadCreditNote(supabase, data.companyId, data.creditNoteId);
+    if (credit.status !== "draft") throw new Error("Only draft credit notes can be edited");
+    for (const accountId of new Set(data.lines.map((l) => l.accountId))) {
+      await requireAccountInCompany(supabase, data.companyId, accountId);
+    }
+    const subtotal = data.lines.reduce((s, l) => s + l.netMinor, 0);
+    const tax = data.lines.reduce((s, l) => s + l.taxMinor, 0);
+    if (subtotal + tax <= 0) throw new Error("Credit total must be greater than zero");
+
+    const priorLines = credit.purchase_credit_note_lines.map((l) => ({
+      company_id: data.companyId,
+      credit_note_id: credit.id,
+      ...l,
+    }));
+    const newLines = data.lines.map((l, i) => ({
+      company_id: data.companyId,
+      credit_note_id: data.creditNoteId,
+      line_no: i + 1,
+      description: l.description,
+      account_id: l.accountId,
+      net_minor: l.netMinor,
+      tax_minor: l.taxMinor,
+    }));
+    const { error: delErr } = await supabase
+      .from("purchase_credit_note_lines" as never)
+      .delete()
+      .eq("company_id" as never, data.companyId as never)
+      .eq("credit_note_id" as never, data.creditNoteId as never);
+    if (delErr) throw new Error(delErr.message);
+    const { error: insErr } = await supabase
+      .from("purchase_credit_note_lines" as never)
+      .insert(newLines as never);
+    if (insErr) {
+      await supabase.from("purchase_credit_note_lines" as never).insert(priorLines as never);
+      throw new Error(`Could not save credit note lines: ${insErr.message}`);
+    }
+    const { error: upErr } = await supabase
       .from("purchase_credit_notes" as never)
       .update({
-        status: "authorised",
-        posted_journal_id: journalId,
-        amount_allocated_minor: allocated,
+        contact_id: data.contactId,
+        credit_date: data.creditDate,
+        memo: data.memo,
+        subtotal_minor: subtotal,
+        tax_minor: tax,
+        total_minor: subtotal + tax,
         updated_at: new Date().toISOString(),
       } as never)
-      .eq("id" as never, creditId as never);
-
-    return { id: creditId, journalId };
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.creditNoteId as never)
+      .eq("status" as never, "draft" as never);
+    if (upErr) throw new Error(upErr.message);
+    return { id: data.creditNoteId };
   });
+
+export const deleteCreditNoteDraft = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; creditNoteId: string }) => ({
+    companyId: assertUuid(input.companyId),
+    creditNoteId: assertUuid(input.creditNoteId, "credit note"),
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.draft");
+    const credit = await loadCreditNote(supabase, data.companyId, data.creditNoteId);
+    if (credit.status !== "draft" || credit.posted_journal_id) {
+      throw new Error("Only unposted draft credit notes can be deleted. Void posted credit notes instead.");
+    }
+    const { error: lineErr } = await supabase
+      .from("purchase_credit_note_lines" as never)
+      .delete()
+      .eq("company_id" as never, data.companyId as never)
+      .eq("credit_note_id" as never, data.creditNoteId as never);
+    if (lineErr) throw new Error(lineErr.message);
+    const { error } = await supabase
+      .from("purchase_credit_notes" as never)
+      .delete()
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.creditNoteId as never)
+      .eq("status" as never, "draft" as never);
+    if (error) throw new Error(error.message);
+    await recordBillAudit(
+      supabase,
+      data.companyId,
+      "credit_note.draft.delete",
+      data.creditNoteId,
+      { credit_number: credit.credit_number },
+      "purchase_credit_note",
+    );
+    return { ok: true };
+  });
+
+export type CreditNoteDetail = {
+  id: string;
+  status: string;
+  contact_id: string;
+  credit_number: string | null;
+  credit_date: string;
+  currency_code: string;
+  memo: string | null;
+  total_minor: number;
+  subtotal_minor: number;
+  tax_minor: number;
+  amount_allocated_minor: number;
+  posted_journal_id: string | null;
+  contacts: { id: string; name: string; email: string | null } | null;
+  purchase_credit_note_lines: Array<{
+    id: string;
+    description: string;
+    account_id: string;
+    net_minor: number;
+    tax_minor: number;
+    line_no: number;
+  }>;
+  purchase_credit_allocations: Array<{
+    id: string;
+    bill_id: string;
+    amount_minor: number;
+    bill_number?: string | null;
+    supplier_invoice_number?: string | null;
+    bill_status?: string | null;
+  }>;
+};
 
 export const getCreditNote = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -2028,7 +2603,38 @@ export const getCreditNote = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!row) throw new Error("Credit note not found");
-    return row;
+    const credit = row as unknown as CreditNoteDetail;
+    const allocations = credit.purchase_credit_allocations ?? [];
+    const billIds = allocations.map((a) => a.bill_id);
+    const billLabels = new Map<
+      string,
+      { bill_number: string | null; supplier_invoice_number: string | null; status: string }
+    >();
+    if (billIds.length) {
+      const { data: bills } = await context.supabase
+        .from("purchase_bills" as never)
+        .select("id, bill_number, supplier_invoice_number, status" as never)
+        .eq("company_id" as never, data.companyId as never)
+        .in("id" as never, billIds as never);
+      for (const b of (bills ?? []) as Array<{
+        id: string;
+        bill_number: string | null;
+        supplier_invoice_number: string | null;
+        status: string;
+      }>) {
+        billLabels.set(b.id, b);
+      }
+    }
+    const detail: CreditNoteDetail = {
+      ...credit,
+      purchase_credit_allocations: allocations.map((a) => ({
+        ...a,
+        bill_number: billLabels.get(a.bill_id)?.bill_number ?? null,
+        supplier_invoice_number: billLabels.get(a.bill_id)?.supplier_invoice_number ?? null,
+        bill_status: billLabels.get(a.bill_id)?.status ?? null,
+      })),
+    };
+    return detail;
   });
 
 export const allocatePurchaseCreditNote = createServerFn({ method: "POST" })
@@ -2050,91 +2656,273 @@ export const allocatePurchaseCreditNote = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
-    const { data: cn, error } = await supabase
+    const credit = await loadCreditNote(supabase, data.companyId, data.creditNoteId);
+    const result = await applyCreditAllocations(supabase, data.companyId, credit, data.allocations);
+    return { allocatedMinor: result.allocatedMinor, status: result.status };
+  });
+
+/**
+ * Remove credit applied to bills (P-11). With `billId`, only that bill's allocation is removed;
+ * otherwise all of them. Bills go back to authorised / partly paid and the credit becomes usable again.
+ */
+async function unallocateCreditInternal(
+  supabase: SupabaseDb,
+  companyId: string,
+  creditNoteId: string,
+  billId: string | null,
+): Promise<{ removedMinor: number }> {
+  const credit = await loadCreditNote(supabase, companyId, creditNoteId);
+  let q = supabase
+    .from("purchase_credit_allocations" as never)
+    .select("id, bill_id, amount_minor" as never)
+    .eq("company_id" as never, companyId as never)
+    .eq("credit_note_id" as never, creditNoteId as never);
+  if (billId) q = q.eq("bill_id" as never, billId as never);
+  const { data: rows, error } = await q;
+  if (error) throw new Error(error.message);
+  const allocs = (rows ?? []) as Array<{ id: string; bill_id: string; amount_minor: number }>;
+  if (!allocs.length) throw new Error("This credit note has no allocations to remove");
+
+  const restored: Array<{ billId: string; prev: BillSettlement }> = [];
+  try {
+    for (const a of allocs) {
+      const prev = await adjustBillSettlement(
+        supabase,
+        companyId,
+        a.bill_id,
+        { credited: -Number(a.amount_minor) },
+        nextBillStatus,
+      );
+      restored.push({ billId: a.bill_id, prev });
+    }
+    const { error: delErr } = await supabase
+      .from("purchase_credit_allocations" as never)
+      .delete()
+      .eq("company_id" as never, companyId as never)
+      .in("id" as never, allocs.map((a) => a.id) as never);
+    if (delErr) throw new Error(delErr.message);
+    const removed = allocs.reduce((s, a) => s + Number(a.amount_minor), 0);
+    const nextAllocated = Math.max(0, credit.amount_allocated_minor - removed);
+    const { error: cnErr } = await supabase
       .from("purchase_credit_notes" as never)
-      .select("id, status, contact_id, total_minor, amount_allocated_minor" as never)
-      .eq("id" as never, data.creditNoteId as never)
+      .update({
+        amount_allocated_minor: nextAllocated,
+        status: deriveCreditNoteStatus({
+          status: credit.status,
+          total_minor: credit.total_minor,
+          amount_allocated_minor: nextAllocated,
+        }),
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("id" as never, creditNoteId as never);
+    if (cnErr) throw new Error(cnErr.message);
+    return { removedMinor: removed };
+  } catch (error) {
+    for (const item of restored.reverse()) {
+      await restoreBillSettlement(supabase, companyId, item.billId, item.prev);
+    }
+    throw error;
+  }
+}
+
+export const unallocatePurchaseCredit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; creditNoteId: string; billId?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    creditNoteId: assertUuid(input.creditNoteId, "credit note"),
+    billId: input.billId ? assertUuid(input.billId, "bill") : null,
+  }))
+  .handler(async ({ data, context }) => {
+    await assertCompanyPermission(context.supabase, data.companyId, "purchases.payment");
+    const result = await unallocateCreditInternal(
+      context.supabase,
+      data.companyId,
+      data.creditNoteId,
+      data.billId,
+    );
+    await recordBillAudit(
+      context.supabase,
+      data.companyId,
+      "credit_note.unallocate",
+      data.creditNoteId,
+      { bill_id: data.billId, removed_minor: result.removedMinor },
+      "purchase_credit_note",
+    );
+    return result;
+  });
+
+export const voidPurchaseCreditNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { companyId: string; creditNoteId: string; reason?: string }) => ({
+    companyId: assertUuid(input.companyId),
+    creditNoteId: assertUuid(input.creditNoteId, "credit note"),
+    reason: (input.reason ?? "").trim().slice(0, 500) || null,
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.authorise");
+    const credit = await loadCreditNote(supabase, data.companyId, data.creditNoteId);
+    if (credit.status === "void") throw new Error("Credit note is already void");
+    if (credit.status === "draft" || !credit.posted_journal_id) {
+      throw new Error("Draft credit notes have no ledger entry - delete the draft instead");
+    }
+    const { data: allocRows, error: allocErr } = await supabase
+      .from("purchase_credit_allocations" as never)
+      .select("amount_minor" as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("credit_note_id" as never, data.creditNoteId as never);
+    if (allocErr) throw new Error(allocErr.message);
+    const onBills = ((allocRows ?? []) as Array<{ amount_minor: number }>).reduce(
+      (s, r) => s + Number(r.amount_minor),
+      0,
+    );
+    if (credit.amount_allocated_minor - onBills > 0) {
+      throw new Error(
+        "Part of this credit was used by a supplier refund. Void that refund first, then void the credit note.",
+      );
+    }
+    if (onBills > 0) {
+      await unallocateCreditInternal(supabase, data.companyId, data.creditNoteId, null);
+    }
+    const voidJournalId = await voidPostedDocument(
+      supabase as never,
+      credit.posted_journal_id,
+      `purchase_credit_note:${data.creditNoteId}:void`,
+    );
+    const { error: upErr } = await supabase
+      .from("purchase_credit_notes" as never)
+      .update({
+        status: "void",
+        amount_allocated_minor: 0,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("company_id" as never, data.companyId as never)
+      .eq("id" as never, data.creditNoteId as never);
+    if (upErr) {
+      throw new Error(
+        `The credit note was reversed in the ledger but could not be marked void (${upErr.message}). Reload and click Void again - it will not post twice.`,
+      );
+    }
+    await recordBillAudit(
+      supabase,
+      data.companyId,
+      "credit_note.void",
+      data.creditNoteId,
+      { void_journal_id: voidJournalId, reason: data.reason, unallocated_minor: onBills },
+      "purchase_credit_note",
+    );
+    return { voidJournalId };
+  });
+
+/**
+ * Apply the unallocated part of an on-account / over-payment to bills (P-09).
+ * The ledger is unchanged (the payment already debited AP); only the subledger moves.
+ */
+export const allocateSupplierPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      companyId: string;
+      paymentId: string;
+      allocations: Array<{ billId: string; amountMinor: number }>;
+    }) => ({
+      companyId: assertUuid(input.companyId),
+      paymentId: assertUuid(input.paymentId, "payment"),
+      allocations: (input.allocations ?? []).map((a) => ({
+        billId: assertUuid(a.billId, "bill"),
+        amountMinor: Math.round(Number(a.amountMinor)),
+      })),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    await assertCompanyPermission(supabase, data.companyId, "purchases.payment");
+    if (!data.allocations.length) throw new Error("At least one allocation is required");
+    const { data: pay, error } = await supabase
+      .from("supplier_payments" as never)
+      .select("id, status, contact_id, currency_code, unallocated_minor" as never)
+      .eq("id" as never, data.paymentId as never)
       .eq("company_id" as never, data.companyId as never)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!cn) throw new Error("Credit note not found");
-    const credit = cn as {
+    if (!pay) throw new Error("Payment not found");
+    const payment = pay as unknown as {
       status: string;
       contact_id: string;
-      total_minor: number;
-      amount_allocated_minor: number;
+      currency_code: string;
+      unallocated_minor: number;
     };
-    if (!["authorised", "partly_paid"].includes(credit.status)) {
-      throw new Error("Credit note must be authorised before allocation");
+    if (payment.status !== "paid") throw new Error("Only posted payments can be allocated");
+    const requested = data.allocations.reduce((s, a) => s + a.amountMinor, 0);
+    if (requested > Number(payment.unallocated_minor)) {
+      throw new Error("Allocations exceed the unallocated amount on this payment");
     }
-    const remaining = credit.total_minor - credit.amount_allocated_minor;
-    const allocSum = data.allocations.reduce((s, a) => s + a.amountMinor, 0);
-    if (allocSum <= 0) throw new Error("At least one allocation is required");
-    if (allocSum > remaining) throw new Error("Allocations exceed unallocated credit");
+    const bills = await loadBillsForAllocation(
+      supabase,
+      data.companyId,
+      data.allocations.map((a) => a.billId),
+    );
+    assertAllocationsAllowed(bills, data.allocations, {
+      contactId: payment.contact_id,
+      currencyCode: payment.currency_code,
+      kind: "payment",
+    });
 
-    let allocated = credit.amount_allocated_minor;
-    for (const alloc of data.allocations) {
-      if (!(alloc.amountMinor > 0)) throw new Error("Allocation amounts must be positive");
-      const { data: bill, error: bErr } = await supabase
-        .from("purchase_bills" as never)
-        .select(
-          "id, status, contact_id, total_minor, amount_paid_minor, amount_credited_minor" as never,
-        )
-        .eq("id" as never, alloc.billId as never)
-        .eq("company_id" as never, data.companyId as never)
-        .maybeSingle();
-      if (bErr) throw new Error(bErr.message);
-      if (!bill) throw new Error("Bill not found");
-      const b = bill as {
-        status: string;
-        contact_id: string;
-        total_minor: number;
-        amount_paid_minor: number;
-        amount_credited_minor: number;
-      };
-      if (b.contact_id !== credit.contact_id) throw new Error("Bill belongs to a different supplier");
-      const outstanding = b.total_minor - b.amount_paid_minor - b.amount_credited_minor;
-      if (alloc.amountMinor > outstanding) throw new Error("Allocation exceeds bill outstanding");
-      const { error: aErr } = await supabase.from("purchase_credit_allocations" as never).insert({
-        company_id: data.companyId,
-        credit_note_id: data.creditNoteId,
-        bill_id: alloc.billId,
-        amount_minor: alloc.amountMinor,
-      } as never);
-      if (aErr) {
-        if (aErr.code === "23505") throw new Error("Already allocated to this bill");
-        throw new Error(aErr.message);
+    const done: Array<{ billId: string; prev: BillSettlement; allocationId: string }> = [];
+    try {
+      for (const alloc of data.allocations) {
+        const { data: row, error: aErr } = await supabase
+          .from("supplier_payment_allocations" as never)
+          .insert({
+            company_id: data.companyId,
+            payment_id: data.paymentId,
+            bill_id: alloc.billId,
+            amount_minor: alloc.amountMinor,
+          } as never)
+          .select("id")
+          .single();
+        if (aErr) throw new Error(aErr.message);
+        const prev = await adjustBillSettlement(
+          supabase,
+          data.companyId,
+          alloc.billId,
+          { paid: alloc.amountMinor },
+          nextBillStatus,
+        );
+        done.push({ billId: alloc.billId, prev, allocationId: (row as { id: string }).id });
       }
-      const amountCredited = b.amount_credited_minor + alloc.amountMinor;
-      const nextStatus = deriveBillStatus({
-        status: b.status,
-        total_minor: b.total_minor,
-        amount_paid_minor: b.amount_paid_minor,
-        amount_credited_minor: amountCredited,
-      });
-      await supabase
-        .from("purchase_bills" as never)
+      const { data: updated, error: upErr } = await supabase
+        .from("supplier_payments" as never)
         .update({
-          amount_credited_minor: amountCredited,
-          status: nextStatus,
+          unallocated_minor: Number(payment.unallocated_minor) - requested,
           updated_at: new Date().toISOString(),
         } as never)
-        .eq("id" as never, alloc.billId as never);
-      allocated += alloc.amountMinor;
+        .eq("company_id" as never, data.companyId as never)
+        .eq("id" as never, data.paymentId as never)
+        .eq("unallocated_minor" as never, Number(payment.unallocated_minor) as never)
+        .select("id");
+      if (upErr) throw new Error(upErr.message);
+      if (!updated || (updated as unknown[]).length === 0) {
+        throw new Error("The payment changed while saving. Reload and try again.");
+      }
+    } catch (allocError) {
+      for (const item of done.reverse()) {
+        await restoreBillSettlement(supabase, data.companyId, item.billId, item.prev);
+        await supabase
+          .from("supplier_payment_allocations" as never)
+          .delete()
+          .eq("company_id" as never, data.companyId as never)
+          .eq("id" as never, item.allocationId as never);
+      }
+      throw allocError;
     }
-
-    const cnStatus =
-      allocated >= credit.total_minor ? "paid" : allocated > 0 ? "partly_paid" : credit.status;
-    await supabase
-      .from("purchase_credit_notes" as never)
-      .update({
-        amount_allocated_minor: allocated,
-        status: cnStatus,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq("id" as never, data.creditNoteId as never);
-
-    return { allocatedMinor: allocated };
+    await recordBillAudit(supabase, data.companyId, "supplier_payment.allocate", null, {
+      payment_id: data.paymentId,
+      allocated_minor: requested,
+      bill_ids: data.allocations.map((a) => a.billId),
+    });
+    return { allocatedMinor: requested, remainingMinor: Number(payment.unallocated_minor) - requested };
   });
 
 // ---- Purchase orders (no posting) ----
