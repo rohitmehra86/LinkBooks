@@ -273,27 +273,27 @@ function Reconcile() {
           <div className="sticky top-0 z-10 mb-4 grid gap-2 rounded-md border bg-background p-3 text-sm sm:grid-cols-5">
             <div>
               <div className="text-xs text-muted-foreground">Opening</div>
-              <div className="font-mono">{openingMinor === null ? "—" : money(openingMinor)}</div>
+              <div className="numeric">{openingMinor === null ? "—" : money(openingMinor)}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Ticked ({clearedAmounts.length})</div>
-              <div className="font-mono">{summary ? money(summary.cleared) : "—"}</div>
+              <div className="numeric">{summary ? money(summary.cleared) : "—"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Statement closing</div>
-              <div className="font-mono">{closingMinor === null ? "—" : money(closingMinor)}</div>
+              <div className="numeric">{closingMinor === null ? "—" : money(closingMinor)}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Difference</div>
               <div
-                className={`font-mono ${summary?.balanced ? "text-emerald-600" : "text-destructive"}`}
+                className={`numeric ${summary?.balanced ? "text-money-in" : "text-destructive"}`}
               >
                 {summary ? money(summary.difference) : "—"}
               </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Ledger balance at {statementDate}</div>
-              <div className="font-mono">{money(ws.ledgerBalanceMinor)}</div>
+              <div className="numeric">{money(ws.ledgerBalanceMinor)}</div>
             </div>
           </div>
 
@@ -387,7 +387,7 @@ function Reconcile() {
                           </Badge>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="money">
                         {money(g.statementTotalMinor)}
                       </TableCell>
                     </TableRow>
@@ -455,7 +455,7 @@ function Reconcile() {
                       <TableCell className="text-sm">
                         #{l.journalNumber} · {l.description || l.source}
                       </TableCell>
-                      <TableCell className="text-right font-mono">{money(l.amountMinor)}</TableCell>
+                      <TableCell className="money">{money(l.amountMinor)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -513,10 +513,10 @@ function Reconcile() {
                 {sessions.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell>{s.statement_date}</TableCell>
-                    <TableCell className="text-right font-mono">
+                    <TableCell className="money">
                       {s.opening_balance_minor === null ? "—" : money(s.opening_balance_minor)}
                     </TableCell>
-                    <TableCell className="text-right font-mono">
+                    <TableCell className="money">
                       {money(s.statement_balance_minor)}
                     </TableCell>
                     <TableCell>

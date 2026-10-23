@@ -232,7 +232,7 @@ export function Transfers() {
                 <TableCell>{t.transfer_date}</TableCell>
                 <TableCell>{t.from_name}</TableCell>
                 <TableCell>{t.to_name}</TableCell>
-                <TableCell className="text-right font-mono">
+                <TableCell className="money">
                   {fromMinorUnits(t.amount_minor, t.currency_code || currency)} {t.currency_code}
                 </TableCell>
                 <TableCell>{t.memo ?? "—"}</TableCell>

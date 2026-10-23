@@ -295,7 +295,7 @@ function BankRules() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{s.txnDate}</TableCell>
                     <TableCell>{s.description ?? "—"}</TableCell>
-                    <TableCell className="text-right font-mono">
+                    <TableCell className="money">
                       {fromMinorUnits(s.amountMinor, currency)}
                     </TableCell>
                     <TableCell>{s.ruleName}</TableCell>

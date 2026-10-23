@@ -41,7 +41,7 @@ export function MoneyField({
         placeholder={placeholder ?? "0.00"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={cn("font-mono", invalid && "border-destructive")}
+        className={cn("numeric", invalid && "border-destructive")}
       />
       {invalid ? <p className="text-xs text-destructive">Not a valid amount</p> : null}
     </div>
