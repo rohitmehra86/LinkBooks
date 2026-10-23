@@ -108,7 +108,8 @@ export async function linkPostedJournalToBankTxn(
     .eq("account_id" as never, args.bankGlAccountId as never);
   if (lErr) throw new Error(lErr.message);
   const bankLines = (lines ?? []) as unknown as Array<{ id: string }>;
-  if (bankLines.length !== 1) throw new Error("Posted journal must have exactly one bank ledger line");
+  if (bankLines.length !== 1)
+    throw new Error("Posted journal must have exactly one bank ledger line");
   const lineId = bankLines[0]!.id;
 
   const { data: existing } = await supabase
@@ -199,24 +200,28 @@ export async function ledgerBalanceAsOf(
   accountId: string,
   asOf: string,
 ): Promise<bigint> {
-  const { data, error } = await supabase.rpc("account_balance_as_of" as never, {
-    _company_id: companyId,
-    _account_id: accountId,
-    _as_of: asOf,
-  } as never);
+  const { data, error } = await supabase.rpc(
+    "account_balance_as_of" as never,
+    {
+      _company_id: companyId,
+      _account_id: accountId,
+      _as_of: asOf,
+    } as never,
+  );
   if (!error && data !== null && data !== undefined) return BigInt(data as number | string);
   if (error && !isMissingRpc(error)) throw new Error(error.message);
 
-  const rows = await fetchAllPages<{ debit_minor: number; credit_minor: number }>((from, to) =>
-    supabase
-      .from("journal_lines" as never)
-      .select("id, debit_minor, credit_minor, journals!inner(journal_date, status)" as never)
-      .eq("company_id" as never, companyId as never)
-      .eq("account_id" as never, accountId as never)
-      .eq("journals.status" as never, "posted" as never)
-      .lte("journals.journal_date" as never, asOf as never)
-      .order("id" as never)
-      .range(from, to) as never,
+  const rows = await fetchAllPages<{ debit_minor: number; credit_minor: number }>(
+    (from, to) =>
+      supabase
+        .from("journal_lines" as never)
+        .select("id, debit_minor, credit_minor, journals!inner(journal_date, status)" as never)
+        .eq("company_id" as never, companyId as never)
+        .eq("account_id" as never, accountId as never)
+        .eq("journals.status" as never, "posted" as never)
+        .lte("journals.journal_date" as never, asOf as never)
+        .order("id" as never)
+        .range(from, to) as never,
   );
   let total = 0n;
   for (const r of rows) total += BigInt(r.debit_minor) - BigInt(r.credit_minor);
@@ -237,7 +242,8 @@ export async function linkedLineIds(
       .eq("company_id" as never, companyId as never)
       .in("journal_line_id" as never, part as never);
     if (error) throw new Error(error.message);
-    for (const r of (data ?? []) as unknown as Array<{ journal_line_id: string }>) out.add(r.journal_line_id);
+    for (const r of (data ?? []) as unknown as Array<{ journal_line_id: string }>)
+      out.add(r.journal_line_id);
   }
   return out;
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { pickRule, ruleMatchesTransaction, textMatches, validateRuleInput, type BankRuleDef } from "./rules";
+import {
+  pickRule,
+  ruleMatchesTransaction,
+  textMatches,
+  validateRuleInput,
+  type BankRuleDef,
+} from "./rules";
 
 const rule = (over: Partial<BankRuleDef> = {}): BankRuleDef => ({
   id: "r1",
@@ -35,19 +41,35 @@ describe("ruleMatchesTransaction", () => {
     expect(textMatches("anything", "contains", "")).toBe(false);
   });
   it("uses the stored reference field (BK-12: reference rules can now match)", () => {
-    expect(ruleMatchesTransaction(rule({ match_field: "reference", match_pattern: "ref-9" }), txn())).toBe(true);
-    expect(ruleMatchesTransaction(rule({ match_field: "reference", match_pattern: "zzz" }), txn())).toBe(false);
-    expect(ruleMatchesTransaction(rule({ match_field: "reference", match_pattern: "x" }), txn({ reference: null }))).toBe(false);
+    expect(
+      ruleMatchesTransaction(rule({ match_field: "reference", match_pattern: "ref-9" }), txn()),
+    ).toBe(true);
+    expect(
+      ruleMatchesTransaction(rule({ match_field: "reference", match_pattern: "zzz" }), txn()),
+    ).toBe(false);
+    expect(
+      ruleMatchesTransaction(
+        rule({ match_field: "reference", match_pattern: "x" }),
+        txn({ reference: null }),
+      ),
+    ).toBe(false);
   });
   it("payee falls back to the description when no payee was imported", () => {
     expect(ruleMatchesTransaction(rule({ match_field: "payee" }), txn())).toBe(true);
-    expect(ruleMatchesTransaction(rule({ match_field: "payee", match_pattern: "bob" }), txn({ payee: "Bob Ltd" }))).toBe(true);
+    expect(
+      ruleMatchesTransaction(
+        rule({ match_field: "payee", match_pattern: "bob" }),
+        txn({ payee: "Bob Ltd" }),
+      ),
+    ).toBe(true);
   });
   it("respects money direction and amount range on the absolute amount", () => {
     expect(ruleMatchesTransaction(rule({ direction: "in" }), txn())).toBe(false);
     expect(ruleMatchesTransaction(rule({ direction: "out" }), txn())).toBe(true);
     expect(ruleMatchesTransaction(rule({ min_amount_minor: 3000 }), txn())).toBe(false);
-    expect(ruleMatchesTransaction(rule({ min_amount_minor: 2500, max_amount_minor: 2500 }), txn())).toBe(true);
+    expect(
+      ruleMatchesTransaction(rule({ min_amount_minor: 2500, max_amount_minor: 2500 }), txn()),
+    ).toBe(true);
     expect(ruleMatchesTransaction(rule({ max_amount_minor: 2000 }), txn())).toBe(false);
   });
   it("respects bank-account scope and disabled rules", () => {

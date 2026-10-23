@@ -74,7 +74,11 @@ export const DEFAULT_MAPPING: ImportMapping = {
 // ---------------------------------------------------------------------------
 
 export function detectDelimiter(text: string): "," | ";" | "\t" | "|" {
-  const sample = text.replace(/^\uFEFF/, "").split(/\r?\n/).slice(0, 10).join("\n");
+  const sample = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .slice(0, 10)
+    .join("\n");
   const counts: Array<["," | ";" | "\t" | "|", number]> = [
     [",", 0],
     [";", 0],
@@ -252,7 +256,11 @@ export function guessDateFormat(samples: readonly string[]): DateFormat {
 // Header-based mapping guess
 // ---------------------------------------------------------------------------
 
-function findHeader(headers: readonly string[], re: RegExp, exclude: ReadonlySet<number>): number | null {
+function findHeader(
+  headers: readonly string[],
+  re: RegExp,
+  exclude: ReadonlySet<number>,
+): number | null {
   for (let i = 0; i < headers.length; i++) {
     if (!exclude.has(i) && re.test(headers[i]!.trim())) return i;
   }
@@ -260,9 +268,13 @@ function findHeader(headers: readonly string[], re: RegExp, exclude: ReadonlySet
 }
 
 /** Best-effort mapping from the header row + a few data rows. The user always reviews it. */
-export function guessMapping(rows: readonly string[][], delimiter: Delimiter = "auto"): ImportMapping {
+export function guessMapping(
+  rows: readonly string[][],
+  delimiter: Delimiter = "auto",
+): ImportMapping {
   const first = rows[0] ?? [];
-  const looksLikeHeader = first.some((c) => /[A-Za-z]{3,}/.test(c)) && !first.some((c) => /^\s*[-+]?[\d.,]+\s*$/.test(c));
+  const looksLikeHeader =
+    first.some((c) => /[A-Za-z]{3,}/.test(c)) && !first.some((c) => /^\s*[-+]?[\d.,]+\s*$/.test(c));
   const body = looksLikeHeader ? rows.slice(1) : rows;
   const used = new Set<number>();
   const take = (re: RegExp): number | null => {
@@ -274,7 +286,8 @@ export function guessMapping(rows: readonly string[][], delimiter: Delimiter = "
   const date = take(/date|posted/i);
   const debit = take(/debit|paid out|withdraw|money out|^out$/i);
   const credit = take(/credit|paid in|deposit|money in|^in$/i);
-  const amount = debit === null && credit === null ? take(/^(amount|value|transaction amount)\b/i) : null;
+  const amount =
+    debit === null && credit === null ? take(/^(amount|value|transaction amount)\b/i) : null;
   const balance = take(/balance/i);
   const bankId = take(/transaction id|txn id|trans id|^id$|reference number|fitid/i);
   const reference = take(/\bref/i);
@@ -335,11 +348,7 @@ function cell(row: readonly string[], idx: number | null): string {
   return (row[idx] ?? "").trim();
 }
 
-function parseAmountCell(
-  raw: string,
-  currency: string,
-  mapping: ImportMapping,
-): bigint | null {
+function parseAmountCell(raw: string, currency: string, mapping: ImportMapping): bigint | null {
   return tryParseMinor(raw, currency, {
     decimalSeparator: mapping.decimalSeparator,
     strict: true,
@@ -447,7 +456,8 @@ export function validateMapping(mapping: ImportMapping, columnCount: number): st
     }
   };
   inRange(mapping.dateColumn, "Date", true);
-  if (mapping.descriptionColumns.length === 0) problems.push("Choose at least one description column");
+  if (mapping.descriptionColumns.length === 0)
+    problems.push("Choose at least one description column");
   for (const c of mapping.descriptionColumns) inRange(c, "Description", true);
   if (mapping.amountMode === "debit_credit") {
     if (mapping.debitColumn === null && mapping.creditColumn === null) {
@@ -462,7 +472,8 @@ export function validateMapping(mapping: ImportMapping, columnCount: number): st
   inRange(mapping.payeeColumn, "Payee", false);
   inRange(mapping.bankIdColumn, "Transaction id", false);
   inRange(mapping.balanceColumn, "Balance", false);
-  if (!(DATE_FORMATS as readonly string[]).includes(mapping.dateFormat)) problems.push("Unknown date format");
+  if (!(DATE_FORMATS as readonly string[]).includes(mapping.dateFormat))
+    problems.push("Unknown date format");
   return problems;
 }
 
@@ -550,14 +561,20 @@ export async function assignExternalIds(
     const idKey = r.bankId ? `bankid|${r.bankId}` : groupKey;
     const ordinal = seen.get(idKey) ?? 0;
     seen.set(idKey, ordinal + 1);
-    const hash = await sha256Hex(`v2|${bankAccountId}|${idKey}|${ordinal}${salt ? `|${salt}` : ""}`);
+    const hash = await sha256Hex(
+      `v2|${bankAccountId}|${idKey}|${ordinal}${salt ? `|${salt}` : ""}`,
+    );
     out.push({ ...r, groupKey, ordinal, externalId: `csv2_${hash}` });
   }
   return out;
 }
 
 /** The (date|amount|description) key used to compare against rows already in the database. */
-export function contentKey(date: string, amountMinor: bigint | number, description: string): string {
+export function contentKey(
+  date: string,
+  amountMinor: bigint | number,
+  description: string,
+): string {
   return `${date}|${BigInt(amountMinor).toString()}|${normalizeForKey(description)}`;
 }
 

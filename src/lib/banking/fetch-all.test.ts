@@ -39,7 +39,9 @@ describe("fetchAllPages", () => {
     await expect(
       fetchAllPages(async () => ({ data: null, error: { message: "boom" } })),
     ).rejects.toThrow("boom");
-    await expect(fetchAllPages(fakeTable(5000).page, { maxRows: 2000 })).rejects.toThrow(/Too many/);
+    await expect(fetchAllPages(fakeTable(5000).page, { maxRows: 2000 })).rejects.toThrow(
+      /Too many/,
+    );
   });
 });
 

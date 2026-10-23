@@ -35,7 +35,12 @@ describe("rankCandidates", () => {
       cand("exact-1d", "2026-05-09", 12000),
       cand("sign-flip", "2026-05-10", -12000),
     ]);
-    expect(ranked.map((r) => r.lineId)).toEqual(["exact-1d", "exact-3d", "near-other", "sign-flip"]);
+    expect(ranked.map((r) => r.lineId)).toEqual([
+      "exact-1d",
+      "exact-3d",
+      "near-other",
+      "sign-flip",
+    ]);
     expect(ranked[0]!.exact).toBe(true);
     expect(ranked[2]!.exact).toBe(false);
   });
@@ -65,7 +70,9 @@ describe("validateMatchSum", () => {
   });
   it("needs a selection and caps the size", () => {
     expect(validateMatchSum(100, []).ok).toBe(false);
-    expect(validateMatchSum(MAX_MATCH_LINES + 1, Array(MAX_MATCH_LINES + 1).fill(1)).ok).toBe(false);
+    expect(validateMatchSum(MAX_MATCH_LINES + 1, Array(MAX_MATCH_LINES + 1).fill(1)).ok).toBe(
+      false,
+    );
   });
   it("uses bigint so very large amounts do not drift", () => {
     expect(validateMatchSum(9007199254740993n, [9007199254740992n, 1n]).ok).toBe(true);

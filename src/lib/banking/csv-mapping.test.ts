@@ -23,7 +23,9 @@ const base = (over: Partial<ImportMapping> = {}): ImportMapping => ({
 
 describe("parseCsvText", () => {
   it("handles quotes, embedded commas/newlines, escaped quotes and CRLF", () => {
-    const { rows } = parseCsvText('Date,Desc,Amt\r\n01/02/2026,"Smith, J ""Ltd""",10.00\r\n02/02/2026,"two\nlines",-5\r\n');
+    const { rows } = parseCsvText(
+      'Date,Desc,Amt\r\n01/02/2026,"Smith, J ""Ltd""",10.00\r\n02/02/2026,"two\nlines",-5\r\n',
+    );
     expect(rows).toEqual([
       ["Date", "Desc", "Amt"],
       ["01/02/2026", 'Smith, J "Ltd"', "10.00"],
@@ -79,7 +81,9 @@ describe("parseDateValue — real calendar validation (BK-07)", () => {
 
 describe("applyMapping — amounts", () => {
   it("US file: MM/DD/YYYY with thousands separators and parentheses negatives", () => {
-    const { rows } = parseCsvText("Date,Description,Amount\n03/04/2026,Rent,\"(1,250.00)\"\n12/13/2026,Client pay,\"2,500.50\"\n");
+    const { rows } = parseCsvText(
+      'Date,Description,Amount\n03/04/2026,Rent,"(1,250.00)"\n12/13/2026,Client pay,"2,500.50"\n',
+    );
     const mapping = base({ dateFormat: "MM/DD/YYYY" });
     const r = applyMapping(rows, mapping, "USD");
     expect(r.errors).toEqual([]);
@@ -90,7 +94,9 @@ describe("applyMapping — amounts", () => {
   });
 
   it("European file: semicolons, decimal comma and dots as thousands (1.234,56 → 123456)", () => {
-    const { rows } = parseCsvText("Datum;Text;Betrag\n05.02.2026;Miete;-1.234,56\n06.02.2026;Gehalt;2.000,00\n");
+    const { rows } = parseCsvText(
+      "Datum;Text;Betrag\n05.02.2026;Miete;-1.234,56\n06.02.2026;Gehalt;2.000,00\n",
+    );
     const mapping = base({ decimalSeparator: ",", dateFormat: "DD/MM/YYYY" });
     const r = applyMapping(rows, mapping, "EUR");
     expect(r.errors).toEqual([]);
@@ -117,7 +123,10 @@ describe("applyMapping — amounts", () => {
 
   it("trailing minus and CR/DR suffixes", () => {
     const { rows } = parseCsvText("d,x,a\n01/03/2026,A,12.50-\n01/03/2026,B,7.00\n");
-    expect(applyMapping(rows, base(), "GBP").rows.map((x) => x.amountMinor)).toEqual([-1250n, 700n]);
+    expect(applyMapping(rows, base(), "GBP").rows.map((x) => x.amountMinor)).toEqual([
+      -1250n,
+      700n,
+    ]);
 
     const crdr = parseCsvText("d,x,a\n01/03/2026,A,12.50 DR\n01/03/2026,B,7.00 CR\n").rows;
     const r = applyMapping(crdr, base({ amountMode: "suffix" }), "GBP");
@@ -125,7 +134,7 @@ describe("applyMapping — amounts", () => {
   });
 
   it("uses the bank account currency decimals (JPY 0, KWD 3), not ×100", () => {
-    const { rows } = parseCsvText("d,x,a\n01/03/2026,A,\"1,500\"\n");
+    const { rows } = parseCsvText('d,x,a\n01/03/2026,A,"1,500"\n');
     expect(applyMapping(rows, base(), "JPY").rows[0]!.amountMinor).toBe(1500n);
     const k = parseCsvText("d,x,a\n01/03/2026,A,1.250\n").rows;
     expect(applyMapping(k, base(), "KWD").rows[0]!.amountMinor).toBe(1250n);
@@ -148,7 +157,9 @@ describe("applyMapping — amounts", () => {
   });
 
   it("captures reference, payee, multi-column description and bank id", () => {
-    const { rows } = parseCsvText("Date,Desc,Memo,Ref,Payee,Id,Amt\n2026-03-01,Card,Coffee,R1,Cafe,TX9,-3.50\n");
+    const { rows } = parseCsvText(
+      "Date,Desc,Memo,Ref,Payee,Id,Amt\n2026-03-01,Card,Coffee,R1,Cafe,TX9,-3.50\n",
+    );
     const r = applyMapping(
       rows,
       base({
@@ -180,7 +191,9 @@ describe("applyMapping — amounts", () => {
 
 describe("guessMapping + validateMapping + coerceMapping", () => {
   it("guesses debit/credit headers and comma decimals", () => {
-    const { rows } = parseCsvText("Booking date;Narrative;Debit;Credit;Balance\n13.01.2026;Shop;12,50;;100,00\n");
+    const { rows } = parseCsvText(
+      "Booking date;Narrative;Debit;Credit;Balance\n13.01.2026;Shop;12,50;;100,00\n",
+    );
     const m = guessMapping(rows, ";");
     expect(m.amountMode).toBe("debit_credit");
     expect(m.debitColumn).toBe(2);
@@ -198,7 +211,12 @@ describe("guessMapping + validateMapping + coerceMapping", () => {
   it("coerces saved JSON safely", () => {
     expect(coerceMapping(null)).toBeNull();
     expect(coerceMapping({ dateColumn: 0 })).toBeNull();
-    const m = coerceMapping({ ...DEFAULT_MAPPING, dateFormat: "nonsense", decimalSeparator: ",", amountColumn: -1 });
+    const m = coerceMapping({
+      ...DEFAULT_MAPPING,
+      dateFormat: "nonsense",
+      decimalSeparator: ",",
+      amountColumn: -1,
+    });
     expect(m?.dateFormat).toBe("DD/MM/YYYY");
     expect(m?.decimalSeparator).toBe(",");
     expect(m?.amountColumn).toBeNull();
@@ -207,7 +225,13 @@ describe("guessMapping + validateMapping + coerceMapping", () => {
 
 describe("duplicate hashing (BK-08)", () => {
   const acct = "11111111-1111-1111-1111-111111111111";
-  const row = (n: number, d = "Coffee", amt = -350n, date = "2026-03-01", bankId: string | null = null) => ({
+  const row = (
+    n: number,
+    d = "Coffee",
+    amt = -350n,
+    date = "2026-03-01",
+    bankId: string | null = null,
+  ) => ({
     rowNumber: n,
     txnDate: date,
     amountMinor: amt,
@@ -219,7 +243,9 @@ describe("duplicate hashing (BK-08)", () => {
   });
 
   it("is SHA-256 (64 hex chars)", async () => {
-    expect(await sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    expect(await sha256Hex("abc")).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
     const [k] = await assignExternalIds([row(2)], acct);
     expect(k!.externalId).toMatch(/^csv2_[0-9a-f]{64}$/);
   });
@@ -268,6 +294,8 @@ describe("duplicate hashing (BK-08)", () => {
     });
     expect(exact).toEqual([{ rowNumber: 3, reason: "same_external_id" }]);
     // 3) nothing imported yet
-    expect(findLikelyDuplicates(keyed, { externalIds: new Set(), contentCounts: new Map() })).toEqual([]);
+    expect(
+      findLikelyDuplicates(keyed, { externalIds: new Set(), contentCounts: new Map() }),
+    ).toEqual([]);
   });
 });

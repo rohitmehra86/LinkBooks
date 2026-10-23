@@ -144,7 +144,9 @@ describe("proposeOpeningBalance", () => {
   it("returns null when there is none (entered once for the first session)", () => {
     expect(proposeOpeningBalance([])).toBeNull();
     expect(
-      proposeOpeningBalance([{ status: "void", statement_date: "2026-01-31", statement_balance_minor: 1 }]),
+      proposeOpeningBalance([
+        { status: "void", statement_date: "2026-01-31", statement_balance_minor: 1 },
+      ]),
     ).toBeNull();
   });
 });

@@ -82,11 +82,14 @@ export function validateRuleInput(input: {
 }): string | null {
   if (!input.name.trim()) return "Rule name is required";
   if (!input.matchPattern.trim()) return "Match text is required";
-  if (!["description", "reference", "payee"].includes(input.matchField)) return "Invalid match field";
+  if (!["description", "reference", "payee"].includes(input.matchField))
+    return "Invalid match field";
   if (!["contains", "equals", "starts_with"].includes(input.matchType)) return "Invalid match type";
   if (!["any", "in", "out"].includes(input.direction)) return "Invalid money direction";
-  if (input.minAmountMinor !== null && input.minAmountMinor < 0) return "Minimum amount cannot be negative";
-  if (input.maxAmountMinor !== null && input.maxAmountMinor < 0) return "Maximum amount cannot be negative";
+  if (input.minAmountMinor !== null && input.minAmountMinor < 0)
+    return "Minimum amount cannot be negative";
+  if (input.maxAmountMinor !== null && input.maxAmountMinor < 0)
+    return "Maximum amount cannot be negative";
   if (
     input.minAmountMinor !== null &&
     input.maxAmountMinor !== null &&

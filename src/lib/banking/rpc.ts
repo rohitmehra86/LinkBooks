@@ -79,13 +79,16 @@ export async function recordAudit(
     details?: Record<string, unknown>;
   },
 ): Promise<void> {
-  const { error } = await supabase.rpc("record_audit_event" as never, {
-    _company_id: args.companyId,
-    _action: args.action,
-    _entity_type: args.entityType,
-    _entity_id: args.entityId ?? null,
-    _details: args.details ?? {},
-  } as never);
+  const { error } = await supabase.rpc(
+    "record_audit_event" as never,
+    {
+      _company_id: args.companyId,
+      _action: args.action,
+      _entity_type: args.entityType,
+      _entity_id: args.entityId ?? null,
+      _details: args.details ?? {},
+    } as never,
+  );
   // The business action has already succeeded; never turn a logging failure into a failed action.
   if (error && !isMissingRpc(error)) {
     console.error(`[banking] audit event ${args.action} failed: ${error.message}`);
