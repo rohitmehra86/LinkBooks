@@ -15,6 +15,7 @@ import {
   getJournalReport,
   getTaxReport,
 } from "@/lib/reports/report.functions";
+import { getAgedReceivablesAsAt } from "@/lib/sales/ar-reports.functions";
 import { SOURCE_LABELS, sourceLabel } from "@/lib/reports/links";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -471,14 +472,39 @@ type AgedData = Pick<
 
 export function AgedView({ ctx, kind }: { ctx: ReportCtx; kind: "ar" | "ap" }) {
   const fmt = useFormat();
-  const fetchAr = useServerFn(getAgedReceivables);
+  const fetchAr = useServerFn(getAgedReceivablesAsAt);
   const fetchAp = useServerFn(getAgedPayables);
   const q = useQuery({
     queryKey: ["report-aged", kind, ctx.companyId, ctx.to],
     queryFn: async (): Promise<AgedData> => {
       if (kind === "ar") {
+        // As-at ageing: rebuilt from dated allocations; unapplied receipts/credits shown as negatives.
         const r = await fetchAr({ data: { companyId: ctx.companyId, asOf: ctx.to } });
-        return { ...r, controlMinor: r.arControlBalanceMinor };
+        const baseTotals = r.totalsByCurrency.find((t) => t.currency_code === r.baseCurrency);
+        const total = baseTotals?.total ?? 0;
+        const foreign = r.totalsByCurrency.filter((t) => t.currency_code !== r.baseCurrency);
+        const variance = total - r.arControlBalanceMinor;
+        return {
+          rows: r.rows
+            .filter((row) => row.currency_code === r.baseCurrency)
+            .map((row) => ({ ...row, docs: [] })),
+          total,
+          byBucket: baseTotals?.byBucket ?? {
+            current: 0,
+            "1_30": 0,
+            "31_60": 0,
+            "61_90": 0,
+            "90_plus": 0,
+          },
+          varianceMinor: variance,
+          tiesToControl: variance === 0 && foreign.length === 0,
+          excludedUnpostedCount: 0,
+          controlMinor: r.arControlBalanceMinor,
+          diagnostic:
+            foreign.length > 0
+              ? `Foreign-currency balances (${foreign.map((t) => t.currency_code).join(", ")}) are not included in the ${r.baseCurrency} table above; the control account is in base currency.`
+              : r.diagnostic,
+        };
       }
       const r = await fetchAp({ data: { companyId: ctx.companyId, asOf: ctx.to } });
       return { ...r, controlMinor: r.apControlBalanceMinor };
