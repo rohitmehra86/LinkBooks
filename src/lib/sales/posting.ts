@@ -100,7 +100,8 @@ export async function postCustomerReceipt(
   },
 ): Promise<string> {
   const ar = await resolveArAccount(supabase, args.company_id);
-  const amount = typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
+  const amount =
+    typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Receipt amount must be positive");
 
   const { journalId } = await postJournal(supabase, {
@@ -209,7 +210,8 @@ export async function postBankTransfer(
     memo?: string;
   },
 ): Promise<string> {
-  const amount = typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
+  const amount =
+    typeof args.amount_minor === "bigint" ? args.amount_minor : BigInt(args.amount_minor);
   if (amount <= 0n) throw new Error("Transfer amount must be positive");
   if (args.from_gl_account_id === args.to_gl_account_id) {
     throw new Error("Transfer accounts must differ");
@@ -249,11 +251,14 @@ export async function voidPostedDocument(
 ): Promise<string> {
   if (reversalDate) {
     // Reverse on an explicit date (must be in an open period, not before the original date).
-    const { data, error } = await supabase.rpc("reverse_journal_on" as never, {
-      _journal_id: postedJournalId,
-      _reversal_date: reversalDate,
-      _idempotency_key: idempotencyKey,
-    } as never);
+    const { data, error } = await supabase.rpc(
+      "reverse_journal_on" as never,
+      {
+        _journal_id: postedJournalId,
+        _reversal_date: reversalDate,
+        _idempotency_key: idempotencyKey,
+      } as never,
+    );
     if (!error && typeof data === "string") return data;
     if (error && !isMissingRpc(error, "reverse_journal_on")) throw new Error(error.message);
     // reverse_journal_on is not deployed yet: fall back to the original-date reversal.

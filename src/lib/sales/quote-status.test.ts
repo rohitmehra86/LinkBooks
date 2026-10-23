@@ -45,17 +45,28 @@ describe("quote status transitions", () => {
 
 describe("isQuoteConvertible", () => {
   it("accepts draft/sent/accepted within expiry", () => {
-    expect(isQuoteConvertible({ status: "accepted", expiry_date: "2026-12-31" }, "2026-10-23")).toEqual({
+    expect(
+      isQuoteConvertible({ status: "accepted", expiry_date: "2026-12-31" }, "2026-10-23"),
+    ).toEqual({
       ok: true,
     });
     expect(isQuoteConvertible({ status: "draft", expiry_date: null }, "2026-10-23").ok).toBe(true);
   });
   it("refuses expired, declined, void and converted quotes", () => {
-    expect(isQuoteConvertible({ status: "sent", expiry_date: "2026-10-01" }, "2026-10-23").ok).toBe(false);
-    expect(isQuoteConvertible({ status: "declined", expiry_date: null }, "2026-10-23").ok).toBe(false);
-    expect(isQuoteConvertible({ status: "expired", expiry_date: null }, "2026-10-23").ok).toBe(false);
+    expect(isQuoteConvertible({ status: "sent", expiry_date: "2026-10-01" }, "2026-10-23").ok).toBe(
+      false,
+    );
+    expect(isQuoteConvertible({ status: "declined", expiry_date: null }, "2026-10-23").ok).toBe(
+      false,
+    );
+    expect(isQuoteConvertible({ status: "expired", expiry_date: null }, "2026-10-23").ok).toBe(
+      false,
+    );
     expect(
-      isQuoteConvertible({ status: "accepted", expiry_date: null, converted_invoice_id: "x" }, "2026-10-23").ok,
+      isQuoteConvertible(
+        { status: "accepted", expiry_date: null, converted_invoice_id: "x" },
+        "2026-10-23",
+      ).ok,
     ).toBe(false);
   });
 });

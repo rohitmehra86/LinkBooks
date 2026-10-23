@@ -49,15 +49,15 @@ const TYPE_ORDER: Record<string, number> = { invoice: 0, credit_note: 1, receipt
 function eventsFor(doc: StatementDoc): Event[] {
   if (doc.status === "draft") return [];
   const sign = doc.kind === "invoice" ? 1 : -1; // + increases what the customer owes
-  const noun = doc.kind === "invoice" ? "Invoice" : doc.kind === "receipt" ? "Payment received" : "Credit note";
+  const noun =
+    doc.kind === "invoice"
+      ? "Invoice"
+      : doc.kind === "receipt"
+        ? "Payment received"
+        : "Credit note";
   const isVoid = doc.status === "void";
   if (isVoid && !doc.voidDate) return [];
-  const mk = (
-    type: Event["type"],
-    date: string,
-    signed: number,
-    description: string,
-  ): Event => ({
+  const mk = (type: Event["type"], date: string, signed: number, description: string): Event => ({
     date,
     type,
     id: doc.id,
@@ -92,7 +92,9 @@ export function buildCustomerStatement(
 
   const result: StatementCurrency[] = [];
   for (const [currency, events] of byCurrency) {
-    events.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order || a.id.localeCompare(b.id));
+    events.sort(
+      (a, b) => a.date.localeCompare(b.date) || a.order - b.order || a.id.localeCompare(b.id),
+    );
     let opening = 0;
     const inRange: Event[] = [];
     for (const e of events) {

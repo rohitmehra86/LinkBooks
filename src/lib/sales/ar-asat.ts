@@ -107,7 +107,8 @@ export function unappliedReceiptAsAt(
 ): number {
   if (!receiptIsOnBooksAt(r, asOf)) return 0;
   const activeNow = allocs.reduce((s, a) => (a.reversedOn ? s : s + a.amountMinor), 0);
-  const refunded = r.status === "void" ? 0 : Math.max(0, r.amountMinor - activeNow - r.unallocatedMinor);
+  const refunded =
+    r.status === "void" ? 0 : Math.max(0, r.amountMinor - activeNow - r.unallocatedMinor);
   return Math.max(0, r.amountMinor - allocatedAsAt(allocs, asOf) - refunded);
 }
 
@@ -202,7 +203,10 @@ export function buildAgedReceivablesAsAt(input: {
   }
 
   const rows = new Map<string, AgedRow>();
-  const totals = new Map<string, { total: number; byBucket: Record<AgingBucket, number>; unapplied: number }>();
+  const totals = new Map<
+    string,
+    { total: number; byBucket: Record<AgingBucket, number>; unapplied: number }
+  >();
 
   const add = (
     contactId: string,
@@ -305,7 +309,8 @@ export function buildAgedReceivablesAsAt(input: {
     .filter((r) => r.total !== 0 || r.docs.length > 0)
     .sort(
       (a, b) =>
-        a.contact_name.localeCompare(b.contact_name) || a.currency_code.localeCompare(b.currency_code),
+        a.contact_name.localeCompare(b.contact_name) ||
+        a.currency_code.localeCompare(b.currency_code),
     );
   for (const r of out) r.docs.sort((a, b) => a.doc_date.localeCompare(b.doc_date));
   return {

@@ -23,10 +23,7 @@ export function halfUpDivide(numer: bigint, denom: bigint): bigint {
 }
 
 /** quantity (up to 6 decimals) × unit price in minor units, rounded half-up to a minor unit. */
-export function extendedAmountMinor(
-  quantity: number,
-  unitPriceMinor: bigint | number,
-): bigint {
+export function extendedAmountMinor(quantity: number, unitPriceMinor: bigint | number): bigint {
   if (!(quantity > 0) || !Number.isFinite(quantity)) {
     throw new Error("Quantity must be a positive number");
   }

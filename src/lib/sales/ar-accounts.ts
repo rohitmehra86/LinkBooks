@@ -87,13 +87,15 @@ export async function resolveArAccount(
     .eq("company_id" as never, companyId as never)
     .or("system_key.eq.ar,code.eq.1100" as never);
   if (error) throw new Error(error.message);
-  const rows = ((data ?? []) as Array<{
-    id: string;
-    code: string;
-    system_key: string | null;
-    is_active: boolean;
-    archived_at: string | null;
-  }>).filter((r) => r.is_active && !r.archived_at);
+  const rows = (
+    (data ?? []) as Array<{
+      id: string;
+      code: string;
+      system_key: string | null;
+      is_active: boolean;
+      archived_at: string | null;
+    }>
+  ).filter((r) => r.is_active && !r.archived_at);
   const best = rows.find((r) => r.system_key === "ar") ?? rows.find((r) => r.code === "1100");
   if (!best) {
     throw new Error(

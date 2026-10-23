@@ -36,6 +36,8 @@ describe("fetchAllPages", () => {
     await expect(
       fetchAllPages(async () => ({ data: null, error: { message: "boom" } })),
     ).rejects.toThrow("boom");
-    await expect(fetchAllPages(source(50).page, { pageSize: 10, maxRows: 20 })).rejects.toThrow(/more than/);
+    await expect(fetchAllPages(source(50).page, { pageSize: 10, maxRows: 20 })).rejects.toThrow(
+      /more than/,
+    );
   });
 });

@@ -52,7 +52,11 @@ export function clampPage(n: unknown): number {
 }
 
 export function isIsoDateString(s: unknown): s is string {
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+  return (
+    typeof s === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(Date.parse(`${s}T00:00:00Z`))
+  );
 }
 
 /** Pick a sort column from an allow-list; never pass user text to `.order()`. */

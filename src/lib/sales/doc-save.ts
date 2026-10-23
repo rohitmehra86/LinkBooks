@@ -130,11 +130,7 @@ async function assertCustomer(supabase: SalesClient, companyId: string, contactI
   }
 }
 
-function lineRows(
-  kind: SalesDocKind,
-  input: SaveSalesDocInput,
-  parentId: string,
-): Row[] {
+function lineRows(kind: SalesDocKind, input: SaveSalesDocInput, parentId: string): Row[] {
   const t = TABLES[kind];
   return input.lines.map((l, i) => {
     const row: Row = {
@@ -180,9 +176,12 @@ async function saveFallback(
     if (error) throw new Error(error.message);
     const src = data as { contact_id: string; currency_code: string; status: string } | null;
     if (!src) throw new Error("Source invoice not found in this organisation");
-    if (src.contact_id !== input.contactId) throw new Error("Source invoice belongs to a different customer");
-    if (src.currency_code !== input.currencyCode) throw new Error("Source invoice is in a different currency");
-    if (["draft", "void"].includes(src.status)) throw new Error(`Cannot credit a ${src.status} invoice`);
+    if (src.contact_id !== input.contactId)
+      throw new Error("Source invoice belongs to a different customer");
+    if (src.currency_code !== input.currencyCode)
+      throw new Error("Source invoice is in a different currency");
+    if (["draft", "void"].includes(src.status))
+      throw new Error(`Cannot credit a ${src.status} invoice`);
   }
 
   const headerCommon: Row = {
@@ -285,8 +284,21 @@ async function saveFallback(
   const newId = (inserted as { id: string }).id;
 
   const cleanup = async () => {
-    await supabase.from(t.lines as never).delete().eq(t.fk as never, newId as never);
-    await supabase.from(t.header as never).delete().eq("id" as never, newId as never);
+    await supabase
+      .from(t.lines as never)
+      .delete()
+      .eq(t.fk as never, newId as never);
+    // Sales documents have no client DELETE policy, so a failed save is retired by voiding the
+    // empty draft (the delete is attempted first for databases that do allow it).
+    await supabase
+      .from(t.header as never)
+      .delete()
+      .eq("id" as never, newId as never);
+    await supabase
+      .from(t.header as never)
+      .update({ status: "void", memo: "Rolled back: save failed" } as never)
+      .eq("id" as never, newId as never)
+      .eq("status" as never, "draft" as never);
   };
 
   const { error: lineErr } = await supabase

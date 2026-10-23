@@ -40,7 +40,10 @@ describe("invoiceOutstandingAsAt", () => {
   });
 
   it("counts partial allocations dated on or before the date", () => {
-    const allocs = [alloc({ amountMinor: 4000, effectiveDate: "2026-03-15" }), alloc({ amountMinor: 1000, effectiveDate: "2026-04-01" })];
+    const allocs = [
+      alloc({ amountMinor: 4000, effectiveDate: "2026-03-15" }),
+      alloc({ amountMinor: 1000, effectiveDate: "2026-04-01" }),
+    ];
     expect(invoiceOutstandingAsAt(invoice(), allocs, "2026-03-31")).toBe(6000);
     expect(invoiceOutstandingAsAt(invoice(), allocs, "2026-04-30")).toBe(5000);
   });
@@ -53,11 +56,19 @@ describe("invoiceOutstandingAsAt", () => {
 
   it("excludes drafts, future invoices, and invoices voided on/before the date", () => {
     expect(invoiceOutstandingAsAt(invoice({ status: "draft" }), [], "2026-12-31")).toBe(0);
-    expect(invoiceOutstandingAsAt(invoice({ invoiceDate: "2026-05-01" }), [], "2026-03-31")).toBe(0);
-    expect(invoiceOutstandingAsAt(invoice({ status: "void", voidDate: "2026-04-02" }), [], "2026-04-02")).toBe(0);
-    expect(invoiceOutstandingAsAt(invoice({ status: "void", voidDate: "2026-04-02" }), [], "2026-04-01")).toBe(10000);
+    expect(invoiceOutstandingAsAt(invoice({ invoiceDate: "2026-05-01" }), [], "2026-03-31")).toBe(
+      0,
+    );
+    expect(
+      invoiceOutstandingAsAt(invoice({ status: "void", voidDate: "2026-04-02" }), [], "2026-04-02"),
+    ).toBe(0);
+    expect(
+      invoiceOutstandingAsAt(invoice({ status: "void", voidDate: "2026-04-02" }), [], "2026-04-01"),
+    ).toBe(10000);
     // legacy void without a date was reversed at the invoice date
-    expect(invoiceOutstandingAsAt(invoice({ status: "void", voidDate: null }), [], "2026-03-15")).toBe(0);
+    expect(
+      invoiceOutstandingAsAt(invoice({ status: "void", voidDate: null }), [], "2026-03-15"),
+    ).toBe(0);
   });
 });
 
@@ -144,7 +155,13 @@ describe("buildAgedReceivablesAsAt", () => {
       creditNotes: [],
       // i1 was paid 4000 in April: must NOT reduce the 31 Mar balance
       receiptAllocations: [
-        { receiptId: "rX", invoiceId: "i1", amountMinor: 4000, effectiveDate: "2026-04-10", reversedOn: null },
+        {
+          receiptId: "rX",
+          invoiceId: "i1",
+          amountMinor: 4000,
+          effectiveDate: "2026-04-10",
+          reversedOn: null,
+        },
       ],
       creditAllocations: [],
     });

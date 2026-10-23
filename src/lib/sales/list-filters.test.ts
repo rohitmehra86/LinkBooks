@@ -24,7 +24,11 @@ describe("search escaping", () => {
   });
 
   it("builds a combined OR across columns and matching customers", () => {
-    const or = buildSearchOr("acme", ["invoice_number", "memo"], ["11111111-1111-1111-1111-111111111111"]);
+    const or = buildSearchOr(
+      "acme",
+      ["invoice_number", "memo"],
+      ["11111111-1111-1111-1111-111111111111"],
+    );
     expect(or).toContain("invoice_number.ilike.");
     expect(or).toContain("memo.ilike.");
     expect(or).toContain("contact_id.in.(11111111-1111-1111-1111-111111111111)");
@@ -53,7 +57,11 @@ describe("paging and sorting", () => {
   });
 
   it("only allows whitelisted sort columns", () => {
-    expect(pickSort("total_minor", ["invoice_date", "total_minor"] as const, "invoice_date")).toBe("total_minor");
-    expect(pickSort("1; drop table", ["invoice_date"] as const, "invoice_date")).toBe("invoice_date");
+    expect(pickSort("total_minor", ["invoice_date", "total_minor"] as const, "invoice_date")).toBe(
+      "total_minor",
+    );
+    expect(pickSort("1; drop table", ["invoice_date"] as const, "invoice_date")).toBe(
+      "invoice_date",
+    );
   });
 });

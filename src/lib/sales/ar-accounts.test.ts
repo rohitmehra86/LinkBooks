@@ -28,15 +28,27 @@ describe("isDepositAccount (AR-25)", () => {
   });
 
   it("rejects AR and other control accounts", () => {
-    expect(isDepositAccount(acc({ code: "1100", name: "Accounts Receivable", is_control: true, system_key: "ar" }), none)).toBe(false);
+    expect(
+      isDepositAccount(
+        acc({ code: "1100", name: "Accounts Receivable", is_control: true, system_key: "ar" }),
+        none,
+      ),
+    ).toBe(false);
     expect(isDepositAccount(acc({ name: "Bank clearing", is_control: true }), none)).toBe(false);
   });
 
   it("rejects inventory, fixed assets, inactive, archived, non-postable and non-asset accounts", () => {
     expect(isDepositAccount(acc({ code: "1150", name: "Inventory" }), none)).toBe(false);
-    expect(isDepositAccount(acc({ name: "Equipment", account_kind: "fixed_asset", subtype: "non_current_asset" }), none)).toBe(false);
+    expect(
+      isDepositAccount(
+        acc({ name: "Equipment", account_kind: "fixed_asset", subtype: "non_current_asset" }),
+        none,
+      ),
+    ).toBe(false);
     expect(isDepositAccount(acc({ account_kind: "bank", is_active: false }), none)).toBe(false);
-    expect(isDepositAccount(acc({ account_kind: "bank", archived_at: "2026-01-01" }), none)).toBe(false);
+    expect(isDepositAccount(acc({ account_kind: "bank", archived_at: "2026-01-01" }), none)).toBe(
+      false,
+    );
     expect(isDepositAccount(acc({ account_kind: "bank", is_postable: false }), none)).toBe(false);
     expect(isDepositAccount(acc({ name: "Bank fees", account_type: "expense" }), none)).toBe(false);
   });

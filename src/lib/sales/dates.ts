@@ -1,7 +1,10 @@
 /** Date helpers for sales (company-timezone aware "today"; AR-16, AR-26). */
 
 /** YYYY-MM-DD for `now` in an IANA timezone. Falls back to UTC for an unknown zone. */
-export function todayInTimezone(timeZone: string | null | undefined, now: Date = new Date()): string {
+export function todayInTimezone(
+  timeZone: string | null | undefined,
+  now: Date = new Date(),
+): string {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: timeZone || "UTC",

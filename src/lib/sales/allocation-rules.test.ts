@@ -67,10 +67,18 @@ describe("validateReceiptAllocations", () => {
   it("rejects other customers, other currencies, and non-open statuses", () => {
     const a = [{ invoiceId: "inv-1", amountMinor: 100 }];
     expect(() =>
-      validateReceiptAllocations({ ...base, allocations: a, invoices: map(inv({ contactId: "c2" })) }),
+      validateReceiptAllocations({
+        ...base,
+        allocations: a,
+        invoices: map(inv({ contactId: "c2" })),
+      }),
     ).toThrow(/different customer/);
     expect(() =>
-      validateReceiptAllocations({ ...base, allocations: a, invoices: map(inv({ currencyCode: "EUR" })) }),
+      validateReceiptAllocations({
+        ...base,
+        allocations: a,
+        invoices: map(inv({ currencyCode: "EUR" })),
+      }),
     ).toThrow(/EUR/);
     for (const status of ["draft", "void", "paid"]) {
       expect(() =>
@@ -164,27 +172,29 @@ describe("validateCreditAllocations", () => {
   });
 
   it("requires at least one allocation", () => {
-    expect(() =>
-      validateCreditAllocations({ credit, allocations: [], invoices: map() }),
-    ).toThrow(/At least one/);
+    expect(() => validateCreditAllocations({ credit, allocations: [], invoices: map() })).toThrow(
+      /At least one/,
+    );
   });
 });
 
 describe("status derivation", () => {
   it("derives invoice status from paid + credited", () => {
-    expect(deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(
-      "authorised",
-    );
-    expect(deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 40, amountCreditedMinor: 0 })).toBe(
-      "partly_paid",
-    );
-    expect(deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 40, amountCreditedMinor: 60 })).toBe(
-      "paid",
-    );
+    expect(
+      deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 0, amountCreditedMinor: 0 }),
+    ).toBe("authorised");
+    expect(
+      deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 40, amountCreditedMinor: 0 }),
+    ).toBe("partly_paid");
+    expect(
+      deriveSalesInvoiceStatus({ totalMinor: 100, amountPaidMinor: 40, amountCreditedMinor: 60 }),
+    ).toBe("paid");
   });
   it("derives credit note status and labels", () => {
     expect(deriveCreditNoteStatus({ totalMinor: 100, amountAllocatedMinor: 0 })).toBe("authorised");
-    expect(deriveCreditNoteStatus({ totalMinor: 100, amountAllocatedMinor: 30 })).toBe("partly_paid");
+    expect(deriveCreditNoteStatus({ totalMinor: 100, amountAllocatedMinor: 30 })).toBe(
+      "partly_paid",
+    );
     expect(deriveCreditNoteStatus({ totalMinor: 100, amountAllocatedMinor: 100 })).toBe("paid");
     expect(creditNoteStatusLabel("paid")).toBe("Fully applied");
     expect(creditNoteStatusLabel("partly_paid")).toBe("Partly applied");
@@ -196,11 +206,21 @@ describe("status derivation", () => {
 
 describe("void eligibility", () => {
   it("invoice: only authorised with nothing applied", () => {
-    expect(canVoidInvoice({ status: "authorised", amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(true);
-    expect(canVoidInvoice({ status: "partly_paid", amountPaidMinor: 1, amountCreditedMinor: 0 })).toBe(false);
-    expect(canVoidInvoice({ status: "paid", amountPaidMinor: 10, amountCreditedMinor: 0 })).toBe(false);
-    expect(canVoidInvoice({ status: "draft", amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(false);
-    expect(canVoidInvoice({ status: "void", amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(false);
+    expect(
+      canVoidInvoice({ status: "authorised", amountPaidMinor: 0, amountCreditedMinor: 0 }),
+    ).toBe(true);
+    expect(
+      canVoidInvoice({ status: "partly_paid", amountPaidMinor: 1, amountCreditedMinor: 0 }),
+    ).toBe(false);
+    expect(canVoidInvoice({ status: "paid", amountPaidMinor: 10, amountCreditedMinor: 0 })).toBe(
+      false,
+    );
+    expect(canVoidInvoice({ status: "draft", amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(
+      false,
+    );
+    expect(canVoidInvoice({ status: "void", amountPaidMinor: 0, amountCreditedMinor: 0 })).toBe(
+      false,
+    );
   });
   it("credit note: only authorised with nothing applied", () => {
     expect(canVoidCreditNote({ status: "authorised", amountAllocatedMinor: 0 })).toBe(true);

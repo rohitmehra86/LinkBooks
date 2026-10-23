@@ -18,7 +18,10 @@ describe("buildCustomerStatement", () => {
     const [gbp] = buildCustomerStatement(
       [
         inv({ id: "i1", date: "2026-09-10", amountMinor: 10000 }),
-        { ...inv({ id: "r1", kind: "receipt", date: "2026-09-20", amountMinor: 3000 }), reference: "R" },
+        {
+          ...inv({ id: "r1", kind: "receipt", date: "2026-09-20", amountMinor: 3000 }),
+          reference: "R",
+        },
         inv({ id: "i2", date: "2026-10-05", amountMinor: 2500, reference: "INV-2" }),
       ],
       { from: "2026-10-01", to: "2026-10-31" },
@@ -33,7 +36,13 @@ describe("buildCustomerStatement", () => {
     const [gbp] = buildCustomerStatement(
       [
         inv({ id: "i1", date: "2026-10-01", amountMinor: 1000 }),
-        inv({ id: "c1", kind: "credit_note", date: "2026-10-02", amountMinor: 400, reference: "SCN-1" }),
+        inv({
+          id: "c1",
+          kind: "credit_note",
+          date: "2026-10-02",
+          amountMinor: 400,
+          reference: "SCN-1",
+        }),
         inv({ id: "r1", kind: "receipt", date: "2026-10-03", amountMinor: 600, reference: null }),
       ],
       { from: "2026-10-01", to: "2026-10-31" },
@@ -57,7 +66,15 @@ describe("buildCustomerStatement", () => {
 
   it("shows a void as a reversing line on the void date, not by rewriting the opening balance", () => {
     const [gbp] = buildCustomerStatement(
-      [inv({ id: "i1", date: "2026-09-10", amountMinor: 5000, status: "void", voidDate: "2026-10-12" })],
+      [
+        inv({
+          id: "i1",
+          date: "2026-09-10",
+          amountMinor: 5000,
+          status: "void",
+          voidDate: "2026-10-12",
+        }),
+      ],
       { from: "2026-10-01", to: "2026-10-31" },
     );
     expect(gbp!.opening_balance_minor).toBe(5000);
@@ -82,7 +99,15 @@ describe("buildCustomerStatement", () => {
     const [gbp] = buildCustomerStatement(
       [
         inv({ id: "i1", date: "2026-10-01", amountMinor: 1000 }),
-        inv({ id: "r1", kind: "receipt", date: "2026-10-02", amountMinor: 1000, status: "void", voidDate: "2026-10-05", reference: "R" }),
+        inv({
+          id: "r1",
+          kind: "receipt",
+          date: "2026-10-02",
+          amountMinor: 1000,
+          status: "void",
+          voidDate: "2026-10-05",
+          reference: "R",
+        }),
       ],
       { from: "2026-10-01", to: "2026-10-31" },
     );
