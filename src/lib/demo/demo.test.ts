@@ -82,8 +82,8 @@ describe("Demo Company canonical dataset", () => {
     const t = computeDemoReportTotals();
     // Open AR after paid invoice + open invoice − credit
     expect(t.ar).toBe(480_000n);
-    // Open AP = COS on account only
-    expect(t.ap).toBe(75_000n);
+    // AP control equals open bills (none): the cost accrual lives in Accruals, not AP
+    expect(t.ap).toBe(0n);
   });
 });
 

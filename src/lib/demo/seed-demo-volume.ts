@@ -164,7 +164,7 @@ export async function seedDemoVolumeData(
     const tax = Math.round(sub * 0.2);
     const total = sub + tax;
     const status = statuses[i % statuses.length];
-    const paid = status === "paid" ? total : 0;
+    const paid = 0; // draft-only shells: no journal, so never paid
     const day = 1 + (i % 28);
     const month = 4 + (i % 6);
     const date = `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -227,7 +227,7 @@ export async function seedDemoVolumeData(
     const tax = Math.round(sub * 0.2);
     const total = sub + tax;
     const status = billStatuses[i % billStatuses.length];
-    const paid = status === "paid" ? total : 0;
+    const paid = 0; // draft-only shells: no journal, so never paid
     const day = 1 + (i % 28);
     const month = 4 + (i % 6);
     const date = `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;

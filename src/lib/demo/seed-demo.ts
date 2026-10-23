@@ -511,7 +511,8 @@ export async function seedDemoCompanyData(
     total: 240_000,
     paid: 0,
     credited: 240_000,
-    status: "authorised",
+    // Fully credited => zero balance => closed, never "authorised".
+    status: "paid",
     accountId: expenseId,
     description: "Hosting bill (fully credited)",
   });
@@ -526,9 +527,10 @@ export async function seedDemoCompanyData(
     tax: 19_000,
     total: 114_000,
     paid: 0,
-    status: "authorised",
+    // Draft: no journal exists for it, so it must not count as open AP.
+    status: "draft",
     accountId: expenseId,
-    description: "Marketing print run (open AP)",
+    description: "Marketing print run (draft)",
   });
   documents += await upsertDemoBill(supabase, {
     companyId,
@@ -1071,6 +1073,26 @@ async function linkDemoDocumentsToJournals(
       .update({ posted_journal_id: creditJid } as never)
       .eq("company_id" as never, companyId as never)
       .eq("credit_number" as never, "SCN-1" as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const purchaseCreditJid = journalByKey.get("demo:pcn-1");
+  if (purchaseCreditJid) {
+    await supabase
+      .from("purchase_credit_notes" as never)
+      .update({ posted_journal_id: purchaseCreditJid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("credit_number" as never, "PCN-1" as never)
+      .is("posted_journal_id" as never, null as never);
+  }
+
+  const supplierPaymentJid = journalByKey.get("demo:pay-2001");
+  if (supplierPaymentJid) {
+    await supabase
+      .from("supplier_payments" as never)
+      .update({ posted_journal_id: supplierPaymentJid } as never)
+      .eq("company_id" as never, companyId as never)
+      .eq("reference" as never, "SPAY-2001" as never)
       .is("posted_journal_id" as never, null as never);
   }
 
