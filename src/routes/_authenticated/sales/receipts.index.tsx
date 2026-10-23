@@ -4,21 +4,22 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { exportReceiptsCsv, listReceipts } from "@/lib/sales/sales-receipts.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   ListToolbar,
   Pager,
+  TableCard,
   SortHead,
   downloadCsv,
   initialListState,
   useDebounced,
   type ListState,
 } from "@/components/sales/ListKit";
-import { money } from "@/components/sales/sales-form-utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -40,6 +41,7 @@ const STATUSES = [
 
 function ReceiptsList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const companyId = company?.id;
   const fetchReceipts = useServerFn(listReceipts);
   const exportCsv = useServerFn(exportReceiptsCsv);
@@ -110,7 +112,7 @@ function ReceiptsList() {
         }
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
         <ErrorState
           title="Could not load receipts"
@@ -121,59 +123,66 @@ function ReceiptsList() {
         <EmptyState
           title="No receipts"
           description="No receipts match — record a customer payment."
+          action={
+            <Button size="sm" asChild>
+              <Link to="/sales/receipts/new">New receipt</Link>
+            </Button>
+          }
         />
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortHead label="Date" column="receipt_date" state={state} onChange={patch} />
-                <SortHead label="Reference" column="reference" state={state} onChange={patch} />
-                <TableHead>Customer</TableHead>
-                <SortHead label="Status" column="status" state={state} onChange={patch} />
-                <SortHead
-                  label="Amount"
-                  column="amount_minor"
-                  state={state}
-                  onChange={patch}
-                  className="text-right"
-                />
-                <SortHead
-                  label="Unallocated"
-                  column="unallocated_minor"
-                  state={state}
-                  onChange={patch}
-                  className="text-right"
-                />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
-                    <Link
-                      className="underline-offset-2 hover:underline"
-                      to="/sales/receipts/$receiptId"
-                      params={{ receiptId: r.id }}
-                    >
-                      {r.receipt_date}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{r.reference ?? "—"}</TableCell>
-                  <TableCell>{r.contacts?.name ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{r.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {money(r.amount_minor, r.currency_code)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {r.status === "void" ? "—" : money(r.unallocated_minor, r.currency_code)}
-                  </TableCell>
+          <TableCard>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead label="Date" column="receipt_date" state={state} onChange={patch} />
+                  <SortHead label="Reference" column="reference" state={state} onChange={patch} />
+                  <TableHead>Customer</TableHead>
+                  <SortHead label="Status" column="status" state={state} onChange={patch} />
+                  <SortHead
+                    label="Amount"
+                    column="amount_minor"
+                    state={state}
+                    onChange={patch}
+                    className="text-right"
+                  />
+                  <SortHead
+                    label="Unallocated"
+                    column="unallocated_minor"
+                    state={state}
+                    onChange={patch}
+                    className="text-right"
+                  />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <Link
+                        className="underline-offset-2 hover:underline"
+                        to="/sales/receipts/$receiptId"
+                        params={{ receiptId: r.id }}
+                      >
+                        {fmt.date(r.receipt_date)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{r.reference ?? "—"}</TableCell>
+                    <TableCell>{r.contacts?.name ?? "—"}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                    <TableCell className="money">
+                      {fmt.money(r.amount_minor, r.currency_code)}
+                    </TableCell>
+                    <TableCell className="money">
+                      {r.status === "void" ? "—" : fmt.money(r.unallocated_minor, r.currency_code)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableCard>
           <Pager total={query.data?.total ?? 0} state={state} onChange={patch} />
         </>
       )}

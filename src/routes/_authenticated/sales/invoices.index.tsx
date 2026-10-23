@@ -4,20 +4,21 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useFormat } from "@/hooks/use-format";
 import { exportInvoicesCsv, listInvoices } from "@/lib/sales/sales.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
+import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
+import { StatusBadge } from "@/components/common/stat-card";
 import {
   ListToolbar,
   Pager,
+  TableCard,
   SortHead,
   downloadCsv,
   initialListState,
   useDebounced,
   type ListState,
 } from "@/components/sales/ListKit";
-import { money } from "@/components/sales/sales-form-utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -43,6 +44,7 @@ const STATUSES = [
 
 function InvoicesList() {
   const { company } = useActiveCompany();
+  const fmt = useFormat();
   const fetchInvoices = useServerFn(listInvoices);
   const exportCsv = useServerFn(exportInvoicesCsv);
   const companyId = company?.id;
@@ -115,7 +117,7 @@ function InvoicesList() {
         }
       />
       {query.isPending ? (
-        <LoadingState />
+        <ListSkeleton />
       ) : query.isError ? (
         <ErrorState
           title="Could not load invoices"
@@ -130,61 +132,67 @@ function InvoicesList() {
               ? "No invoices match these filters."
               : "Create a customer invoice to start."
           }
+          action={
+            <Button size="sm" asChild>
+              <Link to="/sales/invoices/new">New invoice</Link>
+            </Button>
+          }
         />
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortHead label="Number" column="invoice_number" state={state} onChange={patch} />
-                <SortHead label="Date" column="invoice_date" state={state} onChange={patch} />
-                <SortHead label="Due" column="due_date" state={state} onChange={patch} />
-                <TableHead>Customer</TableHead>
-                <SortHead label="Status" column="status" state={state} onChange={patch} />
-                <SortHead
-                  label="Total"
-                  column="total_minor"
-                  state={state}
-                  onChange={patch}
-                  className="text-right"
-                />
-                <TableHead className="text-right">Outstanding</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((inv) => {
-                const live = ["authorised", "partly_paid"].includes(inv.status);
-                const out = live
-                  ? inv.total_minor - inv.amount_paid_minor - inv.amount_credited_minor
-                  : 0;
-                const isOverdue = live && out > 0 && inv.due_date < today;
-                return (
-                  <TableRow key={inv.id}>
-                    <TableCell>
-                      <Link
-                        to="/sales/invoices/$invoiceId"
-                        params={{ invoiceId: inv.id }}
-                        className="underline-offset-2 hover:underline"
-                      >
-                        {inv.invoice_number ?? inv.id.slice(0, 8)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{inv.invoice_date}</TableCell>
-                    <TableCell>{inv.due_date}</TableCell>
-                    <TableCell>{inv.contacts?.name ?? "—"}</TableCell>
-                    <TableCell className="space-x-1">
-                      <Badge variant="secondary">{inv.status.replace("_", " ")}</Badge>
-                      {isOverdue ? <Badge variant="destructive">overdue</Badge> : null}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money(inv.total_minor, inv.currency_code)}
-                    </TableCell>
-                    <TableCell className="text-right">{money(out, inv.currency_code)}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <TableCard>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead label="Number" column="invoice_number" state={state} onChange={patch} />
+                  <SortHead label="Date" column="invoice_date" state={state} onChange={patch} />
+                  <SortHead label="Due" column="due_date" state={state} onChange={patch} />
+                  <TableHead>Customer</TableHead>
+                  <SortHead label="Status" column="status" state={state} onChange={patch} />
+                  <SortHead
+                    label="Total"
+                    column="total_minor"
+                    state={state}
+                    onChange={patch}
+                    className="text-right"
+                  />
+                  <TableHead className="text-right">Outstanding</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((inv) => {
+                  const live = ["authorised", "partly_paid"].includes(inv.status);
+                  const out = live
+                    ? inv.total_minor - inv.amount_paid_minor - inv.amount_credited_minor
+                    : 0;
+                  const isOverdue = live && out > 0 && inv.due_date < today;
+                  return (
+                    <TableRow key={inv.id}>
+                      <TableCell>
+                        <Link
+                          to="/sales/invoices/$invoiceId"
+                          params={{ invoiceId: inv.id }}
+                          className="underline-offset-2 hover:underline"
+                        >
+                          {inv.invoice_number ?? inv.id.slice(0, 8)}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{fmt.date(inv.invoice_date)}</TableCell>
+                      <TableCell>{fmt.date(inv.due_date)}</TableCell>
+                      <TableCell>{inv.contacts?.name ?? "—"}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={isOverdue ? "overdue" : inv.status} />
+                      </TableCell>
+                      <TableCell className="money">
+                        {fmt.money(inv.total_minor, inv.currency_code)}
+                      </TableCell>
+                      <TableCell className="money">{fmt.money(out, inv.currency_code)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableCard>
           <Pager total={query.data?.total ?? 0} state={state} onChange={patch} />
         </>
       )}
