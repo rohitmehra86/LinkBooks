@@ -437,13 +437,13 @@ export const CREATE_ACTIONS: readonly CreateAction[] = [
     group: "documents",
     aliases: ["upload", "attachment", "file"],
     permission: "purchases.draft",
-    status: "BLOCKED",
-    availability: "blocked",
+    status: "PARTIAL",
+    availability: "ready",
     width: "narrow",
     route: null,
     component: "InboxPanel",
-    backend: "uploadInboxDocument",
-    blocker: CREATE_PENDING_DATABASE,
+    backend: "registerAttachment",
+    blocker: null,
   },
 ];
 

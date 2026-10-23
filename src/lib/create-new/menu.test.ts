@@ -11,9 +11,9 @@ describe("create new registry", () => {
 
   it("keeps verified commands runnable and holds the rest", () => {
     const blocked = CREATE_ACTIONS.filter((action) => action.availability !== "ready").map((action) => action.id);
-    expect(blocked).toEqual(["project", "document_upload"]);
+    expect(blocked).toEqual(["project"]);
     expect(CREATE_ACTIONS.every((action) => action.component)).toBe(true);
-    expect(runnableCreateActions("owner")).toHaveLength(27);
+    expect(runnableCreateActions("owner")).toHaveLength(28);
     expect(runnableCreateActions("read_only")).toHaveLength(1);
   });
 

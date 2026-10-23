@@ -15,5 +15,15 @@
 | Portals / Fixed assets | unavailable | Settings | — |
 | Firm practice depth | partial | `/firm` | — |
 | Universal flyovers all docs | partial | create-new panels | M2 |
+| Printable documents (invoice, credit note, quote, receipt, bill, PO, supplier credit, remittance) | ready (print / Save as PDF; no server PDF) | `src/components/documents/DocumentSheet.tsx`, `/documents/print/$kind/$id`, `src/lib/documents/*` | documents.test, DocumentSheet.test |
+| Document branding (logo upload, accent, address, tax no., bank details, footer) | ready (needs migration 20261025200000) | `/documents/branding`, `saveBrandingSettings` | documents.test |
+| Email delivery of documents | partial — sends only when `RESEND_API_KEY` + `EMAIL_FROM` set; otherwise honest "not configured" + mailto | `email-provider.server.ts`, `sendDocumentEmail`, `email_outbox` | email-provider.test, comms.test |
+| Overdue reminders | partial — manual batch send + schedule settings; no automatic scheduler | `/sales/reminders`, `reminders.ts` | comms.test |
+| Document attachments + Files page | ready (needs migration 20261025200100) | `company-documents` bucket, `document_attachments`, `/files`, `AttachmentsPanel` | comms.test |
+| Create → Document upload | ready (was blocked) | `InboxPanel.tsx`, registry `document_upload` | menu.test |
+| Online invoice link (read-only, revocable) | ready (needs migration 20261025200300); no online payment | `/share/invoice/$token`, `get_shared_invoice` RPC | documents.test |
+| Customer statements (print / email) | ready | `/sales/statements`, `loadCustomerStatement` | statement tests |
+| Supplier statements | missing | — | — |
+| Automatic PDF attachment in email | missing (link + summary only) | — | — |
 
 Update on every milestone.

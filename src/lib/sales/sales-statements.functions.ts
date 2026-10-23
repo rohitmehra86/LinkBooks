@@ -45,18 +45,11 @@ async function paged<T>(
  * (AR-09). Receipts and credit notes appear at their FULL amount; the "unapplied" figures say what
  * is not yet matched to an invoice.
  */
-export const getCustomerStatement = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    (input: { companyId: string; contactId: string; from?: string; to?: string }) => ({
-      companyId: assertUuid(input.companyId),
-      contactId: assertUuid(input.contactId, "customer"),
-      from: isIsoDateString(input.from) ? input.from : null,
-      to: isIsoDateString(input.to) ? input.to : null,
-    }),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
+export async function loadCustomerStatement(
+  supabase: SalesClient,
+  data: { companyId: string; contactId: string; from: string | null; to: string | null },
+) {
+  {
     await assertCompanyMember(supabase, data.companyId);
     const forContact = (q: Q) =>
       q
@@ -186,7 +179,20 @@ export const getCustomerStatement = createServerFn({ method: "GET" })
         .map(([currency_code, s]) => ({ currency_code, ...s }))
         .sort((a, b) => a.currency_code.localeCompare(b.currency_code)),
     };
-  });
+  }
+}
+
+export const getCustomerStatement = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: { companyId: string; contactId: string; from?: string; to?: string }) => ({
+      companyId: assertUuid(input.companyId),
+      contactId: assertUuid(input.contactId, "customer"),
+      from: isIsoDateString(input.from) ? input.from : null,
+      to: isIsoDateString(input.to) ? input.to : null,
+    }),
+  )
+  .handler(async ({ data, context }) => loadCustomerStatement(context.supabase, data));
 
 /**
  * Sales overview tiles. "Today" is the company's local date, every row is read (paged), and

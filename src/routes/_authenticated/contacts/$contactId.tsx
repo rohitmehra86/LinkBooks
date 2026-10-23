@@ -21,6 +21,7 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -621,6 +622,7 @@ function ContactDetail() {
           )}
         </TabsContent>
       </Tabs>
+      <AttachmentsPanel entityType="contact" entityId={contactId} />
     </>
   );
 }

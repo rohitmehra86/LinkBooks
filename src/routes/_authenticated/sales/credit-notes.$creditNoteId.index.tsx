@@ -23,6 +23,8 @@ import { ReasonDialog } from "@/components/sales/ReasonDialog";
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -527,6 +529,8 @@ function CreditNoteDetail() {
             : undefined
         }
       />
+      <DocumentActions kind="sales_credit_note" id={creditNoteId} />
+      <AttachmentsPanel entityType="sales_credit_note" entityId={creditNoteId} />
     </>
   );
 }

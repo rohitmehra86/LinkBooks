@@ -13,6 +13,7 @@ import {
   Briefcase,
   Building2,
   Percent,
+  FolderOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -88,6 +89,13 @@ export const navItems: NavItem[] = [
     icon: BookOpen,
     group: "accounting",
     description: "Chart of accounts, journals, ledger",
+  },
+  {
+    label: "Files",
+    to: "/files",
+    icon: FolderOpen,
+    group: "records",
+    description: "Attachments and uploaded documents",
   },
   {
     label: "Reports",

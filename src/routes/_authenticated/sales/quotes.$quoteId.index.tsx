@@ -18,6 +18,8 @@ import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/c
 import { bpsToPercentString, money } from "@/components/sales/sales-form-utils";
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
+import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -267,6 +269,8 @@ function QuoteDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <DocumentActions kind="sales_quote" id={quoteId} />
+      <AttachmentsPanel entityType="sales_quote" entityId={quoteId} />
     </>
   );
 }

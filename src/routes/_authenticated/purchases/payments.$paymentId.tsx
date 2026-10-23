@@ -18,6 +18,7 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -357,6 +358,7 @@ function PaymentDocument() {
           transmit funds to a bank.
         </p>
       </section>
+      <DocumentActions kind="supplier_remittance" id={paymentId} />
     </div>
   );
 }

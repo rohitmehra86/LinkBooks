@@ -62,6 +62,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
+import { DocumentActions } from "@/components/documents/DocumentActions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -1393,6 +1394,8 @@ function BillDocumentWorkspace() {
           ) : null}
         </aside>
       </div>
+
+      <DocumentActions kind="purchase_bill" id={billId} />
 
       <BillRelatedFilesOverlay
         open={filesOpen}
