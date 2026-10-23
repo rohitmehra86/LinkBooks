@@ -14,6 +14,9 @@ export type ReportSearch = {
   entity?: string;
   action?: string;
   basis?: "accrual" | "cash";
+  /** Budget vs Actual: which budget, and monthly / quarterly / year-to-date columns. */
+  budget?: string;
+  view?: "month" | "quarter" | "ytd";
 };
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,6 +54,11 @@ export function parseReportSearch(raw: Record<string, unknown>): ReportSearch {
   if (entity) out.entity = entity;
   const action = str(raw["action"], 80);
   if (action) out.action = action;
+  const budget = str(raw["budget"], 36);
+  if (budget && UUID.test(budget)) out.budget = budget;
+  if (raw["view"] === "month" || raw["view"] === "quarter" || raw["view"] === "ytd") {
+    out.view = raw["view"];
+  }
   if (raw["basis"] === "cash" || raw["basis"] === "accrual") out.basis = raw["basis"];
   return out;
 }

@@ -12,6 +12,8 @@ import {
   LifeBuoy,
   Briefcase,
   Building2,
+  PiggyBank,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,7 +32,12 @@ export const navItems: NavItem[] = [
     description: "Financial position at a glance",
   },
   { label: "Banking", to: "/banking", icon: Landmark, description: "Accounts and reconciliation" },
-  { label: "Sales", to: "/sales", icon: ReceiptText, description: "Invoices and customer payments" },
+  {
+    label: "Sales",
+    to: "/sales",
+    icon: ReceiptText,
+    description: "Invoices and customer payments",
+  },
   {
     label: "Purchases",
     to: "/purchases",
@@ -50,7 +57,24 @@ export const navItems: NavItem[] = [
     icon: BookOpen,
     description: "Chart of accounts, journals, ledger",
   },
-  { label: "Reports", to: "/reports", icon: BarChart3, description: "Reports Centre and financial statements" },
+  {
+    label: "Budgets",
+    to: "/budgets",
+    icon: PiggyBank,
+    description: "Plan income and expenses by month",
+  },
+  {
+    label: "Fixed assets",
+    to: "/fixed-assets",
+    icon: Warehouse,
+    description: "Asset register and depreciation",
+  },
+  {
+    label: "Reports",
+    to: "/reports",
+    icon: BarChart3,
+    description: "Reports Centre and financial statements",
+  },
   {
     label: "Accountant",
     to: "/accountant",

@@ -21,6 +21,21 @@ import {
   ProfitLossView,
   TrialBalanceView,
 } from "@/components/reports/StatementViews";
+import {
+  BankReconSummaryView,
+  CashFlowIndirectView,
+  CashSummaryView,
+  ExecutiveSummaryView,
+  GlSummaryView,
+  PurchasesBySupplierView,
+  SalesByContactView,
+  SalesByItemView,
+} from "@/components/reports/AnalysisViews";
+import {
+  BudgetVsActualView,
+  DepreciationScheduleView,
+  FixedAssetRegisterView,
+} from "@/components/reports/PlanningViews";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingState, PageHeader } from "@/components/common/states";
@@ -144,6 +159,28 @@ function ReportPage() {
       return <TaxSummaryView ctx={ctx} />;
     case "audit":
       return <AuditView ctx={ctx} />;
+    case "executive_summary":
+      return <ExecutiveSummaryView ctx={ctx} />;
+    case "cash_summary":
+      return <CashSummaryView ctx={ctx} />;
+    case "gl_summary":
+      return <GlSummaryView ctx={ctx} />;
+    case "sales_by_contact":
+      return <SalesByContactView ctx={ctx} />;
+    case "sales_by_item":
+      return <SalesByItemView ctx={ctx} />;
+    case "purchases_by_supplier":
+      return <PurchasesBySupplierView ctx={ctx} />;
+    case "bank_recon_summary":
+      return <BankReconSummaryView ctx={ctx} />;
+    case "cash_flow_indirect":
+      return <CashFlowIndirectView ctx={ctx} />;
+    case "budget_vs_actual":
+      return <BudgetVsActualView ctx={ctx} />;
+    case "fixed_asset_register":
+      return <FixedAssetRegisterView ctx={ctx} />;
+    case "depreciation_schedule":
+      return <DepreciationScheduleView ctx={ctx} />;
     default:
       return <EmptyState title="Report unavailable" description="This report has no runner." />;
   }

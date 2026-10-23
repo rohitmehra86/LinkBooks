@@ -26,7 +26,19 @@ describe("reports catalogue", () => {
 
   it("searches by title and tags", () => {
     expect(searchReports("aged").some((r) => r.id === "aged-receivables")).toBe(true);
-    expect(searchReports("budget")[0]?.status).toBe("depends");
+    // Budgets now exist, so the budget report is a real runner rather than a blocked placeholder.
+    expect(searchReports("budget")[0]?.id).toBe("budget-vs-actual");
+    expect(getReportById("budget-vs-actual")?.status).toBe("ready");
+    expect(getReportById("budget-vs-actual")?.runner).toBe("budget_vs_actual");
+  });
+
+  it("every ready report has a runner or a link target", () => {
+    for (const r of REPORT_CATALOG.filter((x) => x.status === "ready")) {
+      expect(r.runner).not.toBe("none");
+      if (r.runner === "link") expect(r.linkTo).toBeTruthy();
+    }
+    const ids = REPORT_CATALOG.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("link reports point at an existing screen and runner reports have a runner", () => {
