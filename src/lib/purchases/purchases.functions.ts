@@ -125,9 +125,10 @@ function companyIdOf(input: { companyId: string }) {
 
 export const listSuppliers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { companyId: string; q?: string }) => ({
+  .inputValidator((input: { companyId: string; q?: string; includeInactive?: boolean }) => ({
     companyId: assertUuid(input.companyId),
     q: (input.q ?? "").trim().slice(0, 100),
+    includeInactive: Boolean(input.includeInactive),
   }))
   .handler(async ({ data, context }) => {
     await assertCompanyMember(context.supabase, data.companyId);
@@ -138,8 +139,9 @@ export const listSuppliers = createServerFn({ method: "GET" })
       )
       .eq("company_id" as never, data.companyId as never)
       .in("kind" as never, ["supplier", "both"] as never)
-      .eq("is_active" as never, true as never)
       .order("name" as never);
+    // Settlement screens include inactive suppliers so their open bills can still be paid.
+    if (!data.includeInactive) q = q.eq("is_active" as never, true as never);
     if (data.q) q = q.ilike("name" as never, ilikePattern(data.q) as never);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
