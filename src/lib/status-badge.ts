@@ -33,6 +33,9 @@ const MAP: Record<string, StatusDisplay> = {
   expired: { label: "Expired", tone: "warning" },
   converted: { label: "Converted", tone: "neutral" },
   // Banking, records
+  uncategorised: { label: "For review", tone: "warning" },
+  matched: { label: "Matched", tone: "info" },
+  excluded: { label: "Excluded", tone: "neutral", muted: true },
   reconciled: { label: "Reconciled", tone: "success" },
   unreconciled: { label: "Unreconciled", tone: "warning" },
   posted: { label: "Posted", tone: "success" },

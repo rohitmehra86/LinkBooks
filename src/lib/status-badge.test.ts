@@ -13,6 +13,11 @@ describe("statusDisplay", () => {
     expect(statusDisplay("overdue")).toMatchObject({ label: "Overdue", tone: "danger" });
     expect(statusDisplay("void")).toMatchObject({ label: "Void", muted: true });
   });
+  it("covers bank statement line statuses", () => {
+    expect(statusDisplay("uncategorised")).toMatchObject({ label: "For review", tone: "warning" });
+    expect(statusDisplay("matched").tone).toBe("info");
+    expect(statusDisplay("excluded").muted).toBe(true);
+  });
   it("is case, space and underscore insensitive", () => {
     expect(statusDisplay("Awaiting payment").label).toBe("Awaiting payment");
     expect(statusDisplay("PARTLY_PAID").tone).toBe("info");
