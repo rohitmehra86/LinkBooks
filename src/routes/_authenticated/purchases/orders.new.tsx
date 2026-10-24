@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useRef, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
@@ -11,6 +11,10 @@ import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { AccountLookup, ContactLookup } from "@/components/lookup";
 import { AccountCreateForm, ContactCreateForm } from "@/components/lookup/create-forms";
 import { Button } from "@/components/ui/button";
@@ -23,7 +27,6 @@ export const Route = createFileRoute("/_authenticated/purchases/orders/new")({
 
 export function NewOrder() {
   const { company } = useActiveCompany();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fetchSuppliers = useServerFn(listSuppliers);
   const fetchAccounts = useServerFn(listAccounts);
@@ -41,6 +44,9 @@ export function NewOrder() {
   const [price, setPrice] = useState("0.00");
   // Tax is entered as a percentage (20 or 7.5) and sent as basis points.
   const [taxPct, setTaxPct] = useState("0");
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const recordRef = useRef<DocumentRecordHandle>(null);
+  const createdRef = useRef<string | null>(null);
 
   const suppliersQ = useQuery({
     queryKey: ["suppliers", companyId],
@@ -64,8 +70,9 @@ export function NewOrder() {
   const taxInvalid = !Number.isFinite(taxNum) || taxNum < 0 || taxNum > 100;
 
   const mutation = useMutation({
-    mutationFn: () =>
-      save({
+    mutationFn: () => {
+      if (createdRef.current) return Promise.resolve({ id: createdRef.current, orderNumber: "" });
+      return save({
         data: {
           companyId: companyId!,
           contactId,
@@ -81,11 +88,18 @@ export function NewOrder() {
             },
           ],
         },
-      }),
-    onSuccess: async () => {
+      });
+    },
+    onSuccess: async (result) => {
+      createdRef.current = result.id;
+      try {
+        await recordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(`Order saved, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+      }
+      setSavedId(result.id);
       await queryClient.invalidateQueries({ queryKey: ["orders", companyId] });
       toast.success("Purchase order saved (no ledger impact)");
-      navigate({ to: "/purchases/orders" });
     },
     onError: (e) => toast.error(friendlyAuthError(e)),
   });
@@ -186,6 +200,12 @@ export function NewOrder() {
             onChange={(e) => setTaxPct(e.target.value)}
           />
         </div>
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType="purchase_order"
+          entityId={savedId}
+          audience="supplier"
+        />
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -194,7 +214,8 @@ export function NewOrder() {
               priceInvalid ||
               qtyInvalid ||
               taxInvalid ||
-              !can("purchases.draft")
+              !can("purchases.draft") ||
+              Boolean(savedId)
             }
             onClick={() => mutation.mutate()}
           >

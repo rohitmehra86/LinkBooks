@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFormat } from "@/hooks/use-format";
+import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { todayIso } from "@/lib/accounting/fiscal-year";
 import { fromMinorUnits } from "@/lib/accounting/money";
@@ -23,7 +24,7 @@ import {
   type CapitaliseLine,
   type FixedAssetRow,
 } from "@/lib/fixed-assets/fixed-assets.functions";
-import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { AccountLookup, LookupSelect, type LookupCreateContext } from "@/components/lookup";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,6 +86,7 @@ function AccountSelect({
         onChange={onChange}
         companyId={companyId}
         purpose="posting"
+        createKind={types.includes("expense") ? "depreciation" : "fixed_asset"}
         placeholder="Choose an account"
         allowClear
         disabled={disabled}
@@ -300,6 +302,124 @@ export function AssetTypeDialog({
   );
 }
 
+function AssetTypeCreateForm({
+  companyId,
+  accounts,
+  ctx,
+}: {
+  companyId: string;
+  accounts: AssetAccount[];
+  ctx: LookupCreateContext;
+}) {
+  const queryClient = useQueryClient();
+  const saveFn = useServerFn(saveAssetType);
+  const [name, setName] = useState(ctx.initialQuery);
+  const [method, setMethod] = useState<DepreciationMethod>("straight_line");
+  const [life, setLife] = useState("60");
+  const [rate, setRate] = useState("20");
+  const [asset, setAsset] = useState("");
+  const [acc, setAcc] = useState("");
+  const [exp, setExp] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const onSave = async () => {
+    const usefulLifeMonths = lifeOf(method, life);
+    const annualRateBps = rateBpsOf(method, rate);
+    if (
+      !name.trim() ||
+      !asset ||
+      !acc ||
+      !exp ||
+      Number.isNaN(usefulLifeMonths) ||
+      Number.isNaN(annualRateBps)
+    ) {
+      toast.error("Enter a name, a valid life or rate, and the three accounts");
+      return;
+    }
+    setPending(true);
+    try {
+      const result = await saveFn({
+        data: {
+          companyId,
+          typeId: null,
+          name,
+          method,
+          usefulLifeMonths,
+          annualRateBps,
+          assetAccountId: asset,
+          accumulatedAccountId: acc,
+          expenseAccountId: exp,
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ["fixed-assets", companyId] });
+      toast.success("Asset type created");
+      ctx.complete({
+        id: result.id,
+        name: name.trim(),
+        label: name.trim(),
+        meta: JSON.stringify({ method, life, rate, asset, acc, exp }),
+      });
+    } catch (error) {
+      toast.error(friendlyAuthError(error));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="space-y-1">
+        <Label>Name</Label>
+        <Input value={name} autoFocus maxLength={120} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <MethodFields
+        method={method}
+        setMethod={setMethod}
+        life={life}
+        setLife={setLife}
+        rate={rate}
+        setRate={setRate}
+      />
+      <AccountSelect
+        id="create-type-asset"
+        label="Asset account (cost)"
+        value={asset}
+        onChange={setAsset}
+        accounts={accounts}
+        companyId={companyId}
+        types={["asset"]}
+      />
+      <AccountSelect
+        id="create-type-acc"
+        label="Accumulated depreciation account"
+        value={acc}
+        onChange={setAcc}
+        accounts={accounts}
+        companyId={companyId}
+        types={["asset"]}
+      />
+      <AccountSelect
+        id="create-type-exp"
+        label="Depreciation expense account"
+        value={exp}
+        onChange={setExp}
+        accounts={accounts}
+        companyId={companyId}
+        types={["expense"]}
+      />
+      <div className="flex gap-2">
+        <Button type="button" size="sm" disabled={pending} onClick={() => void onSave()}>
+          {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+          Create and select
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={ctx.close}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Asset                                                               */
 /* ------------------------------------------------------------------ */
@@ -327,6 +447,7 @@ export function AssetDialog({
   frozen: boolean;
 }) {
   const queryClient = useQueryClient();
+  const canAccounts = useCanDo("accounts.manage");
   const saveFn = useServerFn(saveFixedAsset);
   const t = (v: number | null | undefined) =>
     v === null || v === undefined ? "" : fromMinorUnits(v, currency);
@@ -496,6 +617,37 @@ export function AssetDialog({
                   label: x.name,
                   keywords: x.name,
                 }))}
+              companyId={companyId}
+              canCreate={canAccounts && !lock}
+              createTitle="New asset type"
+              renderCreate={
+                canAccounts && !lock
+                  ? (ctx) => (
+                      <AssetTypeCreateForm companyId={companyId} accounts={accounts} ctx={ctx} />
+                    )
+                  : undefined
+              }
+              onCreated={(option) => {
+                if (!option.meta) return;
+                try {
+                  const saved = JSON.parse(option.meta) as {
+                    method: DepreciationMethod;
+                    life: string;
+                    rate: string;
+                    asset: string;
+                    acc: string;
+                    exp: string;
+                  };
+                  setMethod(saved.method);
+                  setLife(saved.life);
+                  setRate(saved.rate);
+                  if (!fromBillLine) setAsset(saved.asset);
+                  setAcc(saved.acc);
+                  setExp(saved.exp);
+                } catch {
+                  /* The new type stays selected even if its defaults cannot be read. */
+                }
+              }}
             />
           </div>
           <MethodFields

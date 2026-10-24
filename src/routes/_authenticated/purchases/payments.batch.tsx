@@ -15,7 +15,7 @@ import { buildBatchPayments, type BatchBill } from "@/lib/purchases/batch-paymen
 import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
-import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { AccountLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -81,15 +81,6 @@ function BatchPayment() {
     const rows = ((billsQ.data as { rows?: unknown[] } | undefined)?.rows ?? []) as BillRow[];
     return rows.filter((b) => b.total_minor - b.amount_paid_minor - b.amount_credited_minor > 0);
   }, [billsQ.data]);
-  const bankOptions = useMemo(
-    () =>
-      ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map((a) => ({
-        value: a.id,
-        label: `${a.code} — ${a.name}`,
-      })),
-    [accountsQ.data],
-  );
-
   const chosen = bills.filter((b) => selected[b.id]);
   const payments = buildBatchPayments(chosen);
 
@@ -135,10 +126,14 @@ function BatchPayment() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Bank / cash account</Label>
-            <EntityCombobox
-              options={bankOptions}
+            <AccountLookup
+              ariaLabel="Bank / cash account"
+              accounts={(accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>}
               value={bankAccountId}
               onChange={setBankAccountId}
+              companyId={companyId}
+              purpose="posting"
+              createKind="bank"
               placeholder="Paid from (bank or cash account)"
               allowClear={false}
             />

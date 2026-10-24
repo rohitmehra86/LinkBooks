@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -39,6 +39,10 @@ import {
   type SavedLineRow,
 } from "@/components/sales/sales-form-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -160,6 +164,9 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
   const today = config?.today ?? new Date().toISOString().slice(0, 10);
 
   const [savedId, setSavedId] = useState<string | undefined>(existing?.id);
+  const recordRef = useRef<DocumentRecordHandle>(null);
+  const recordEntityType =
+    kind === "invoice" ? "sales_invoice" : kind === "quote" ? "sales_quote" : "sales_credit_note";
   const [contactId, setContactId] = useState(existing?.contactId ?? initialContactId ?? "");
   const [docDate, setDocDate] = useState(existing?.date ?? "");
   const [secondDate, setSecondDate] = useState(existing?.secondDate ?? "");
@@ -350,6 +357,14 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
     onSuccess: async (res) => {
       // Keep the id: a retry after an authorise failure updates THIS draft, never creates another.
       setSavedId(res.id);
+      try {
+        await recordRef.current?.flush(res.id);
+      } catch (e) {
+        const msg = friendlyAuthError(e);
+        setFormError(`Saved, but notes or files could not be stored: ${msg}`);
+        toast.error("Saved, but notes or files could not be stored");
+        return;
+      }
       await qc.invalidateQueries({ queryKey: [copy.queryKey, companyId] });
       await qc.invalidateQueries({ queryKey: ["sales-invoice", companyId, res.id] });
       if (res.authoriseError) {
@@ -548,6 +563,12 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
           toMinor={(d) => toMinorUnits(d, currency || base)}
           companyId={companyId}
           baseCurrency={base}
+        />
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType={recordEntityType}
+          entityId={savedId ?? null}
+          audience="customer"
         />
         <div className="flex flex-wrap gap-2">
           <Button

@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { TaxRateCreateForm } from "@/components/lookup/create-forms";
+import { useCanDo } from "@/hooks/use-can";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -73,6 +75,7 @@ export function TaxCodesPanel({
   accounts: PickerAccount[];
 }) {
   const qc = useQueryClient();
+  const canTax = useCanDo("tax.settings");
   const fetchCodes = useServerFn(listTaxCodes);
   const fetchRates = useServerFn(listTaxRates);
   const doSave = useServerFn(saveTaxCode);
@@ -254,6 +257,14 @@ export function TaxCodesPanel({
                     disabled: !r.is_active && r.id !== draft.rateId,
                     keywords: r.name,
                   }))}
+                  companyId={companyId}
+                  canCreate={canTax}
+                  createTitle="New tax rate"
+                  renderCreate={
+                    canTax
+                      ? (ctx) => <TaxRateCreateForm companyId={companyId} ctx={ctx} />
+                      : undefined
+                  }
                 />
               </div>
               <div className="space-y-1">

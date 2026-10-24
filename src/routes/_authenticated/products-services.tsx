@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -18,6 +18,10 @@ import {
   type ProductRow,
 } from "@/lib/products/products.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { PageHeader, EmptyState, ErrorState, LoadingState } from "@/components/common/states";
 import { CompanyEmptyState } from "@/components/common/company-empty";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -26,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { TaxCodeCreateForm } from "@/components/lookup/create-forms";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -86,12 +91,14 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
   const doArchive = useServerFn(archiveProduct);
   const fetchTaxCodes = useServerFn(listTaxCodes);
   const canManage = useCanDo("products.manage");
+  const canTax = useCanDo("tax.settings");
   const [limit, setLimit] = useState(100);
 
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("all");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [open, setOpen] = useState(false);
+  const productRecordRef = useRef<DocumentRecordHandle>(null);
   const [editing, setEditing] = useState<ProductRow | null>(null);
 
   const [form, setForm] = useState({
@@ -208,7 +215,13 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
       if (form.expenseAccountId) data.expenseAccountId = form.expenseAccountId;
       return saveProduct({ data });
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      try {
+        await productRecordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(`Saved, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+        return;
+      }
       toast.success(editing ? "Product updated" : "Product created");
       setOpen(false);
       setEditing(null);
@@ -525,6 +538,8 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <div className="grid gap-1">
                 <Label>Sales tax</Label>
                 <TaxSelect
+                  companyId={companyId}
+                  canCreate={canTax}
                   value={form.salesTaxBps}
                   choices={taxChoices}
                   onChange={(v) => setForm((f) => ({ ...f, salesTaxBps: v }))}
@@ -533,12 +548,21 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
               <div className="grid gap-1">
                 <Label>Purchase tax</Label>
                 <TaxSelect
+                  companyId={companyId}
+                  canCreate={canTax}
                   value={form.purchaseTaxBps}
                   choices={taxChoices}
                   onChange={(v) => setForm((f) => ({ ...f, purchaseTaxBps: v }))}
                 />
               </div>
             </div>
+            <DocumentRecordPanel
+              key={`${open ? "open" : "closed"}-${editing?.id ?? "new"}`}
+              ref={productRecordRef}
+              entityType="product"
+              entityId={editing?.id ?? null}
+              audience="internal"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -558,10 +582,14 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
 }
 
 function TaxSelect({
+  companyId,
+  canCreate,
   value,
   choices,
   onChange,
 }: {
+  companyId: string;
+  canCreate: boolean;
   value: string;
   choices: Array<{ key: string; label: string; bps: number }>;
   onChange: (bps: string) => void;
@@ -574,6 +602,23 @@ function TaxSelect({
       value={value}
       onChange={onChange}
       searchPlaceholder="Search tax rate"
+      companyId={companyId}
+      canCreate={canCreate}
+      createTitle="New tax code"
+      renderCreate={
+        canCreate
+          ? (ctx) => (
+              <TaxCodeCreateForm
+                companyId={companyId}
+                appliesTo="both"
+                ctx={{
+                  ...ctx,
+                  complete: (option) => ctx.complete({ ...option, id: option.meta || "0" }),
+                }}
+              />
+            )
+          : undefined
+      }
       options={[
         { id: "0", label: "No tax (0.00%)", keywords: "none zero" },
         ...choices

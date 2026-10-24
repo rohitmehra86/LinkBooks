@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { listBankAccounts } from "@/lib/banking/banking.functions";
@@ -18,7 +19,12 @@ import {
 } from "@/lib/banking/rules.functions";
 import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
-import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { AccountLookup, LookupSelect, type LookupCreateContext } from "@/components/lookup";
+import {
+  BankAccountCreateForm,
+  ContactCreateForm,
+  TaxCodeCreateForm,
+} from "@/components/lookup/create-forms";
 import { toContactLookupOption } from "@/lib/lookup/eligibility";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +97,9 @@ function BankRules() {
   const { company } = useActiveCompany();
   const companyId = company?.id;
   const currency = company?.base_currency ?? "GBP";
+  const canContacts = useCanDo("contacts.manage");
+  const canTax = useCanDo("tax.settings");
+  const canBank = useCanDo("banking.feeds.manage");
   const search = Route.useSearch();
   const qc = useQueryClient();
   const fetchRules = useServerFn(listBankRules);
@@ -400,6 +409,15 @@ function BankRules() {
                 keywords: `${a.name} ${a.currency_code}`,
               })),
             ]}
+            {...(companyId && canBank
+              ? {
+                  companyId,
+                  createTitle: "New bank account",
+                  renderCreate: (ctx: LookupCreateContext) => (
+                    <BankAccountCreateForm companyId={companyId} currency={currency} ctx={ctx} />
+                  ),
+                }
+              : {})}
           />
           <MoneyField
             label="Minimum amount"
@@ -445,6 +463,15 @@ function BankRules() {
                   keywords: `${t.code} ${t.name}`,
                 })),
             ]}
+            {...(companyId && canTax
+              ? {
+                  companyId,
+                  createTitle: "New tax code",
+                  renderCreate: (ctx: LookupCreateContext) => (
+                    <TaxCodeCreateForm companyId={companyId} appliesTo="both" ctx={ctx} />
+                  ),
+                }
+              : {})}
           />
           <LookupSelect
             ariaLabel="Contact"
@@ -456,6 +483,15 @@ function BankRules() {
               { id: NONE, label: "No contact" },
               ...(optionsQ.data?.contacts ?? []).map((c) => toContactLookupOption(c)),
             ]}
+            {...(companyId && canContacts
+              ? {
+                  companyId,
+                  createTitle: "New contact",
+                  renderCreate: (ctx: LookupCreateContext) => (
+                    <ContactCreateForm companyId={companyId} kind="both" ctx={ctx} />
+                  ),
+                }
+              : {})}
           />
           <label className="flex items-center gap-2 text-sm">
             <Checkbox

@@ -25,7 +25,8 @@ import {
 } from "@/lib/accounting/reporting";
 import { listTaxCodes } from "@/lib/tax/tax.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { AccountLookup, LookupSelect, type LookupCreateContext } from "@/components/lookup";
+import { useCanDo } from "@/hooks/use-can";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,7 @@ export function AccountForm({
   onCancel?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const canTax = useCanDo("tax.settings");
   const fetchChart = useServerFn(listChartAccounts);
   const fetchTax = useServerFn(listTaxCodes);
   const save = useServerFn(saveChartAccount);
@@ -318,6 +320,12 @@ export function AccountForm({
             placeholder="No default"
             searchPlaceholder="Search tax code"
             allowClear
+            companyId={companyId}
+            canCreate={canTax}
+            createTitle="New tax code"
+            renderCreate={
+              canTax ? (ctx) => <DefaultTaxCreate companyId={companyId} ctx={ctx} /> : undefined
+            }
           />
         </Field>
         <Field label={`Currency (organisation uses ${currency})`}>
@@ -449,6 +457,23 @@ function reportSection(
   }
   const section = balanceSheetSectionFor({ account_type: accountClass, subtype });
   return section ? BALANCE_SHEET_SECTION_LABELS[section] : "Balance sheet";
+}
+
+function DefaultTaxCreate({ companyId, ctx }: { companyId: string; ctx: LookupCreateContext }) {
+  const [Form, setForm] = useState<
+    typeof import("@/components/lookup/create-forms").TaxCodeCreateForm | null
+  >(null);
+  useEffect(() => {
+    let live = true;
+    void import("@/components/lookup/create-forms").then((mod) => {
+      if (live) setForm(() => mod.TaxCodeCreateForm);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!Form) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  return <Form companyId={companyId} appliesTo="both" ctx={ctx} />;
 }
 
 function taxChoices(value: unknown): { id: string; label: string }[] {

@@ -27,6 +27,10 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { AccountLookup, ContactLookup, LookupSelect } from "@/components/lookup";
 import { AccountCreateForm, ContactCreateForm } from "@/components/lookup/create-forms";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,6 +135,7 @@ export function NewCreditNote() {
 
   const prefillBill = prefillQ.data;
   const prefilled = useRef(false);
+  const recordRef = useRef<DocumentRecordHandle>(null);
   useEffect(() => {
     if (!prefillBill || prefilled.current) return;
     prefilled.current = true;
@@ -213,6 +218,11 @@ export function NewCreditNote() {
         },
       }),
     onSuccess: async (r) => {
+      try {
+        await recordRef.current?.flush(r.id);
+      } catch (e) {
+        toast.error(`Saved, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+      }
       await queryClient.invalidateQueries({ queryKey: ["credits", companyId] });
       await queryClient.invalidateQueries({ queryKey: ["bills", companyId] });
       toast.success(r.journalId ? "Credit note authorised and posted" : "Draft credit note saved");
@@ -405,6 +415,12 @@ export function NewCreditNote() {
           <Input value={memo} maxLength={500} onChange={(e) => setMemo(e.target.value)} />
         </div>
 
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType="purchase_credit_note"
+          entityId={null}
+          audience="supplier"
+        />
         <div className="flex gap-2">
           <Button
             size="sm"

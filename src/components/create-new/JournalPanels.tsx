@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Trash2 } from "lucide-react";
@@ -14,6 +14,10 @@ import {
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import { validateAutoReverseDate } from "@/lib/accounting/fx-reval";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AccountLookup } from "@/components/lookup";
@@ -72,6 +76,8 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
   const [intervalMonths, setIntervalMonths] = useState("1");
   const [maxOccurrences, setMaxOccurrences] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const recordRef = useRef<DocumentRecordHandle>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const allAccounts = (accountsQ.data ?? []) as unknown as AccountRow[];
@@ -153,6 +159,20 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
     },
     onSuccess: async (result) => {
       setError(null);
+      const savedId =
+        result && "posted" in result
+          ? result.id
+          : result && "journalId" in result
+            ? result.journalId
+            : null;
+      if (savedId) {
+        try {
+          await recordRef.current?.flush(savedId);
+        } catch (e) {
+          setError(`Saved, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+        }
+        setRecordId(savedId);
+      }
       if (result && "posted" in result) {
         setTemplateId(result.id);
         toast.success("Template saved. Nothing was posted.");
@@ -357,6 +377,12 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
         <p className="text-sm text-destructive">A line cannot have both a debit and a credit.</p>
       ) : null}
 
+      <DocumentRecordPanel
+        ref={recordRef}
+        entityType={mode === "template" ? "recurring_journal" : "journal"}
+        entityId={recordId}
+        audience="internal"
+      />
       <div className="flex gap-2">
         <Button type="submit" disabled={!canSubmit || saveM.isPending}>
           {saveM.isPending ? "Saving…" : mode === "template" ? "Save template" : "Post journal"}

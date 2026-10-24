@@ -13,7 +13,7 @@ import { money } from "@/components/sales/sales-form-utils";
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { DocumentActions } from "@/components/documents/DocumentActions";
-import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
+import { DocumentRecordPanel } from "@/components/documents/DocumentRecordPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -279,7 +279,7 @@ function ReceiptDetail() {
         }
       />
       <DocumentActions kind="sales_receipt" id={receiptId} />
-      <AttachmentsPanel entityType="sales_receipt" entityId={receiptId} />
+      <DocumentRecordPanel entityType="sales_receipt" entityId={receiptId} audience="customer" />
     </>
   );
 }

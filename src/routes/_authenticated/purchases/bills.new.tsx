@@ -73,6 +73,11 @@ import {
 import { cleanupBlankPurchaseLines, incompletePurchaseLines } from "@/lib/purchases/blank-lines";
 import { LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { AccountLookup } from "@/components/lookup";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import {
   PurchasesDocumentLines,
   emptyPurchaseLine,
@@ -428,6 +433,7 @@ export function NewBill({
   const [fullSupplierOpen, setFullSupplierOpen] = useState(false);
   const [newTermOpen, setNewTermOpen] = useState(false);
   const [newItemOpen, setNewItemOpen] = useState(false);
+  const itemRecordRef = useRef<DocumentRecordHandle>(null);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const [newAccountOpen, setNewAccountOpen] = useState(false);
@@ -2305,16 +2311,25 @@ export function NewBill({
             </div>
             <div className="space-y-1">
               <Label>Expense account</Label>
-              <EntityCombobox
-                options={expenseAccounts.map((a) => ({
-                  value: a.id,
-                  label: `${a.code} — ${a.name}`,
-                }))}
+              <AccountLookup
+                ariaLabel="Expense account"
+                accounts={expenseAccounts}
                 value={newItem.expenseAccountId}
                 onChange={(v) => setNewItem((s) => ({ ...s, expenseAccountId: v }))}
+                companyId={companyId}
+                purpose="posting"
+                createKind="expense"
                 placeholder="Account"
+                allowClear
               />
             </div>
+            <DocumentRecordPanel
+              key={newItemOpen ? "item-open" : "item-closed"}
+              ref={itemRecordRef}
+              entityType="product"
+              entityId={null}
+              audience="internal"
+            />
           </div>
           <DialogFooter>
             <Button
@@ -2335,6 +2350,7 @@ export function NewBill({
                       purchaseTaxRateBps: Number(newItem.purchaseTaxBps) || 0,
                     },
                   });
+                  await itemRecordRef.current?.flush(r.id);
                   await productsQ.refetch();
                   setLines((prev) => {
                     const next = [...prev];

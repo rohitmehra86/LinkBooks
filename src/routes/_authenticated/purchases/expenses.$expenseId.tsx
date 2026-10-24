@@ -13,6 +13,7 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { StatusBadge } from "@/components/common/stat-card";
+import { DocumentRecordPanel } from "@/components/documents/DocumentRecordPanel";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/purchases/expenses/$expenseId")({
@@ -125,6 +126,13 @@ function ExpenseDetail() {
         ) : (
           <p className="text-muted-foreground">Not posted yet (draft).</p>
         )}
+      </div>
+      <div className="mt-6 max-w-3xl">
+        <DocumentRecordPanel
+          entityType="purchase_expense"
+          entityId={expenseId}
+          audience="supplier"
+        />
       </div>
     </>
   );

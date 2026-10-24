@@ -24,6 +24,7 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { AccountLookup } from "@/components/lookup";
 import { ContactCreateForm } from "@/components/lookup/create-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,16 +114,6 @@ export function NewPayment() {
     return rows.filter((b) => b.total_minor - b.amount_paid_minor - b.amount_credited_minor > 0);
   }, [billsQ.data]);
   const totalOpenBills = (billsQ.data as { totalCount?: number } | undefined)?.totalCount ?? 0;
-
-  // Bank / cash accounts only (the server enforces the same rule).
-  const bankOptions = useMemo(
-    () =>
-      ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map((a) => ({
-        value: a.id,
-        label: `${a.code} — ${a.name}`,
-      })),
-    [accountsQ.data],
-  );
 
   const supplierOptions = useMemo(
     () =>
@@ -293,10 +284,14 @@ export function NewPayment() {
         ) : null}
         <div className="space-y-2">
           <Label>Bank / cash account</Label>
-          <EntityCombobox
-            options={bankOptions}
+          <AccountLookup
+            ariaLabel="Bank / cash account"
+            accounts={(accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>}
             value={bankAccountId}
             onChange={setBankAccountId}
+            companyId={companyId}
+            purpose="posting"
+            createKind="bank"
             placeholder="Paid from (bank or cash account)"
             allowClear={false}
           />

@@ -25,7 +25,7 @@ import { StatusBadge } from "@/components/common/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DocumentActions } from "@/components/documents/DocumentActions";
-import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
+import { DocumentRecordPanel } from "@/components/documents/DocumentRecordPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -460,7 +460,7 @@ function InvoiceDetail() {
       ) : null}
 
       <DocumentActions kind="sales_invoice" id={invoiceId} />
-      <AttachmentsPanel entityType="sales_invoice" entityId={invoiceId} />
+      <DocumentRecordPanel entityType="sales_invoice" entityId={invoiceId} audience="customer" />
 
       <ReasonDialog
         open={voidOpen}

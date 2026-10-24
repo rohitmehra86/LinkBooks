@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -14,7 +14,7 @@ import { renderEmail } from "@/lib/documents/email-templates";
 import { EmailDocumentDialog } from "@/components/documents/EmailDocumentDialog";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -80,15 +80,6 @@ export function Statements() {
       }),
   });
 
-  const customerOptions = useMemo(
-    () =>
-      ((customersQ.data ?? []) as Array<{ id: string; name: string }>).map((c) => ({
-        value: c.id,
-        label: c.name,
-      })),
-    [customersQ.data],
-  );
-
   const customerName =
     ((customersQ.data ?? []) as Array<{ id: string; name: string }>).find((c) => c.id === contactId)
       ?.name ?? "Customer";
@@ -119,10 +110,13 @@ export function Statements() {
       <div className="mb-6 flex flex-wrap gap-3">
         <div className="w-64 space-y-1">
           <Label>Customer</Label>
-          <EntityCombobox
-            options={customerOptions}
+          <ContactLookup
+            ariaLabel="Customer"
+            contacts={(customersQ.data ?? []) as Array<{ id: string; name: string }>}
             value={contactId}
             onChange={setContactId}
+            companyId={companyId}
+            createKind="customer"
             placeholder="Search customers"
             allowClear={false}
           />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -13,6 +13,12 @@ import {
   saveMoneyDocument,
 } from "@/lib/create-new/money-documents.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
+import { moneyRecordMeta } from "@/lib/documents/record-activity";
+import { AccountLookup, ContactLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +69,13 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
   const [adjustmentType, setAdjustmentType] = useState<BankAdjustmentType>("bank_fee");
   const [sourceIds, setSourceIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const recordRef = useRef<DocumentRecordHandle>(null);
+  const recordMeta = moneyRecordMeta(kind);
+
+  useEffect(() => {
+    setRecordId(null);
+  }, [kind]);
 
   const accountsQ = useQuery({
     queryKey: ["accounts", companyId],
@@ -131,6 +144,12 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
       }),
     onSuccess: async (result) => {
       setError(null);
+      try {
+        await recordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(`Posted, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+      }
+      setRecordId(result.id);
       toast.success(result.replayed ? "This document was already saved" : `${TITLES[kind]} posted`);
       // Start the next document with a fresh key so it is never mistaken for a replay.
       idempotencyKey.current = crypto.randomUUID();
@@ -194,10 +213,24 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
                   : "Customer"
             }
           >
-            <Select
+            <ContactLookup
+              ariaLabel={
+                kind === "supplier_refund"
+                  ? "Supplier"
+                  : kind === "receive_money"
+                    ? "Payer"
+                    : "Customer"
+              }
+              contacts={contacts}
               value={contactId}
               onChange={setContactId}
-              options={contacts.map((c) => ({ value: c.id, label: c.name }))}
+              companyId={companyId}
+              createKind={kind === "supplier_refund" ? "supplier" : "customer"}
+              placeholder="Select"
+              allowClear={false}
+              loading={contactsQ.isPending}
+              error={contactsQ.isError ? friendlyAuthError(contactsQ.error) : null}
+              onRetry={() => void contactsQ.refetch()}
             />
           </Field>
         ) : null}
@@ -221,27 +254,54 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
           </Field>
         ) : null}
         <Field label={kind === "card_payment" ? "Pay from bank" : "Bank or clearing account"}>
-          <Select
+          <AccountLookup
+            ariaLabel={kind === "card_payment" ? "Pay from bank" : "Bank or clearing account"}
+            accounts={banks}
             value={bankAccountId}
             onChange={setBankAccountId}
-            options={banks.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+            companyId={companyId}
+            purpose="posting"
+            createKind="bank"
+            placeholder="Select"
+            allowClear={false}
+            loading={accountsQ.isPending}
+            error={accountsQ.isError ? friendlyAuthError(accountsQ.error) : null}
+            onRetry={() => void accountsQ.refetch()}
           />
         </Field>
         {needsIncome ? (
           <Field label="Income account">
-            <Select
+            <AccountLookup
+              ariaLabel="Income account"
+              accounts={postable}
               value={counterAccountId}
               onChange={setCounterAccountId}
-              options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+              companyId={companyId}
+              purpose="posting"
+              createKind="revenue"
+              placeholder="Select"
+              allowClear={false}
+              loading={accountsQ.isPending}
+              error={accountsQ.isError ? friendlyAuthError(accountsQ.error) : null}
+              onRetry={() => void accountsQ.refetch()}
             />
           </Field>
         ) : null}
         {kind === "card_payment" ? (
           <Field label="Credit card liability">
-            <Select
+            <AccountLookup
+              ariaLabel="Credit card liability"
+              accounts={liabilities}
               value={counterAccountId}
               onChange={setCounterAccountId}
-              options={liabilities.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+              companyId={companyId}
+              purpose="posting"
+              createKind="credit_card"
+              placeholder="Select"
+              allowClear={false}
+              loading={accountsQ.isPending}
+              error={accountsQ.isError ? friendlyAuthError(accountsQ.error) : null}
+              onRetry={() => void accountsQ.refetch()}
             />
           </Field>
         ) : null}
@@ -259,10 +319,18 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
               />
             </Field>
             <Field label="Offset account">
-              <Select
+              <AccountLookup
+                ariaLabel="Offset account"
+                accounts={postable}
                 value={counterAccountId}
                 onChange={setCounterAccountId}
-                options={postable.map((a) => ({ value: a.id, label: `${a.code} ${a.name}` }))}
+                companyId={companyId}
+                purpose="posting"
+                placeholder="Select"
+                allowClear={false}
+                loading={accountsQ.isPending}
+                error={accountsQ.isError ? friendlyAuthError(accountsQ.error) : null}
+                onRetry={() => void accountsQ.refetch()}
               />
             </Field>
           </>
@@ -319,6 +387,14 @@ export function MoneyDocumentPanel({ kind }: { kind: Kind }) {
       <Field label="Memo">
         <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
       </Field>
+      {recordMeta ? (
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType={recordMeta.entityType}
+          entityId={recordId}
+          audience={recordMeta.audience}
+        />
+      ) : null}
       <Button type="submit" disabled={saveM.isPending}>
         {saveM.isPending ? "Posting…" : "Post"}
       </Button>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -8,7 +8,7 @@ import { getSupplierStatement, listSuppliers } from "@/lib/purchases/purchases.f
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
-import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,15 +57,6 @@ function Statements() {
       }),
   });
 
-  const supplierOptions = useMemo(
-    () =>
-      ((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map((s) => ({
-        value: s.id,
-        label: s.name,
-      })),
-    [suppliersQ.data],
-  );
-
   const currency = (
     (stmtQ.data as { currencyCode?: string } | undefined)?.currencyCode ?? baseCurrency
   ).toUpperCase();
@@ -92,13 +83,16 @@ function Statements() {
       <div className="mb-6 flex flex-wrap gap-3">
         <div className="w-64 space-y-1">
           <Label>Supplier</Label>
-          <EntityCombobox
-            options={supplierOptions}
+          <ContactLookup
+            ariaLabel="Supplier"
+            contacts={(suppliersQ.data ?? []) as Array<{ id: string; name: string }>}
             value={contactId}
             onChange={(id) => {
               setContactId(id);
               setCurrencyChoice("");
             }}
+            companyId={companyId}
+            createKind="supplier"
             placeholder="Search suppliers"
             allowClear={false}
           />

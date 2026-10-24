@@ -25,7 +25,7 @@ import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/c
 import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { DocumentActions } from "@/components/documents/DocumentActions";
-import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
+import { DocumentRecordPanel } from "@/components/documents/DocumentRecordPanel";
 import { AccountLookup } from "@/components/lookup";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -611,7 +611,11 @@ function CreditNoteDetail() {
         </div>
       ) : null}
       <DocumentActions kind="purchase_credit_note" id={creditNoteId} />
-      <AttachmentsPanel entityType="purchase_credit_note" entityId={creditNoteId} />
+      <DocumentRecordPanel
+        entityType="purchase_credit_note"
+        entityId={creditNoteId}
+        audience="supplier"
+      />
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -16,6 +16,10 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
 import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { BankLookup } from "@/components/lookup";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +70,8 @@ export function Transfers() {
   const [amount, setAmount] = useState(search.amount ?? "");
   const [memo, setMemo] = useState("");
   const [received, setReceived] = useState("");
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const recordRef = useRef<DocumentRecordHandle>(null);
 
   useEffect(() => {
     if (search.direction === "out" && search.bankAccountId) setFromId(search.bankAccountId);
@@ -114,7 +120,15 @@ export function Transfers() {
           memo,
         },
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      try {
+        await recordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(
+          `Transfer posted, but notes or files could not be stored: ${friendlyAuthError(e)}`,
+        );
+      }
+      setRecordId(result.id);
       toast.success("Transfer posted. One journal only.");
       setAmount("");
       setReceived("");
@@ -206,6 +220,12 @@ export function Transfers() {
           <Label>Memo</Label>
           <Input value={memo} maxLength={500} onChange={(e) => setMemo(e.target.value)} />
         </div>
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType="bank_transfer"
+          entityId={recordId}
+          audience="internal"
+        />
         <Button
           size="sm"
           disabled={mutation.isPending || !canPost}

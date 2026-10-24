@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
@@ -9,7 +9,7 @@ import { createAndPostPayment, listPaymentAccounts } from "@/lib/purchases/purch
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { friendlyAuthError } from "@/lib/auth-helpers";
-import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { AccountLookup } from "@/components/lookup";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,16 +89,6 @@ export function BillMakePaymentPanel({
     enabled: Boolean(companyId) && canPay,
     queryFn: () => fetchAccounts({ data: { companyId } }),
   });
-
-  // Bank / cash accounts only (the server enforces the same rule).
-  const bankOptions = useMemo(
-    () =>
-      ((accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>).map((a) => ({
-        value: a.id,
-        label: `${a.code} — ${a.name}`,
-      })),
-    [accountsQ.data],
-  );
 
   // Never throws while typing: invalid text is reported, not crashed on (P-03).
   const parsedMinor = tryParseMinor(amount || "0", currency);
@@ -216,10 +206,16 @@ export function BillMakePaymentPanel({
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Paid from</Label>
-              <EntityCombobox
-                options={bankOptions}
+              <AccountLookup
+                ariaLabel="Paid from"
+                accounts={
+                  (accountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>
+                }
                 value={bankAccountId}
                 onChange={setBankAccountId}
+                companyId={companyId}
+                purpose="posting"
+                createKind="bank"
                 placeholder="Bank or cash account"
                 allowClear={false}
               />

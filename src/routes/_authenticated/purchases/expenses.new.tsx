@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -11,6 +11,10 @@ import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { AccountLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +74,7 @@ export function NewExpense() {
   const [tax, setTax] = useState("0.00");
   const [reference, setReference] = useState("");
   const [memo, setMemo] = useState("");
+  const recordRef = useRef<DocumentRecordHandle>(null);
   const amountInvalid = tryParseMinor(amount || "0", currency) === null;
   const taxInvalid = tryParseMinor(tax || "0", currency) === null;
 
@@ -91,6 +96,11 @@ export function NewExpense() {
         },
       }),
     onSuccess: async (result) => {
+      try {
+        await recordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(`Saved, but notes or files could not be stored: ${friendlyAuthError(e)}`);
+      }
       await queryClient.invalidateQueries({ queryKey: ["expenses", companyId] });
       toast.success(result.journalId ? "Expense posted to ledger" : "Expense draft saved");
       navigate({ to: "/purchases/expenses/$expenseId", params: { expenseId: result.id } });
@@ -175,6 +185,12 @@ export function NewExpense() {
           <Label>Memo</Label>
           <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
         </div>
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType="purchase_expense"
+          entityId={null}
+          audience="supplier"
+        />
         <div className="flex gap-2">
           <Button
             size="sm"

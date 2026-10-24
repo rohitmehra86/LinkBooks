@@ -3,7 +3,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertCompanyMember, assertCompanyPermission } from "@/lib/assert-company-access";
 import { assertUuid } from "@/lib/company-validation";
 import {
-  ATTACHMENT_ENTITIES,
   COMPANY_DOCUMENTS_BUCKET,
   MAX_FILE_BYTES,
   entityLabel,
@@ -13,6 +12,7 @@ import {
   validateUpload,
   type AttachmentEntityType,
 } from "@/lib/documents/attachments";
+import { entityManagePermissions, entityViewPermissions } from "@/lib/documents/record-activity";
 import { escapeLikeLiteral } from "@/lib/sales/list-filters";
 
 const MIGRATION_HINT =
@@ -33,6 +33,33 @@ export type AttachmentRow = {
 const COLUMNS =
   "id, entity_type, entity_id, file_name, content_type, size_bytes, created_at, uploaded_by, storage_bucket";
 
+/** View or manage, matching ATTACHMENT_ENTITIES. Any listed permission is enough. */
+export async function assertEntityAccess(
+  supabase: Parameters<typeof assertCompanyPermission>[0],
+  companyId: string,
+  entityType: AttachmentEntityType,
+  action: "view" | "manage",
+): Promise<void> {
+  const permissions =
+    action === "view" ? entityViewPermissions(entityType) : entityManagePermissions(entityType);
+  if (permissions.length === 0) {
+    await assertCompanyMember(supabase, companyId);
+    return;
+  }
+  let denied: unknown = null;
+  for (const permission of permissions) {
+    try {
+      await assertCompanyPermission(supabase, companyId, permission);
+      return;
+    } catch (error) {
+      denied = error;
+    }
+  }
+  throw denied instanceof Error
+    ? denied
+    : new Error("You do not have permission to perform this action for this organisation.");
+}
+
 function entityInput(input: { companyId: string; entityType: string; entityId: string }) {
   if (!isAttachmentEntityType(input.entityType))
     throw new Error("Files cannot be attached to this record type.");
@@ -48,9 +75,7 @@ export const listAttachments = createServerFn({ method: "GET" })
   .inputValidator(entityInput)
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const view = ATTACHMENT_ENTITIES[data.entityType].view;
-    if (view) await assertCompanyPermission(supabase, data.companyId, view);
-    else await assertCompanyMember(supabase, data.companyId);
+    await assertEntityAccess(supabase, data.companyId, data.entityType, "view");
     const { data: rows, error } = await supabase
       .from("document_attachments" as never)
       .select(COLUMNS as never)
@@ -105,6 +130,12 @@ export const registerAttachment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const bucket = supabase.storage.from(COMPANY_DOCUMENTS_BUCKET);
+    try {
+      await assertEntityAccess(supabase, data.companyId, data.entityType, "manage");
+    } catch (error) {
+      await bucket.remove([data.storagePath]);
+      throw error;
+    }
 
     // The object must exist; its real size is what we validate and store.
     const listed = await bucket.list(data.folder, { limit: 5, search: data.objectName });
@@ -259,6 +290,9 @@ const REF_TABLES: Record<string, { table: string; column: string }> = {
   purchase_order: { table: "purchase_orders", column: "order_number" },
   purchase_credit_note: { table: "purchase_credit_notes", column: "credit_number" },
   contact: { table: "contacts", column: "name" },
+  purchase_expense: { table: "purchase_expenses", column: "payee_name" },
+  product: { table: "products", column: "name" },
+  project: { table: "projects", column: "name" },
 };
 
 export type CompanyFileRow = AttachmentRow & {

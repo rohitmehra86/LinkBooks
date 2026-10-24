@@ -8,7 +8,7 @@ import { getJournalDetail } from "@/lib/banking/journal.functions";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
+import { DocumentRecordPanel } from "@/components/documents/DocumentRecordPanel";
 import {
   Table,
   TableBody,
@@ -103,16 +103,12 @@ function JournalDetail() {
         <TableFooter>
           <TableRow>
             <TableCell colSpan={2}>Total ({currency})</TableCell>
-            <TableCell className="money">
-              {fromMinorUnits(debit, currency)}
-            </TableCell>
-            <TableCell className="money">
-              {fromMinorUnits(credit, currency)}
-            </TableCell>
+            <TableCell className="money">{fromMinorUnits(debit, currency)}</TableCell>
+            <TableCell className="money">{fromMinorUnits(credit, currency)}</TableCell>
           </TableRow>
         </TableFooter>
       </Table>
-      <AttachmentsPanel entityType="journal" entityId={journalId} />
+      <DocumentRecordPanel entityType="journal" entityId={journalId} audience="internal" />
     </>
   );
 }

@@ -1,6 +1,7 @@
 /**
  * Document attachments: entity registry, validation and storage paths. Pure.
- * The SQL helper `can_access_attachment` mirrors ATTACHMENT_ENTITIES permissions.
+ * `can_access_attachment` and `document_entity_exists` in migration 20261025400400
+ * mirror ATTACHMENT_ENTITIES (table, kind, view, manage).
  */
 import { extensionOf, validateAttachmentFile } from "@/lib/purchases/bill-form-helpers";
 import type { Permission } from "@/lib/permissions";
@@ -19,6 +20,18 @@ export const ATTACHMENT_ENTITY_TYPES = [
   "contact",
   "journal",
   "company",
+  "purchase_expense",
+  "product",
+  "recurring_journal",
+  "project",
+  "bank_transfer",
+  "money_sales_receipt",
+  "money_customer_refund",
+  "money_supplier_refund",
+  "money_receive",
+  "money_deposit",
+  "money_card_payment",
+  "money_adjustment",
 ] as const;
 export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number];
 
@@ -30,8 +43,13 @@ type EntityInfo = {
   label: string;
   /** Table that proves the entity exists in the company (null = the company itself). */
   table: string | null;
+  /** When set, the row must also have this `kind` (money documents share one table). */
+  kind?: string;
+  /** Single view permission. Ignored when viewAny is set. Null means any member. */
   view: Permission | null;
-  /** Any one of these lets the user add / remove files. */
+  /** Any one of these may view. Use when the record is shared across modules. */
+  viewAny?: Permission[];
+  /** Any one of these lets the user add / remove files and notes. */
   manage: Permission[];
   /** App route for "open record" links. */
   path: (id: string) => string;
@@ -107,6 +125,99 @@ export const ATTACHMENT_ENTITIES: Record<AttachmentEntityType, EntityInfo> = {
     view: null,
     manage: ["sales.draft", "purchases.draft", "accounting.post"],
     path: () => `/files`,
+  },
+  purchase_expense: {
+    label: "Expense",
+    table: "purchase_expenses",
+    view: "purchases.view",
+    manage: ["purchases.draft"],
+    path: (id) => `/purchases/expenses/${id}`,
+  },
+  product: {
+    label: "Product",
+    table: "products",
+    view: null,
+    viewAny: ["products.manage", "sales.view", "purchases.view"],
+    manage: ["products.manage"],
+    path: () => `/products-services`,
+  },
+  recurring_journal: {
+    label: "Recurring journal",
+    table: "recurring_journal_templates",
+    view: "accounting.view",
+    manage: ["journals.manual"],
+    path: () => `/accounting`,
+  },
+  project: {
+    label: "Project",
+    table: "projects",
+    view: null,
+    viewAny: ["accounting.view", "accounts.manage"],
+    manage: ["accounts.manage"],
+    path: () => `/projects`,
+  },
+  bank_transfer: {
+    label: "Bank transfer",
+    table: "bank_transfers",
+    view: "banking.view",
+    manage: ["banking.categorise"],
+    path: () => `/banking/transfers`,
+  },
+  money_sales_receipt: {
+    label: "Sales receipt",
+    table: "money_documents",
+    kind: "sales_receipt",
+    view: "sales.view",
+    manage: ["sales.payment"],
+    path: () => `/banking/money-documents`,
+  },
+  money_customer_refund: {
+    label: "Customer refund",
+    table: "money_documents",
+    kind: "customer_refund",
+    view: "sales.view",
+    manage: ["sales.payment"],
+    path: () => `/banking/money-documents`,
+  },
+  money_supplier_refund: {
+    label: "Supplier refund",
+    table: "money_documents",
+    kind: "supplier_refund",
+    view: "purchases.view",
+    manage: ["purchases.payment"],
+    path: () => `/banking/money-documents`,
+  },
+  money_receive: {
+    label: "Receive money",
+    table: "money_documents",
+    kind: "receive_money",
+    view: "banking.view",
+    manage: ["banking.categorise"],
+    path: () => `/banking/money-documents`,
+  },
+  money_deposit: {
+    label: "Bank deposit",
+    table: "money_documents",
+    kind: "bank_deposit",
+    view: "banking.view",
+    manage: ["banking.categorise"],
+    path: () => `/banking/money-documents`,
+  },
+  money_card_payment: {
+    label: "Credit card payment",
+    table: "money_documents",
+    kind: "card_payment",
+    view: "banking.view",
+    manage: ["banking.categorise"],
+    path: () => `/banking/money-documents`,
+  },
+  money_adjustment: {
+    label: "Bank adjustment",
+    table: "money_documents",
+    kind: "bank_adjustment",
+    view: "banking.view",
+    manage: ["banking.categorise"],
+    path: () => `/banking/money-documents`,
   },
 };
 

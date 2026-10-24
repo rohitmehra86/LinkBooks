@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
 import { useFormat } from "@/hooks/use-format";
 import { TableCard } from "@/components/common/table-card";
 import { StatusBadge } from "@/components/common/stat-card";
@@ -24,7 +25,8 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { BankCodingPanel } from "@/components/banking/BankCodingPanel";
 import { BankMatchPanel } from "@/components/banking/BankMatchPanel";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
-import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { AccountLookup, LookupSelect, type LookupCreateContext } from "@/components/lookup";
+import { BankAccountCreateForm, TaxCodeCreateForm } from "@/components/lookup/create-forms";
 import { toContactLookupOption } from "@/lib/lookup/eligibility";
 import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -99,6 +101,9 @@ function BankTransactions() {
   const { company } = useActiveCompany();
   const fmt = useFormat();
   const companyId = company?.id;
+  const currency = company?.base_currency ?? "GBP";
+  const canTax = useCanDo("tax.settings");
+  const canBank = useCanDo("banking.feeds.manage");
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
@@ -373,6 +378,15 @@ function BankTransactions() {
               keywords: `${a.name} ${a.currency_code}`,
             })),
           ]}
+          {...(companyId && canBank
+            ? {
+                companyId,
+                createTitle: "New bank account",
+                renderCreate: (ctx: LookupCreateContext) => (
+                  <BankAccountCreateForm companyId={companyId} currency={currency} ctx={ctx} />
+                ),
+              }
+            : {})}
         />
         <Select
           value={statusGroup || status || ALL}
@@ -478,6 +492,15 @@ function BankTransactions() {
                   keywords: `${t.code} ${t.name}`,
                 })),
               ]}
+              {...(companyId && canTax
+                ? {
+                    companyId,
+                    createTitle: "New tax code",
+                    renderCreate: (ctx: LookupCreateContext) => (
+                      <TaxCodeCreateForm companyId={companyId} appliesTo="both" ctx={ctx} />
+                    ),
+                  }
+                : {})}
             />
             <Button
               size="sm"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -11,8 +11,13 @@ import { listOpenInvoicesForCustomer, recordReceipt } from "@/lib/sales/sales-re
 import { getSalesDocumentConfig, listDepositAccounts } from "@/lib/sales/sales-config.functions";
 import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { AccountLookup } from "@/components/lookup";
 import { ContactCreateForm } from "@/components/lookup/create-forms";
 import { currencyOptions, money } from "@/components/sales/sales-form-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -65,6 +70,7 @@ function ReceiptForm({
   const fetchOpen = useServerFn(listOpenInvoicesForCustomer);
   const fetchConfig = useServerFn(getSalesDocumentConfig);
   const record = useServerFn(recordReceipt);
+  const recordRef = useRef<DocumentRecordHandle>(null);
 
   const enabled = Boolean(companyId);
   const customersQ = useQuery({
@@ -213,6 +219,13 @@ function ReceiptForm({
       });
     },
     onSuccess: async (r) => {
+      try {
+        await recordRef.current?.flush(r.id);
+      } catch (e) {
+        toast.error(
+          `Receipt saved, but notes or files could not be stored: ${friendlyAuthError(e)}`,
+        );
+      }
       await qc.invalidateQueries({ queryKey: ["sales-receipts", companyId] });
       await qc.invalidateQueries({ queryKey: ["sales-invoices", companyId] });
       await qc.invalidateQueries({ queryKey: ["sales-invoice", companyId] });
@@ -291,11 +304,14 @@ function ReceiptForm({
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>Deposit to (bank / cash account)</Label>
-            <EntityCombobox
-              aria-label="Deposit account"
-              options={deposits.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }))}
+            <AccountLookup
+              ariaLabel="Deposit account"
+              accounts={deposits}
               value={bankAccountId}
               onChange={setBankAccountId}
+              companyId={companyId}
+              purpose="posting"
+              createKind="bank"
               placeholder="Choose bank or cash account"
               allowClear={false}
             />
@@ -416,6 +432,12 @@ function ReceiptForm({
           </div>
         ) : null}
 
+        <DocumentRecordPanel
+          ref={recordRef}
+          entityType="sales_receipt"
+          entityId={null}
+          audience="customer"
+        />
         <div>
           <Button
             size="sm"

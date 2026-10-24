@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCanDo } from "@/hooks/use-can";
+import { ProjectCreateForm } from "@/components/lookup/create-forms";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import {
   getDocumentProject,
@@ -34,6 +36,7 @@ export function ProjectTagControl({
 }) {
   const { company } = useActiveCompany();
   const companyId = company?.id;
+  const canProjects = useCanDo("accounts.manage");
   const qc = useQueryClient();
   const [opened, setOpened] = useState(!lazy);
   const fetchTag = useServerFn(getDocumentProject);
@@ -72,7 +75,6 @@ export function ProjectTagControl({
   if (tagQ.isPending || projectsQ.isPending) return null;
   if (tagQ.isError || projectsQ.isError || !tagQ.data?.available) return null;
   const projects = projectsQ.data ?? [];
-  if (projects.length === 0 && !tagQ.data.projectId) return null;
 
   const current = tagQ.data.mixed ? "__mixed__" : (tagQ.data.projectId ?? NONE);
   return (
@@ -102,6 +104,20 @@ export function ProjectTagControl({
           if (projectId === "__mixed__") return;
           mutation.mutate(projectId || null);
         }}
+        companyId={companyId}
+        canCreate={canProjects}
+        createTitle="New project"
+        renderCreate={
+          canProjects
+            ? (ctx) => (
+                <ProjectCreateForm
+                  companyId={companyId}
+                  currency={company?.base_currency ?? "GBP"}
+                  ctx={ctx}
+                />
+              )
+            : undefined
+        }
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -8,6 +8,10 @@ import { useActiveCompany } from "@/hooks/use-active-company";
 import { listCustomers } from "@/lib/sales/sales.functions";
 import { createProject } from "@/lib/create-new/money-documents.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import {
+  DocumentRecordPanel,
+  type DocumentRecordHandle,
+} from "@/components/documents/DocumentRecordPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ContactLookup } from "@/components/lookup";
@@ -32,6 +36,8 @@ export function ProjectPanel() {
   const [budget, setBudget] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const recordRef = useRef<DocumentRecordHandle>(null);
 
   const saveM = useMutation({
     mutationFn: () =>
@@ -48,8 +54,16 @@ export function ProjectPanel() {
           status: "active",
         },
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setError(null);
+      try {
+        await recordRef.current?.flush(result.id);
+      } catch (e) {
+        toast.error(
+          `Project saved, but notes or files could not be stored: ${friendlyAuthError(e)}`,
+        );
+      }
+      setRecordId(result.id);
       toast.success("Project saved");
       await qc.invalidateQueries({ queryKey: ["project-profitability", companyId] });
     },
@@ -80,8 +94,12 @@ export function ProjectPanel() {
         value={contactId}
         onChange={setContactId}
         companyId={companyId}
+        createKind="customer"
         placeholder="None"
         allowClear
+        loading={customersQ.isPending}
+        error={customersQ.isError ? friendlyAuthError(customersQ.error) : null}
+        onRetry={() => void customersQ.refetch()}
       />
       <Label>Start</Label>
       <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -91,6 +109,12 @@ export function ProjectPanel() {
       <Input inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} />
       <Label>Description</Label>
       <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+      <DocumentRecordPanel
+        ref={recordRef}
+        entityType="project"
+        entityId={recordId}
+        audience="internal"
+      />
       <Button type="submit" disabled={saveM.isPending}>
         {saveM.isPending ? "Saving…" : "Save project"}
       </Button>
