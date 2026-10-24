@@ -16,18 +16,12 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
 import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
+import { BankLookup } from "@/components/lookup";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -152,33 +146,29 @@ export function Transfers() {
       <div className="grid max-w-md gap-3">
         <div className="space-y-1">
           <Label>From</Label>
-          <Select value={fromId} onValueChange={setFromId}>
-            <SelectTrigger aria-label="From account">
-              <SelectValue placeholder="Source" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name} ({a.currency_code})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BankLookup
+            ariaLabel="From account"
+            accounts={accounts}
+            value={fromId}
+            onChange={setFromId}
+            companyId={companyId}
+            excludeId={toId || undefined}
+            placeholder="Source"
+            allowClear={false}
+          />
         </div>
         <div className="space-y-1">
           <Label>To</Label>
-          <Select value={toId} onValueChange={setToId}>
-            <SelectTrigger aria-label="To account">
-              <SelectValue placeholder="Destination" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name} ({a.currency_code})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BankLookup
+            ariaLabel="To account"
+            accounts={accounts}
+            value={toId}
+            onChange={setToId}
+            companyId={companyId}
+            excludeId={fromId || undefined}
+            placeholder="Destination"
+            allowClear={false}
+          />
         </div>
         {currencyMismatch ? (
           <p className="text-sm text-muted-foreground">

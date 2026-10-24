@@ -11,16 +11,10 @@ import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCanDo } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { AccountLookup } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/purchases/expenses/new")({
   head: () => ({ meta: [{ title: "New expense — LinkBooks" }] }),
@@ -129,33 +123,29 @@ export function NewExpense() {
         </div>
         <div className="space-y-2">
           <Label>Expense account</Label>
-          <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {expenseAccounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Expense account"
+            purpose="expense"
+            accounts={expenseAccounts}
+            value={expenseAccountId}
+            onChange={setExpenseAccountId}
+            companyId={companyId}
+            placeholder="Select account"
+            allowClear={false}
+          />
         </div>
         <div className="space-y-2">
           <Label>Payment account (bank)</Label>
-          <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {bankAccounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Payment account"
+            purpose="bank"
+            accounts={bankAccounts}
+            value={paymentAccountId}
+            onChange={setPaymentAccountId}
+            companyId={companyId}
+            placeholder="Select bank account"
+            allowClear={false}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">

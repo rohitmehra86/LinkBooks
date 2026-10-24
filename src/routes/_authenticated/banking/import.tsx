@@ -33,6 +33,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { BankLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -281,18 +282,15 @@ function ImportCsv() {
       <div className="mb-6 grid max-w-2xl gap-3">
         <div className="space-y-1">
           <Label>Bank account</Label>
-          <Select value={bankAccountId} onValueChange={setBankAccountId}>
-            <SelectTrigger aria-label="Bank account">
-              <SelectValue placeholder="Select account" />
-            </SelectTrigger>
-            <SelectContent>
-              {(accountsQ.data ?? []).map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name} ({a.currency_code})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BankLookup
+            ariaLabel="Bank account"
+            accounts={accountsQ.data ?? []}
+            value={bankAccountId}
+            onChange={setBankAccountId}
+            companyId={companyId}
+            placeholder="Select account"
+            allowClear={false}
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="csv-file">CSV file</Label>

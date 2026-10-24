@@ -12,6 +12,7 @@ import { DEPRECIATION_METHODS } from "@/lib/fixed-assets/depreciation";
 import type { VarianceCell, VarianceRow, VarianceSection } from "@/lib/budgets/budget-report";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -63,18 +64,22 @@ export function BudgetVsActualView({ ctx }: { ctx: ReportCtx }) {
     <>
       <div className="space-y-1">
         <Label htmlFor="bva-budget">Budget</Label>
-        <select
+        <LookupSelect
           id="bva-budget"
-          className={selectCls}
+          ariaLabel="Budget"
+          allowClear={false}
           value={budgetId ?? ""}
-          onChange={(e) => ctx.setSearch({ budget: e.target.value || undefined })}
-        >
-          {list.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name} ({b.fiscal_year_start.slice(0, 4)})
-            </option>
-          ))}
-        </select>
+          onChange={(id) => ctx.setSearch({ budget: id || undefined })}
+          placeholder="Choose a budget"
+          searchPlaceholder="Search budget"
+          options={list.map((b) => ({
+            id: b.id,
+            name: b.name,
+            label: b.name,
+            description: b.fiscal_year_start.slice(0, 4),
+            keywords: `${b.name} ${b.fiscal_year_start}`,
+          }))}
+        />
       </div>
       <div className="space-y-1">
         <Label htmlFor="bva-view">Columns</Label>

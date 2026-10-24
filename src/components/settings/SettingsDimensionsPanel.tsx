@@ -15,9 +15,23 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
@@ -47,8 +61,7 @@ export function SettingsDimensionsPanel({ companyId, canEdit, currency }: Props)
   const reportQ = useQuery({
     queryKey: ["dim-pnl", companyId, reportCat, fromDate, toDate],
     enabled: Boolean(reportCat),
-    queryFn: () =>
-      reportFn({ data: { companyId, categoryId: reportCat, fromDate, toDate } }),
+    queryFn: () => reportFn({ data: { companyId, categoryId: reportCat, fromDate, toDate } }),
   });
 
   const cats = (dimsQ.data?.categories ?? []) as Array<{
@@ -155,7 +168,9 @@ export function SettingsDimensionsPanel({ companyId, canEdit, currency }: Props)
                               isActive: checked,
                             },
                           });
-                          await qc.invalidateQueries({ queryKey: ["tracking-dimensions", companyId] });
+                          await qc.invalidateQueries({
+                            queryKey: ["tracking-dimensions", companyId],
+                          });
                         } catch (e) {
                           toast.error(friendlyAuthError(e));
                         }
@@ -173,18 +188,24 @@ export function SettingsDimensionsPanel({ companyId, canEdit, currency }: Props)
           <div className="grid gap-2 border-t pt-4 sm:grid-cols-3">
             <div className="space-y-1">
               <Label>Dimension</Label>
-              <Select value={optCategoryId} onValueChange={setOptCategoryId} disabled={!canEdit}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cats.filter((c) => c.is_active).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LookupSelect
+                ariaLabel="Dimension"
+                allowClear={false}
+                disabled={!canEdit}
+                value={optCategoryId}
+                onChange={setOptCategoryId}
+                placeholder="Select…"
+                searchPlaceholder="Search dimension"
+                options={cats
+                  .filter((c) => c.is_active)
+                  .map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    label: c.name,
+                    group: dimensionKindLabel(c.dimension_kind),
+                    keywords: `${c.name} ${c.dimension_kind}`,
+                  }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Option name</Label>
@@ -265,18 +286,23 @@ export function SettingsDimensionsPanel({ companyId, canEdit, currency }: Props)
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 sm:grid-cols-3">
-            <Select value={reportCat} onValueChange={setReportCat}>
-              <SelectTrigger>
-                <SelectValue placeholder="Dimension…" />
-              </SelectTrigger>
-              <SelectContent>
-                {cats.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LookupSelect
+              ariaLabel="Report dimension"
+              allowClear={false}
+              value={reportCat}
+              onChange={setReportCat}
+              placeholder="Dimension…"
+              searchPlaceholder="Search dimension"
+              options={cats.map((c) => ({
+                id: c.id,
+                name: c.name,
+                label: c.name,
+                group: dimensionKindLabel(c.dimension_kind),
+                status: c.is_active ? null : "Inactive",
+                disabled: !c.is_active && c.id !== reportCat,
+                keywords: `${c.name} ${c.dimension_kind}`,
+              }))}
+            />
             <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>

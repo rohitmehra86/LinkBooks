@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EntityCombobox, type EntityOption } from "@/components/common/EntityCombobox";
+import {
+  AccountCreateForm,
+  ProductCreateForm,
+  TaxCodeCreateForm,
+} from "@/components/lookup/create-forms";
+import { useCan } from "@/hooks/use-can";
 
 export type SalesLineFormState = {
   productId: string;
@@ -59,6 +65,9 @@ type Props = {
   taxCodes?: SalesTaxCode[];
   toMinor: (display: string) => bigint | number;
   disabled?: boolean;
+  companyId?: string;
+  /** Organisation base currency, used when creating an account from the line. */
+  baseCurrency?: string;
 };
 
 const NO_CODE = "__custom__";
@@ -73,7 +82,13 @@ export function SalesDocumentLines({
   taxCodes = [],
   toMinor,
   disabled = false,
+  companyId,
+  baseCurrency,
 }: Props) {
+  const { can } = useCan();
+  const canProduct = Boolean(companyId) && can("products.manage") && !disabled;
+  const canAccount = Boolean(companyId) && can("accounts.manage") && !disabled;
+  const canTax = Boolean(companyId) && can("tax.settings") && !disabled;
   const productOptions: EntityOption[] = products.map((p) => ({
     value: p.id,
     label: p.code ? `${p.code} — ${p.name}` : p.name,
@@ -166,6 +181,23 @@ export function SalesDocumentLines({
                 placeholder="Optional catalogue item"
                 emptyText="No products — enter a free-text line"
                 disabled={disabled}
+                companyId={companyId}
+                canAddNew={canProduct}
+                createTitle="New product or service"
+                renderCreate={
+                  canProduct
+                    ? (ctx) => (
+                        <ProductCreateForm companyId={companyId!} currency={currency} ctx={ctx} />
+                      )
+                    : undefined
+                }
+                onCreated={(option) =>
+                  update(idx, {
+                    productId: option.id,
+                    description: option.description || option.name || option.label,
+                    unitPrice: option.meta || line.unitPrice,
+                  })
+                }
               />
             </div>
             <div className="sm:col-span-8 space-y-1">
@@ -187,6 +219,21 @@ export function SalesDocumentLines({
                 placeholder="Account"
                 allowClear={false}
                 disabled={disabled}
+                companyId={companyId}
+                canAddNew={canAccount}
+                createTitle="New account"
+                renderCreate={
+                  canAccount
+                    ? (ctx) => (
+                        <AccountCreateForm
+                          companyId={companyId!}
+                          currency={baseCurrency || currency}
+                          initialKind="revenue"
+                          ctx={ctx}
+                        />
+                      )
+                    : undefined
+                }
               />
             </div>
             <div className="sm:col-span-2 space-y-1">
@@ -232,6 +279,19 @@ export function SalesDocumentLines({
                 placeholder="Tax code"
                 allowClear={false}
                 disabled={disabled}
+                companyId={companyId}
+                canAddNew={canTax}
+                createTitle="New tax code"
+                renderCreate={
+                  canTax
+                    ? (ctx) => (
+                        <TaxCodeCreateForm companyId={companyId!} appliesTo="sales" ctx={ctx} />
+                      )
+                    : undefined
+                }
+                onCreated={(option) =>
+                  update(idx, { taxCodeId: option.id, taxRateBps: option.meta ?? "0" })
+                }
               />
             </div>
             <div className="sm:col-span-2 space-y-1">

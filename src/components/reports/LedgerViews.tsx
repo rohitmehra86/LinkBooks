@@ -19,6 +19,7 @@ import { getAgedReceivablesAsAt } from "@/lib/sales/ar-reports.functions";
 import { SOURCE_LABELS, sourceLabel } from "@/lib/reports/links";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -81,21 +82,18 @@ export function AccountTransactionsView({ ctx }: { ctx: ReportCtx }) {
       extraControls={
         <div className="space-y-1">
           <Label htmlFor="report-account">Account</Label>
-          <select
+          <AccountLookup
             id="report-account"
-            className={`${selectCls} w-72`}
+            className="w-72"
+            ariaLabel="Account"
+            accounts={accounts}
             value={accountId}
-            onChange={(e) =>
-              ctx.setSearch({ account: e.target.value || undefined, page: undefined })
-            }
-          >
-            <option value="">Select account…</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={(id) => ctx.setSearch({ account: id || undefined, page: undefined })}
+            companyId={ctx.companyId}
+            purpose="posting"
+            placeholder="Select account…"
+            allowClear
+          />
         </div>
       }
       getCsv={() =>
@@ -865,21 +863,28 @@ export function AuditView({ ctx }: { ctx: ReportCtx }) {
         <>
           <div className="space-y-1">
             <Label htmlFor="audit-actor">User</Label>
-            <select
+            <LookupSelect
               id="audit-actor"
-              className={selectCls}
-              value={ctx.search.actor ?? ""}
-              onChange={(e) =>
-                ctx.setSearch({ actor: e.target.value || undefined, page: undefined })
+              ariaLabel="User"
+              allowClear={false}
+              value={ctx.search.actor ?? "__everyone__"}
+              onChange={(id) =>
+                ctx.setSearch({
+                  actor: id === "__everyone__" ? undefined : id,
+                  page: undefined,
+                })
               }
-            >
-              <option value="">Everyone</option>
-              {(optionsQ.data?.actors ?? []).map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              searchPlaceholder="Search user"
+              options={[
+                { id: "__everyone__", label: "Everyone" },
+                ...(optionsQ.data?.actors ?? []).map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  label: a.name,
+                  keywords: a.name,
+                })),
+              ]}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor="audit-entity">Entity</Label>

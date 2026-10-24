@@ -26,16 +26,10 @@ import { StatusBadge } from "@/components/common/stat-card";
 import { Button } from "@/components/ui/button";
 import { DocumentActions } from "@/components/documents/DocumentActions";
 import { AttachmentsPanel } from "@/components/documents/AttachmentsPanel";
+import { AccountLookup } from "@/components/lookup";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -383,23 +377,19 @@ function CreditNoteDetail() {
                   )
                 }
               />
-              <Select
+              <AccountLookup
+                ariaLabel={`Line ${i + 1} account`}
+                purpose="expense"
+                productKind="product"
+                accounts={accounts}
                 value={l.accountId}
-                onValueChange={(v) =>
+                onChange={(v) =>
                   setEditLines((rows) => rows.map((r, j) => (j === i ? { ...r, accountId: v } : r)))
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                companyId={companyId}
+                placeholder="Account"
+                allowClear={false}
+              />
               <Input
                 placeholder="Net"
                 inputMode="decimal"

@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -494,45 +495,31 @@ function ProductsWorkspace({ companyId, currency }: { companyId: string; currenc
             </div>
             <div className="grid gap-1">
               <Label>Income account</Label>
-              <Select
-                value={form.incomeAccountId || "none"}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, incomeAccountId: v === "none" ? "" : v }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {incomeAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountLookup
+                ariaLabel="Income account"
+                accounts={incomeAccounts}
+                value={form.incomeAccountId}
+                onChange={(v) => setForm((f) => ({ ...f, incomeAccountId: v }))}
+                companyId={companyId}
+                purpose="income"
+                productKind={form.kind}
+                placeholder="None"
+                allowClear
+              />
             </div>
             <div className="grid gap-1">
               <Label>Expense account</Label>
-              <Select
-                value={form.expenseAccountId || "none"}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, expenseAccountId: v === "none" ? "" : v }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {expenseAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountLookup
+                ariaLabel="Expense account"
+                accounts={expenseAccounts}
+                value={form.expenseAccountId}
+                onChange={(v) => setForm((f) => ({ ...f, expenseAccountId: v }))}
+                companyId={companyId}
+                purpose="expense"
+                productKind={form.kind}
+                placeholder="None"
+                allowClear
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1">
@@ -581,23 +568,31 @@ function TaxSelect({
 }) {
   const known = choices.some((c) => c.key === value);
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger>
-        <SelectValue placeholder="Select a tax code" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="0">No tax (0.00%)</SelectItem>
-        {choices
+    <LookupSelect
+      ariaLabel="Tax rate"
+      allowClear={false}
+      value={value}
+      onChange={onChange}
+      searchPlaceholder="Search tax rate"
+      options={[
+        { id: "0", label: "No tax (0.00%)", keywords: "none zero" },
+        ...choices
           .filter((c) => c.key !== "0")
-          .map((c) => (
-            <SelectItem key={`${c.key}-${c.label}`} value={c.key}>
-              {c.label}
-            </SelectItem>
-          ))}
-        {!known && value !== "0" ? (
-          <SelectItem value={value}>Custom rate ({(Number(value) / 100).toFixed(2)}%)</SelectItem>
-        ) : null}
-      </SelectContent>
-    </Select>
+          .map((c) => ({
+            id: c.key,
+            label: c.label,
+            keywords: `${c.label} ${c.bps}`,
+          })),
+        ...(!known && value !== "0"
+          ? [
+              {
+                id: value,
+                label: `Custom rate (${(Number(value) / 100).toFixed(2)}%)`,
+                keywords: value,
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }

@@ -18,8 +18,22 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { LookupSelect } from "@/components/lookup";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_authenticated/firm")({
@@ -55,14 +69,12 @@ function FirmPage() {
     queryFn: () => fetchClients({ data: { firmId } }),
   });
 
-  const activityCompany =
-    activityCompanyId || clientsQ.data?.[0]?.company_id || "";
+  const activityCompany = activityCompanyId || clientsQ.data?.[0]?.company_id || "";
 
   const activityQ = useQuery({
     queryKey: ["firm-client-activity", firmId, activityCompany],
     enabled: Boolean(firmId && activityCompany),
-    queryFn: () =>
-      fetchActivity({ data: { firmId, companyId: activityCompany } }),
+    queryFn: () => fetchActivity({ data: { firmId, companyId: activityCompany } }),
   });
 
   const createM = useMutation({
@@ -106,35 +118,55 @@ function FirmPage() {
       />
       <Alert className="mb-6">
         <AlertDescription>
-          Linking requires you to be owner/admin of the active organisation. Revoking removes firm-granted memberships
-          (read_only / bookkeeper / accountant). Owner memberships are not deleted by revoke.
+          Linking requires you to be owner/admin of the active organisation. Revoking removes
+          firm-granted memberships (read_only / bookkeeper / accountant). Owner memberships are not
+          deleted by revoke.
         </AlertDescription>
       </Alert>
 
       <div className="mb-8 grid max-w-lg gap-3 rounded-md border p-4">
         <Label>Create firm</Label>
-        <Input placeholder="Firm name" value={firmName} onChange={(e) => setFirmName(e.target.value)} />
-        <Button size="sm" disabled={createM.isPending || firmName.trim().length < 2} onClick={() => createM.mutate()}>
+        <Input
+          placeholder="Firm name"
+          value={firmName}
+          onChange={(e) => setFirmName(e.target.value)}
+        />
+        <Button
+          size="sm"
+          disabled={createM.isPending || firmName.trim().length < 2}
+          onClick={() => createM.mutate()}
+        >
           Create
         </Button>
       </div>
 
-      {firmsQ.isPending ? <LoadingState /> : firmsQ.isError ? (
+      {firmsQ.isPending ? (
+        <LoadingState />
+      ) : firmsQ.isError ? (
         <ErrorState title="Could not load firms" description={friendlyAuthError(firmsQ.error)} />
       ) : (firmsQ.data ?? []).length === 0 ? (
-        <EmptyState title="No firms yet" description="Create a firm to manage client organisations." />
+        <EmptyState
+          title="No firms yet"
+          description="Create a firm to manage client organisations."
+        />
       ) : (
         <>
           <div className="mb-4 max-w-sm space-y-1">
             <Label>Active firm</Label>
-            <Select value={firmId} onValueChange={setSelectedFirmId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {firmsQ.data!.map((f) => (
-                  <SelectItem key={f.firmId} value={f.firmId}>{f.name} ({f.role})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LookupSelect
+              ariaLabel="Active firm"
+              allowClear={false}
+              value={firmId}
+              onChange={setSelectedFirmId}
+              searchPlaceholder="Search firm"
+              options={(firmsQ.data ?? []).map((f) => ({
+                id: f.firmId,
+                name: f.name,
+                label: f.name,
+                meta: f.role,
+                keywords: `${f.name} ${f.role}`,
+              }))}
+            />
           </div>
 
           <div className="mb-6 grid max-w-lg gap-3 rounded-md border p-4">
@@ -143,22 +175,36 @@ function FirmPage() {
               Active org: <strong>{company?.name ?? "none selected"}</strong>
             </p>
             <Select value={accessLevel} onValueChange={setAccessLevel}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="view">View (read_only)</SelectItem>
                 <SelectItem value="bookkeep">Bookkeep</SelectItem>
                 <SelectItem value="full">Full (accountant)</SelectItem>
               </SelectContent>
             </Select>
-            <Button size="sm" disabled={linkM.isPending || !company?.id} onClick={() => linkM.mutate()}>
+            <Button
+              size="sm"
+              disabled={linkM.isPending || !company?.id}
+              onClick={() => linkM.mutate()}
+            >
               Link client
             </Button>
           </div>
 
-          {clientsQ.isPending ? <LoadingState /> : clientsQ.isError ? (
-            <ErrorState title="Could not load clients" description={friendlyAuthError(clientsQ.error)} />
+          {clientsQ.isPending ? (
+            <LoadingState />
+          ) : clientsQ.isError ? (
+            <ErrorState
+              title="Could not load clients"
+              description={friendlyAuthError(clientsQ.error)}
+            />
           ) : (clientsQ.data ?? []).length === 0 ? (
-            <EmptyState title="No linked clients" description="Link an organisation you administer." />
+            <EmptyState
+              title="No linked clients"
+              description="Link an organisation you administer."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -172,10 +218,16 @@ function FirmPage() {
                 {clientsQ.data!.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>{c.companies?.name ?? c.company_id.slice(0, 8)}</TableCell>
-                    <TableCell><Badge variant="secondary">{c.access_level}</Badge></TableCell>
                     <TableCell>
-                      <Button size="sm" variant="outline" disabled={revokeM.isPending}
-                        onClick={() => revokeM.mutate(c.company_id)}>
+                      <Badge variant="secondary">{c.access_level}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={revokeM.isPending}
+                        onClick={() => revokeM.mutate(c.company_id)}
+                      >
                         Revoke
                       </Button>
                     </TableCell>
@@ -185,8 +237,8 @@ function FirmPage() {
             </Table>
           )}
           <p className="mt-4 text-sm text-muted-foreground">
-            Switch into a client via the company switcher once membership is granted. Multi-org users
-            always see the active organisation name in the header.{" "}
+            Switch into a client via the company switcher once membership is granted. Multi-org
+            users always see the active organisation name in the header.{" "}
             <Link className="underline" to="/accountant">
               Accountant checklist
             </Link>
@@ -195,18 +247,24 @@ function FirmPage() {
           {(clientsQ.data ?? []).length > 0 ? (
             <div className="mt-8 space-y-3">
               <Label>Client activity history</Label>
-              <Select value={activityCompany} onValueChange={setActivityCompanyId}>
-                <SelectTrigger className="max-w-sm">
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clientsQ.data!.map((c) => (
-                    <SelectItem key={c.company_id} value={c.company_id}>
-                      {c.companies?.name ?? c.company_id.slice(0, 8)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LookupSelect
+                className="max-w-sm"
+                ariaLabel="Client"
+                allowClear={false}
+                value={activityCompany}
+                onChange={setActivityCompanyId}
+                placeholder="Select client"
+                searchPlaceholder="Search client"
+                options={(clientsQ.data ?? []).map((c) => {
+                  const name = c.companies?.name ?? c.company_id.slice(0, 8);
+                  return {
+                    id: c.company_id,
+                    name,
+                    label: name,
+                    keywords: name,
+                  };
+                })}
+              />
               {activityQ.isPending ? (
                 <LoadingState rows={3} />
               ) : activityQ.isError ? (
@@ -215,7 +273,10 @@ function FirmPage() {
                   description={friendlyAuthError(activityQ.error)}
                 />
               ) : (activityQ.data ?? []).length === 0 ? (
-                <EmptyState title="No audit events yet" description="Actions on this client will appear here." />
+                <EmptyState
+                  title="No audit events yet"
+                  description="Actions on this client will appear here."
+                />
               ) : (
                 <Table>
                   <TableHeader>

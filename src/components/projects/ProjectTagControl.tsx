@@ -10,16 +10,11 @@ import {
   setDocumentProject,
 } from "@/lib/projects/projects.functions";
 import type { TaggableKind } from "@/lib/projects/projects";
+import { LookupSelect } from "@/components/lookup/LookupSelect";
+import { toTrackingLookupOption } from "@/lib/lookup/eligibility";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-const NONE = "__none__";
+const NONE = "";
 
 /**
  * Tags every line of a document (or a bank transaction) with a project. The tag is analytical only: it never
@@ -83,31 +78,31 @@ export function ProjectTagControl({
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className="text-muted-foreground">Project</span>
-      <Select
-        value={current}
+      <LookupSelect
+        ariaLabel="Project"
+        className="w-56"
+        placeholder="No project"
+        allowClear={!tagQ.data.mixed}
         disabled={disabled || mutation.isPending}
-        onValueChange={(v) => {
-          if (v === "__mixed__") return;
-          mutation.mutate(v === NONE ? null : v);
+        value={current === NONE ? "" : current}
+        options={[
+          ...(tagQ.data.mixed
+            ? [{ id: "__mixed__", label: "Mixed (set per line)", disabled: true }]
+            : []),
+          ...projects.map((project) =>
+            toTrackingLookupOption({
+              id: project.id,
+              code: project.code,
+              name: project.name,
+              category: "Projects",
+            }),
+          ),
+        ]}
+        onChange={(projectId) => {
+          if (projectId === "__mixed__") return;
+          mutation.mutate(projectId || null);
         }}
-      >
-        <SelectTrigger aria-label="Project" className="h-8 w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={NONE}>No project</SelectItem>
-          {tagQ.data.mixed ? (
-            <SelectItem value="__mixed__" disabled>
-              Mixed (set per line)
-            </SelectItem>
-          ) : null}
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>
-              {p.code} — {p.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      />
     </div>
   );
 }

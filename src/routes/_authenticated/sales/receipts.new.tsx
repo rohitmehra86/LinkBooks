@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCan } from "@/hooks/use-can";
 import { listCustomers } from "@/lib/sales/sales.functions";
 import { listOpenInvoicesForCustomer, recordReceipt } from "@/lib/sales/sales-receipts.functions";
 import { getSalesDocumentConfig, listDepositAccounts } from "@/lib/sales/sales-config.functions";
@@ -12,6 +13,7 @@ import { fromMinorUnits, toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactCreateForm } from "@/components/lookup/create-forms";
 import { currencyOptions, money } from "@/components/sales/sales-form-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,7 @@ function ReceiptForm({
   invoiceId?: string | undefined;
 }) {
   const { company } = useActiveCompany();
+  const { can } = useCan();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const companyId = company?.id;
@@ -267,6 +270,14 @@ function ReceiptForm({
             }}
             placeholder="Search customers"
             allowClear={false}
+            companyId={companyId}
+            canAddNew={can("contacts.manage")}
+            createTitle="New customer"
+            renderCreate={
+              can("contacts.manage")
+                ? (ctx) => <ContactCreateForm companyId={companyId} kind="customer" ctx={ctx} />
+                : undefined
+            }
           />
         </div>
         <div className="grid gap-4 sm:grid-cols-3">

@@ -18,6 +18,8 @@ import {
 } from "@/lib/banking/rules.functions";
 import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { toContactLookupOption } from "@/lib/lookup/eligibility";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -381,22 +383,24 @@ function BankRules() {
               <SelectItem value="out">Money out only</SelectItem>
             </SelectContent>
           </Select>
-          <Select
+          <LookupSelect
+            ariaLabel="Bank account scope"
+            allowClear={false}
             value={form.bankAccountId}
-            onValueChange={(v) => setForm({ ...form, bankAccountId: v })}
-          >
-            <SelectTrigger aria-label="Bank account scope">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>All bank accounts</SelectItem>
-              {(accountsQ.data ?? []).map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onChange={(v) => setForm({ ...form, bankAccountId: v })}
+            searchPlaceholder="Search bank account"
+            options={[
+              { id: ANY, label: "All bank accounts" },
+              ...(accountsQ.data ?? []).map((a) => ({
+                id: a.id,
+                name: a.name,
+                label: a.name,
+                meta: a.currency_code,
+                group: a.currency_code,
+                keywords: `${a.name} ${a.currency_code}`,
+              })),
+            ]}
+          />
           <MoneyField
             label="Minimum amount"
             placeholder="Minimum amount (optional)"
@@ -413,46 +417,46 @@ function BankRules() {
             options={{ allowNegative: false }}
             onChange={(v) => setForm({ ...form, maxAmount: v })}
           />
-          <Select value={form.accountId} onValueChange={(v) => setForm({ ...form, accountId: v })}>
-            <SelectTrigger aria-label="Account to code to">
-              <SelectValue placeholder="Account" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={form.taxCodeId} onValueChange={(v) => setForm({ ...form, taxCodeId: v })}>
-            <SelectTrigger aria-label="Tax code">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No tax</SelectItem>
-              {(optionsQ.data?.taxCodes ?? [])
+          <AccountLookup
+            ariaLabel="Account to code to"
+            accounts={accounts}
+            value={form.accountId}
+            onChange={(v) => setForm({ ...form, accountId: v })}
+            companyId={companyId}
+            placeholder="Account"
+            allowClear={false}
+          />
+          <LookupSelect
+            ariaLabel="Tax code"
+            allowClear={false}
+            value={form.taxCodeId}
+            onChange={(v) => setForm({ ...form, taxCodeId: v })}
+            searchPlaceholder="Search tax code"
+            options={[
+              { id: NONE, label: "No tax" },
+              ...(optionsQ.data?.taxCodes ?? [])
                 .filter((t) => t.treatment !== "reverse_charge")
-                .map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.code}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-          <Select value={form.contactId} onValueChange={(v) => setForm({ ...form, contactId: v })}>
-            <SelectTrigger aria-label="Contact">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No contact</SelectItem>
-              {(optionsQ.data?.contacts ?? []).map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                .map((t) => ({
+                  id: t.id,
+                  code: t.code,
+                  name: t.name,
+                  label: t.name,
+                  meta: t.code,
+                  keywords: `${t.code} ${t.name}`,
+                })),
+            ]}
+          />
+          <LookupSelect
+            ariaLabel="Contact"
+            allowClear={false}
+            value={form.contactId}
+            onChange={(v) => setForm({ ...form, contactId: v })}
+            searchPlaceholder="Search contact"
+            options={[
+              { id: NONE, label: "No contact" },
+              ...(optionsQ.data?.contacts ?? []).map((c) => toContactLookupOption(c)),
+            ]}
+          />
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={form.isActive}

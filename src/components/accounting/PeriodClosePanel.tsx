@@ -20,14 +20,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -181,24 +175,24 @@ export function PeriodClosePanel({ companyId }: { companyId: string }) {
         <CardContent className="space-y-4">
           <div className="max-w-sm space-y-1">
             <Label>Period</Label>
-            <Select
+            <LookupSelect
+              ariaLabel="Period"
+              allowClear={false}
               value={periodId}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 setPeriodId(v);
                 setAck(false);
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a period" />
-              </SelectTrigger>
-              <SelectContent>
-                {openPeriods.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} ({f.date(p.start_date)} → {f.date(p.end_date)})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Choose a period"
+              searchPlaceholder="Search period"
+              options={openPeriods.map((p) => ({
+                id: p.id,
+                name: p.name,
+                label: p.name,
+                description: `${f.date(p.start_date)} → ${f.date(p.end_date)}`,
+                keywords: `${p.name} ${p.start_date} ${p.end_date}`,
+              }))}
+            />
           </div>
 
           {facts.isError || ar.isError || ap.isError ? (

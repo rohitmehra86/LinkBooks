@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -600,31 +601,33 @@ export function ChartAccountsPanel({
             years keep their figures. Posted history stays on the original lines. Then this account
             is archived where the rules allow it.
           </p>
-          <Select
+          <AccountLookup
+            ariaLabel="Account to keep"
+            accounts={(chartQuery.data.accounts ?? [])
+              .filter(
+                (account) =>
+                  account.id !== mergeSource?.id &&
+                  account.accountType === mergeSource?.accountType &&
+                  account.isActive,
+              )
+              .map((account) => ({
+                id: account.id,
+                code: account.code,
+                name: account.name,
+                account_type: account.accountType,
+                is_active: account.isActive,
+                is_postable: account.isPostable,
+              }))}
             value={mergeTarget}
-            onValueChange={(value) => {
+            onChange={(value) => {
               setMergeTarget(value);
               setMergeLockedToday(false);
             }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Account to keep" />
-            </SelectTrigger>
-            <SelectContent>
-              {(chartQuery.data.accounts ?? [])
-                .filter(
-                  (account) =>
-                    account.id !== mergeSource?.id &&
-                    account.accountType === mergeSource?.accountType &&
-                    account.isActive,
-                )
-                .map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.code} {account.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+            companyId={companyId}
+            purpose="parent"
+            placeholder="Account to keep"
+            allowClear={false}
+          />
           {mergeTarget && mergePreview.isPending ? (
             <p className="text-sm text-muted-foreground">Checking what will be posted…</p>
           ) : null}
@@ -792,18 +795,20 @@ export function ChartAccountsPanel({
             Copies accounts you can manage. System accounts and matching codes or names are left as
             they are.
           </p>
-          <Select value={copySource} onValueChange={setCopySource}>
-            <SelectTrigger>
-              <SelectValue placeholder="Source organisation" />
-            </SelectTrigger>
-            <SelectContent>
-              {otherCompanies.map((company) => (
-                <SelectItem key={company.id} value={company.id}>
-                  {company.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <LookupSelect
+            ariaLabel="Source organisation"
+            allowClear={false}
+            value={copySource}
+            onChange={setCopySource}
+            placeholder="Source organisation"
+            searchPlaceholder="Search organisation"
+            options={otherCompanies.map((company) => ({
+              id: company.id,
+              name: company.name,
+              label: company.name,
+              keywords: company.name,
+            }))}
+          />
           <DialogFooter>
             <Button
               type="button"

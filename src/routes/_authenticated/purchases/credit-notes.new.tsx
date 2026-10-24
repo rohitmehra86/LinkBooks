@@ -25,16 +25,11 @@ import { DEFAULT_CURRENCY_DECIMALS, fromMinorUnits } from "@/lib/accounting/mone
 import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { AccountLookup, ContactLookup, LookupSelect } from "@/components/lookup";
+import { AccountCreateForm, ContactCreateForm } from "@/components/lookup/create-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/purchases/credit-notes/new")({
   validateSearch: (s: Record<string, unknown>): { billId?: string } =>
@@ -246,25 +241,28 @@ export function NewCreditNote() {
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Supplier</Label>
-            <Select
+            <ContactLookup
+              ariaLabel="Supplier"
+              contacts={((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map(
+                (supplier) => ({ ...supplier, kind: "supplier" }),
+              )}
               value={contactId}
-              onValueChange={(v) => {
+              companyId={companyId}
+              placeholder="Select supplier"
+              allowClear={false}
+              canCreate={can("contacts.manage")}
+              createTitle="New supplier"
+              renderCreate={
+                can("contacts.manage")
+                  ? (ctx) => <ContactCreateForm companyId={companyId} kind="supplier" ctx={ctx} />
+                  : undefined
+              }
+              onChange={(v) => {
                 setContactId(v);
                 setBillId("");
                 setBillCurrency(null);
               }}
-            >
-              <SelectTrigger aria-label="Supplier">
-                <SelectValue placeholder="Select" />
-              </SelectTrigger>
-              <SelectContent>
-                {((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map((x) => (
-                  <SelectItem key={x.id} value={x.id}>
-                    {x.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           </div>
           <div className="space-y-2">
             <Label>Date</Label>
@@ -274,26 +272,25 @@ export function NewCreditNote() {
 
         <div className="space-y-2">
           <Label>Credit from a bill (optional)</Label>
-          <Select
-            value={billId || "__none__"}
-            onValueChange={(v) => void chooseBill(v)}
+          <LookupSelect
+            ariaLabel="Credit from bill"
             disabled={!contactId}
-          >
-            <SelectTrigger aria-label="Credit from bill">
-              <SelectValue
-                placeholder={contactId ? "Not linked to a bill" : "Choose a supplier first"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">Not linked to a bill</SelectItem>
-              {openBills.map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.display_reference ?? b.bill_number ?? b.id.slice(0, 8)} — {b.bill_date} — owes{" "}
-                  {fromMinorUnits(b.balance_due_minor, b.currency_code)} {b.currency_code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            allowClear={false}
+            value={billId || "__none__"}
+            onChange={(v) => void chooseBill(v)}
+            placeholder={contactId ? "Not linked to a bill" : "Choose a supplier first"}
+            searchPlaceholder="Search bill reference or date"
+            options={[
+              { id: "__none__", label: "Not linked to a bill" },
+              ...openBills.map((b) => ({
+                id: b.id,
+                label: b.display_reference ?? b.bill_number ?? b.id.slice(0, 8),
+                description: `${b.bill_date} — owes ${fromMinorUnits(b.balance_due_minor, b.currency_code)}`,
+                meta: b.currency_code,
+                keywords: `${b.display_reference ?? ""} ${b.bill_number ?? ""} ${b.bill_date}`,
+              })),
+            ]}
+          />
           {chosenBill ? (
             <p className="text-xs text-muted-foreground">
               On authorise, {fromMinorUnits(allocateMinor, currency)} {currency} is applied to this
@@ -321,18 +318,29 @@ export function NewCreditNote() {
                 value={l.description}
                 onChange={(e) => update(l.key, { description: e.target.value })}
               />
-              <Select value={l.accountId} onValueChange={(v) => update(l.key, { accountId: v })}>
-                <SelectTrigger aria-label={`Line ${i + 1} account`}>
-                  <SelectValue placeholder="Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountLookup
+                ariaLabel={`Line ${i + 1} account`}
+                accounts={accounts}
+                value={l.accountId}
+                onChange={(v) => update(l.key, { accountId: v })}
+                companyId={companyId}
+                placeholder="Account"
+                allowClear={false}
+                canCreate={can("accounts.manage")}
+                createTitle="New account"
+                renderCreate={
+                  can("accounts.manage")
+                    ? (ctx) => (
+                        <AccountCreateForm
+                          companyId={companyId}
+                          currency={currency}
+                          initialKind="expense"
+                          ctx={ctx}
+                        />
+                      )
+                    : undefined
+                }
+              />
               <Input
                 aria-label={`Line ${i + 1} net`}
                 value={l.net}

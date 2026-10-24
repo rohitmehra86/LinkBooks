@@ -46,6 +46,7 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactCreateForm } from "@/components/lookup/create-forms";
 import {
   BillAttachmentsButton,
   BillRelatedFilesOverlay,
@@ -875,10 +876,21 @@ function BillDocumentWorkspace() {
               <div className="space-y-2">
                 <Label htmlFor="bill-supplier">Supplier</Label>
                 <EntityCombobox
+                  aria-label="Supplier"
                   options={supplierOptions}
                   value={contactId}
                   onChange={setContactId}
                   allowClear={false}
+                  companyId={companyId}
+                  canAddNew={can("contacts.manage")}
+                  createTitle="New supplier"
+                  renderCreate={
+                    can("contacts.manage")
+                      ? (ctx) => (
+                          <ContactCreateForm companyId={companyId} kind="supplier" ctx={ctx} />
+                        )
+                      : undefined
+                  }
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
@@ -1088,6 +1100,8 @@ function BillDocumentWorkspace() {
                 showProject={optionsForKind("project").length > 0}
                 showCustomer={customerOptions.length > 0}
                 toMinor={(d) => toMinorUnits(d, currency)}
+                companyId={companyId}
+                baseCurrency={baseCurrency}
               />
 
               <div className="flex flex-wrap gap-2 pt-2">

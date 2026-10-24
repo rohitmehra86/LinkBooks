@@ -15,18 +15,13 @@ import { bulkCodeByFilter, listCodingOptions } from "@/lib/banking/coding.functi
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { toContactLookupOption } from "@/lib/lookup/eligibility";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -272,22 +267,25 @@ function CashCoding() {
       </Alert>
 
       <div className="mb-4 flex flex-wrap items-end gap-2">
-        <Select
+        <LookupSelect
+          className="w-48"
+          ariaLabel="Bank account"
+          allowClear={false}
           value={search.bankAccountId ?? ALL}
-          onValueChange={(v) => setSearch({ bankAccountId: v === ALL ? undefined : v })}
-        >
-          <SelectTrigger className="w-48" aria-label="Bank account">
-            <SelectValue placeholder="Account" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All accounts</SelectItem>
-            {(accountsQ.data ?? []).map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(v) => setSearch({ bankAccountId: v === ALL ? undefined : v })}
+          searchPlaceholder="Search bank account"
+          options={[
+            { id: ALL, label: "All accounts" },
+            ...(accountsQ.data ?? []).map((a) => ({
+              id: a.id,
+              name: a.name,
+              label: a.name,
+              meta: a.currency_code,
+              group: a.currency_code,
+              keywords: `${a.name} ${a.currency_code}`,
+            })),
+          ]}
+        />
         <label className="flex items-center gap-1 text-xs text-muted-foreground">
           From
           <Input
@@ -309,44 +307,47 @@ function CashCoding() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-2">
-        <Select value={offsetAccountId} onValueChange={setOffsetAccountId}>
-          <SelectTrigger className="w-56" aria-label="Account to code to">
-            <SelectValue placeholder="Account" />
-          </SelectTrigger>
-          <SelectContent>
-            {(optionsQ.data?.accounts ?? []).map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.code} {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={taxCodeId} onValueChange={setTaxCodeId}>
-          <SelectTrigger className="w-40" aria-label="Tax code">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No tax</SelectItem>
-            {taxChoices.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.code}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={contactId} onValueChange={setContactId}>
-          <SelectTrigger className="w-48" aria-label="Contact">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No contact</SelectItem>
-            {(optionsQ.data?.contacts ?? []).map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AccountLookup
+          className="w-56"
+          ariaLabel="Account to code to"
+          accounts={optionsQ.data?.accounts ?? []}
+          value={offsetAccountId}
+          onChange={setOffsetAccountId}
+          companyId={companyId}
+          placeholder="Account"
+          allowClear={false}
+        />
+        <LookupSelect
+          className="w-40"
+          ariaLabel="Tax code"
+          allowClear={false}
+          value={taxCodeId}
+          onChange={setTaxCodeId}
+          searchPlaceholder="Search tax code"
+          options={[
+            { id: NONE, label: "No tax" },
+            ...taxChoices.map((t) => ({
+              id: t.id,
+              code: t.code,
+              name: t.name,
+              label: t.name,
+              meta: t.code,
+              keywords: `${t.code} ${t.name}`,
+            })),
+          ]}
+        />
+        <LookupSelect
+          className="w-48"
+          ariaLabel="Contact"
+          allowClear={false}
+          value={contactId}
+          onChange={setContactId}
+          searchPlaceholder="Search contact"
+          options={[
+            { id: NONE, label: "No contact" },
+            ...(optionsQ.data?.contacts ?? []).map((c) => toContactLookupOption(c)),
+          ]}
+        />
         <Button
           size="sm"
           disabled={!selected.size || !offsetAccountId || bulkM.isPending}

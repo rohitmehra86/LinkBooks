@@ -23,14 +23,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { BankLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -209,18 +203,15 @@ function Reconcile() {
       <div className="mb-6 grid max-w-3xl gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Bank account</Label>
-          <Select value={bankAccountId} onValueChange={setBankAccountId}>
-            <SelectTrigger aria-label="Bank account">
-              <SelectValue placeholder="Select account" />
-            </SelectTrigger>
-            <SelectContent>
-              {(accountsQ.data ?? []).map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name} ({a.currency_code})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BankLookup
+            ariaLabel="Bank account"
+            accounts={accountsQ.data ?? []}
+            value={bankAccountId}
+            onChange={setBankAccountId}
+            companyId={companyId}
+            placeholder="Select account"
+            allowClear={false}
+          />
         </div>
         <div className="space-y-1">
           <Label>Statement date</Label>
@@ -387,9 +378,7 @@ function Reconcile() {
                           </Badge>
                         ) : null}
                       </TableCell>
-                      <TableCell className="money">
-                        {money(g.statementTotalMinor)}
-                      </TableCell>
+                      <TableCell className="money">{money(g.statementTotalMinor)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -516,9 +505,7 @@ function Reconcile() {
                     <TableCell className="money">
                       {s.opening_balance_minor === null ? "—" : money(s.opening_balance_minor)}
                     </TableCell>
-                    <TableCell className="money">
-                      {money(s.statement_balance_minor)}
-                    </TableCell>
+                    <TableCell className="money">{money(s.statement_balance_minor)}</TableCell>
                     <TableCell>
                       <Badge variant={s.status === "completed" ? "secondary" : "outline"}>
                         {s.status}

@@ -25,6 +25,7 @@ import {
 } from "@/lib/accounting/reporting";
 import { listTaxCodes } from "@/lib/tax/tax.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -107,7 +108,7 @@ export function AccountForm({
   account?: ChartAccount | null;
   initialKind?: AccountKind;
   initialName?: string;
-  onSaved: (another: boolean) => void;
+  onSaved: (another: boolean, saved?: { id: string; code: string; name: string }) => void;
   onCancel?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -177,10 +178,13 @@ export function AccountForm({
       });
       if (!parsed.success)
         throw new Error(parsed.error.issues[0]?.message ?? "Check the account details.");
-      await save({ data: parsed.data });
-      return another;
+      const result = await save({ data: parsed.data });
+      return {
+        another,
+        saved: { id: result.id, code: draft.code.trim(), name: draft.name.trim() },
+      };
     },
-    onSuccess: async (another) => {
+    onSuccess: async ({ another, saved }) => {
       await queryClient.invalidateQueries({ queryKey: ["chart-accounts", companyId] });
       await queryClient.invalidateQueries({ queryKey: ["accounts", companyId] });
       toast.success(account ? "Account updated" : "Account created");
@@ -189,7 +193,7 @@ export function AccountForm({
         setDraft(next);
         setBaseline(JSON.stringify(next));
       }
-      onSaved(another);
+      onSaved(another, saved);
     },
     onError: (error) => toast.error(friendlyAuthError(error)),
   });
@@ -294,44 +298,27 @@ export function AccountForm({
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Sub-account of">
-          <Select
-            value={draft.parentId || "none"}
-            onValueChange={(value) =>
-              setDraft({ ...draft, parentId: value === "none" ? "" : value })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No parent</SelectItem>
-              {parents.map((row) => (
-                <SelectItem key={row.id} value={row.id}>
-                  {row.code} {row.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Sub-account of"
+            purpose="parent"
+            accounts={parents}
+            value={draft.parentId}
+            onChange={(parentId) => setDraft({ ...draft, parentId })}
+            companyId={companyId}
+            placeholder="No parent"
+            allowClear
+          />
         </Field>
         <Field label="Default tax">
-          <Select
-            value={draft.defaultTaxCodeId || "none"}
-            onValueChange={(value) =>
-              setDraft({ ...draft, defaultTaxCodeId: value === "none" ? "" : value })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No default</SelectItem>
-              {taxCodes.map((code) => (
-                <SelectItem key={code.id} value={code.id}>
-                  {code.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <LookupSelect
+            ariaLabel="Default tax"
+            options={taxCodes.map((code) => ({ id: code.id, label: code.label }))}
+            value={draft.defaultTaxCodeId}
+            onChange={(defaultTaxCodeId) => setDraft({ ...draft, defaultTaxCodeId })}
+            placeholder="No default"
+            searchPlaceholder="Search tax code"
+            allowClear
+          />
         </Field>
         <Field label={`Currency (organisation uses ${currency})`}>
           <Input

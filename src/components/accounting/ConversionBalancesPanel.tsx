@@ -17,6 +17,7 @@ import {
   type TbEntry,
 } from "@/lib/accounting/conversion-balances";
 import { toMinorUnits } from "@/lib/accounting/money";
+import { ContactLookup } from "@/components/lookup";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { useFormat } from "@/hooks/use-format";
 import { ErrorState, LoadingState } from "@/components/common/states";
@@ -38,9 +39,6 @@ type DocRow = {
   fxRate: string;
   amount: string;
 };
-
-const selectClass =
-  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 function safeMinor(value: string, currency: string): bigint {
   const v = value.trim().replace(/,/g, "");
@@ -270,19 +268,15 @@ export function ConversionBalancesPanel({
               key={r.key}
               className="grid grid-cols-2 gap-2 rounded-md border p-2 md:grid-cols-8"
             >
-              <select
-                className={`${selectClass} md:col-span-2`}
-                aria-label={kind === "invoices" ? "Customer" : "Supplier"}
+              <ContactLookup
+                ariaLabel={kind === "invoices" ? "Customer" : "Supplier"}
+                contacts={contacts}
                 value={r.contactId}
-                onChange={(e) => patch(r.key, { contactId: e.target.value })}
-              >
-                <option value="">{kind === "invoices" ? "Customer…" : "Supplier…"}</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(contactId) => patch(r.key, { contactId })}
+                companyId={companyId}
+                placeholder={kind === "invoices" ? "Customer…" : "Supplier…"}
+                allowClear
+              />
               <Input
                 placeholder="Reference"
                 aria-label="Reference"

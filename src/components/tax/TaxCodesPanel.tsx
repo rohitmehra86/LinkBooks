@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,8 +59,6 @@ type Draft = {
   recoverable: boolean;
   active: boolean;
 };
-
-const NONE = "none";
 
 function asApplies(v: string): Draft["appliesTo"] {
   return v === "sales" || v === "purchases" ? v : "both";
@@ -240,22 +239,22 @@ export function TaxCodesPanel({
               </div>
               <div className="space-y-1">
                 <Label>Tax rate</Label>
-                <Select
+                <LookupSelect
+                  ariaLabel="Tax rate"
+                  allowClear={false}
                   value={draft.rateId}
-                  onValueChange={(v) => setDraft({ ...draft, rateId: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a rate" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rates.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                        {r.is_active ? "" : " (inactive)"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(v) => setDraft({ ...draft, rateId: v })}
+                  placeholder="Choose a rate"
+                  searchPlaceholder="Search tax rate"
+                  options={rates.map((r) => ({
+                    id: r.id,
+                    name: r.name,
+                    label: r.name,
+                    status: r.is_active ? null : "Inactive",
+                    disabled: !r.is_active && r.id !== draft.rateId,
+                    keywords: r.name,
+                  }))}
+                />
               </div>
               <div className="space-y-1">
                 <Label>Applies to</Label>
@@ -275,22 +274,15 @@ export function TaxCodesPanel({
               </div>
               <div className="space-y-1">
                 <Label>Tax account (liability or asset)</Label>
-                <Select
-                  value={draft.accountId || NONE}
-                  onValueChange={(v) => setDraft({ ...draft, accountId: v === NONE ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Use the organisation default</SelectItem>
-                    {pickable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountLookup
+                  ariaLabel="Tax account"
+                  accounts={pickable}
+                  value={draft.accountId}
+                  onChange={(v) => setDraft({ ...draft, accountId: v })}
+                  companyId={companyId}
+                  placeholder="Use the organisation default"
+                  allowClear
+                />
               </div>
               <div className="flex items-center gap-2">
                 <Switch

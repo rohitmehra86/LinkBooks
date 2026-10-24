@@ -8,6 +8,13 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { codeBankTransaction, type listCodingOptions } from "@/lib/banking/coding.functions";
 import { computeSplitTotals, type CodingTaxCode } from "@/lib/banking/coding";
 import { MoneyField, moneyFieldMinor } from "@/components/banking/MoneyField";
+import { AccountLookup, ContactLookup, TaxLookup } from "@/components/lookup";
+import {
+  AccountCreateForm,
+  ContactCreateForm,
+  TaxCodeCreateForm,
+} from "@/components/lookup/create-forms";
+import { useCan } from "@/hooks/use-can";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,8 +36,8 @@ type SplitDraft = {
   amount: string;
 };
 
-const NO_TAX = "none";
-const NO_CONTACT = "none";
+const NO_TAX = "";
+const NO_CONTACT = "";
 
 /**
  * Bank coding panel: contact, one or more split lines (account, tax code, description) and a reference.
@@ -54,6 +61,7 @@ export function BankCodingPanel({
   onCancel: () => void;
 }) {
   const post = useServerFn(codeBankTransaction);
+  const { can } = useCan();
   const direction = txn.amountMinor > 0 ? "in" : "out";
   const statementAbs = BigInt(Math.abs(txn.amountMinor));
 
@@ -162,19 +170,28 @@ export function BankCodingPanel({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>{direction === "in" ? "Received from" : "Paid to"} (contact)</Label>
-          <Select value={contactId} onValueChange={setContactId}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_CONTACT}>No contact</SelectItem>
-              {options.contacts.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ContactLookup
+            ariaLabel={direction === "in" ? "Received from" : "Paid to"}
+            contacts={options.contacts}
+            value={contactId}
+            onChange={setContactId}
+            companyId={companyId}
+            placeholder="No contact"
+            allowClear
+            canCreate={can("contacts.manage")}
+            createTitle={direction === "in" ? "New customer" : "New supplier"}
+            renderCreate={
+              can("contacts.manage")
+                ? (ctx) => (
+                    <ContactCreateForm
+                      companyId={companyId}
+                      kind={direction === "in" ? "customer" : "supplier"}
+                      ctx={ctx}
+                    />
+                  )
+                : undefined
+            }
+          />
         </div>
         <div className="space-y-1">
           <Label>Reference</Label>
@@ -200,18 +217,29 @@ export function BankCodingPanel({
       <div className="space-y-2">
         {splits.map((s, i) => (
           <div key={s.key} className="grid gap-2 sm:grid-cols-[2fr_2fr_1.2fr_1fr_auto]">
-            <Select value={s.accountId} onValueChange={(v) => update(s.key, { accountId: v })}>
-              <SelectTrigger aria-label="Account">
-                <SelectValue placeholder="Account" />
-              </SelectTrigger>
-              <SelectContent>
-                {options.accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountLookup
+              ariaLabel="Account"
+              accounts={options.accounts}
+              value={s.accountId}
+              onChange={(accountId) => update(s.key, { accountId })}
+              companyId={companyId}
+              placeholder="Account"
+              allowClear={false}
+              canCreate={can("accounts.manage")}
+              createTitle="New account"
+              renderCreate={
+                can("accounts.manage")
+                  ? (ctx) => (
+                      <AccountCreateForm
+                        companyId={companyId}
+                        currency={currency}
+                        initialKind="expense"
+                        ctx={ctx}
+                      />
+                    )
+                  : undefined
+              }
+            />
             <Input
               aria-label="Description"
               placeholder="Description"
@@ -219,19 +247,39 @@ export function BankCodingPanel({
               value={s.description}
               onChange={(e) => update(s.key, { description: e.target.value })}
             />
-            <Select value={s.taxCodeId} onValueChange={(v) => update(s.key, { taxCodeId: v })}>
-              <SelectTrigger aria-label="Tax code">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_TAX}>No tax</SelectItem>
-                {taxChoices.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.code} ({(t.rateBps / 100).toFixed(2).replace(/\.00$/, "")}%)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TaxLookup
+              ariaLabel="Tax code"
+              today={new Date().toISOString().slice(0, 10)}
+              usage={direction === "in" ? "sales" : "purchases"}
+              taxes={taxChoices.map((tax) => ({
+                id: tax.id,
+                code: tax.code,
+                name: tax.name,
+                rateLabel: `${(tax.rateBps / 100).toFixed(2).replace(/\.00$/, "")}%`,
+                appliesTo: tax.appliesTo,
+                effective_from: tax.effectiveFrom ?? "1970-01-01",
+                effective_to: tax.effectiveTo,
+                is_active: tax.rateActive,
+              }))}
+              value={s.taxCodeId}
+              onChange={(taxCodeId) => update(s.key, { taxCodeId })}
+              companyId={companyId}
+              placeholder="No tax"
+              allowClear
+              canCreate={can("tax.settings")}
+              createTitle="New tax code"
+              renderCreate={
+                can("tax.settings")
+                  ? (ctx) => (
+                      <TaxCodeCreateForm
+                        companyId={companyId}
+                        appliesTo={direction === "in" ? "sales" : "purchases"}
+                        ctx={ctx}
+                      />
+                    )
+                  : undefined
+              }
+            />
             <MoneyField
               label="Amount"
               value={s.amount}

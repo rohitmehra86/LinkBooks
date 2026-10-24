@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AccountLookup } from "@/components/lookup";
 import {
   Select,
   SelectContent,
@@ -339,18 +340,15 @@ function BankingAccounts() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Select value={glAccountId} onValueChange={setGlAccountId}>
-          <SelectTrigger aria-label="GL account">
-            <SelectValue placeholder="GL account" />
-          </SelectTrigger>
-          <SelectContent>
-            {glOptions.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AccountLookup
+          ariaLabel="GL account"
+          accounts={glOptions}
+          value={glAccountId}
+          onChange={setGlAccountId}
+          companyId={companyId}
+          placeholder="GL account"
+          allowClear={false}
+        />
         <Select value={currency ?? baseCurrency} onValueChange={setCurrency}>
           <SelectTrigger aria-label="Currency">
             <SelectValue />

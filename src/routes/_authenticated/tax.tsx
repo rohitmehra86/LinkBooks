@@ -21,6 +21,7 @@ import {
   verificationStatusLabel,
 } from "@/lib/tax/country-packs";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { AccountLookup } from "@/components/lookup";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -329,60 +330,39 @@ function TaxConfigPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Output tax liability</Label>
-                <Select
-                  value={outputAcc || "none"}
-                  onValueChange={(v) => setOutputAcc(v === "none" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Fallback 2100" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Use fallback (2100)</SelectItem>
-                    {outputAccounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountLookup
+                  ariaLabel="Output tax liability"
+                  accounts={outputAccounts}
+                  value={outputAcc}
+                  onChange={setOutputAcc}
+                  companyId={companyId}
+                  placeholder="Use fallback (2100)"
+                  allowClear
+                />
               </div>
               <div className="space-y-1">
                 <Label>Recoverable input tax</Label>
-                <Select
-                  value={inputAcc || "none"}
-                  onValueChange={(v) => setInputAcc(v === "none" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Fallback 1200" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Use fallback (1200)</SelectItem>
-                    {inputAccounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountLookup
+                  ariaLabel="Recoverable input tax"
+                  accounts={inputAccounts}
+                  value={inputAcc}
+                  onChange={setInputAcc}
+                  companyId={companyId}
+                  placeholder="Use fallback (1200)"
+                  allowClear
+                />
               </div>
               <div className="space-y-1">
                 <Label>Non-recoverable tax (cost)</Label>
-                <Select
-                  value={nonRecAcc || "none"}
-                  onValueChange={(v) => setNonRecAcc(v === "none" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Not set</SelectItem>
-                    {nonRecAccounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AccountLookup
+                  ariaLabel="Non-recoverable tax"
+                  accounts={nonRecAccounts}
+                  value={nonRecAcc}
+                  onChange={setNonRecAcc}
+                  companyId={companyId}
+                  placeholder="Not set"
+                  allowClear
+                />
               </div>
             </div>
             <Button size="sm" disabled={mappingsM.isPending} onClick={() => mappingsM.mutate()}>

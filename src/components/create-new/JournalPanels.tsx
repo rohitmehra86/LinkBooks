@@ -16,6 +16,7 @@ import { validateAutoReverseDate } from "@/lib/accounting/fx-reval";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AccountLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
@@ -271,19 +272,17 @@ function JournalLines({ mode }: { mode: "post" | "template" }) {
         </div>
         {lines.map((line, index) => (
           <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-12">
-            <select
-              aria-label={`Line ${index + 1} account`}
-              className="col-span-2 h-9 rounded-md border border-input bg-background px-2 text-sm sm:col-span-4"
+            <AccountLookup
+              className="col-span-2 sm:col-span-4"
+              ariaLabel={`Line ${index + 1} account`}
+              accounts={accounts}
               value={line.accountId}
-              onChange={(e) => updateLine(index, { accountId: e.target.value })}
-            >
-              <option value="">Select account</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.code} {account.name}
-                </option>
-              ))}
-            </select>
+              onChange={(accountId) => updateLine(index, { accountId })}
+              companyId={companyId}
+              purpose="posting"
+              placeholder="Select account"
+              allowClear
+            />
             <Input
               aria-label={`Line ${index + 1} description`}
               className="col-span-2 sm:col-span-3"

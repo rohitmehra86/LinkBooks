@@ -9,6 +9,7 @@ import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { postTaxAdjustment } from "@/lib/tax/tax.functions";
 import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { AccountLookup } from "@/components/lookup";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/_authenticated/accountant")({
@@ -95,13 +103,15 @@ function AccountantTools() {
     );
   }
 
-  const accounts = ((accountsQ.data ?? []) as Array<{
-    id: string;
-    code: string;
-    name: string;
-    is_postable: boolean;
-    is_active: boolean;
-  }>).filter((a) => a.is_active && a.is_postable);
+  const accounts = (
+    (accountsQ.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      is_postable: boolean;
+      is_active: boolean;
+    }>
+  ).filter((a) => a.is_active && a.is_postable);
 
   return (
     <>
@@ -116,8 +126,16 @@ function AccountantTools() {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <CheckCard title="Unlocked periods" count={query.data!.unlockedPeriods} href="/accounting" />
-            <CheckCard title="Draft invoices" count={query.data!.draftInvoices} href="/sales/invoices" />
+            <CheckCard
+              title="Unlocked periods"
+              count={query.data!.unlockedPeriods}
+              href="/accounting"
+            />
+            <CheckCard
+              title="Draft invoices"
+              count={query.data!.draftInvoices}
+              href="/sales/invoices"
+            />
             <CheckCard title="Draft bills" count={query.data!.draftBills} href="/purchases/bills" />
             <CheckCard
               title="Uncategorised bank"
@@ -141,8 +159,8 @@ function AccountantTools() {
           </h2>
           <Alert className="mb-3">
             <AlertDescription>
-              Posts a single balanced <code>tax_adjustment</code> journal via the shared posting engine.
-              Idempotent by adjustment key. Not a filed return.
+              Posts a single balanced <code>tax_adjustment</code> journal via the shared posting
+              engine. Idempotent by adjustment key. Not a filed return.
             </AlertDescription>
           </Alert>
           <div className="mb-8 grid max-w-xl gap-3 rounded-md border p-4">
@@ -158,38 +176,36 @@ function AccountantTools() {
             </div>
             <div className="space-y-1">
               <Label>Tax control account</Label>
-              <Select value={taxAcc} onValueChange={setTaxAcc}>
-                <SelectTrigger>
-                  <SelectValue placeholder="e.g. 2100 Tax Payable" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountLookup
+                ariaLabel="Tax control account"
+                accounts={accounts}
+                value={taxAcc}
+                onChange={setTaxAcc}
+                companyId={companyId}
+                placeholder="e.g. 2100 Tax Payable"
+                allowClear={false}
+              />
             </div>
             <div className="space-y-1">
               <Label>Offset account</Label>
-              <Select value={offsetAcc} onValueChange={setOffsetAcc}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Expense / equity" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccountLookup
+                ariaLabel="Offset account"
+                accounts={accounts}
+                value={offsetAcc}
+                onChange={setOffsetAcc}
+                companyId={companyId}
+                placeholder="Expense / equity"
+                allowClear={false}
+              />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Amount</Label>
-                <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+                <Input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                />
               </div>
               <div className="space-y-1">
                 <Label>Direction</Label>

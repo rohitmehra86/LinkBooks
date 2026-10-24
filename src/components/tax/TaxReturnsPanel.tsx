@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { AccountLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -645,18 +646,16 @@ export function TaxReturnsPanel({
                         <div className="flex flex-wrap items-end gap-3">
                           <div className="space-y-1">
                             <Label>Settlement account</Label>
-                            <Select value={settleAccount} onValueChange={setSettleAccount}>
-                              <SelectTrigger className="w-72">
-                                <SelectValue placeholder="Choose an account" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {settlementAccounts.map((a) => (
-                                  <SelectItem key={a.id} value={a.id}>
-                                    {a.code} — {a.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <AccountLookup
+                              className="w-72"
+                              ariaLabel="Settlement account"
+                              accounts={settlementAccounts}
+                              value={settleAccount}
+                              onChange={setSettleAccount}
+                              companyId={companyId}
+                              placeholder="Choose an account"
+                              allowClear={false}
+                            />
                           </div>
                           <div className="space-y-1">
                             <Label htmlFor="settle-date">Journal date</Label>

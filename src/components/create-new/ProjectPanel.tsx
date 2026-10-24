@@ -10,6 +10,7 @@ import { createProject } from "@/lib/create-new/money-documents.functions";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ContactLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 
 export function ProjectPanel() {
@@ -73,12 +74,15 @@ export function ProjectPanel() {
       <Label>Name</Label>
       <Input required value={name} onChange={(e) => setName(e.target.value)} />
       <Label>Customer</Label>
-      <select className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={contactId} onChange={(e) => setContactId(e.target.value)}>
-        <option value="">None</option>
-        {((customersQ.data ?? []) as Array<{ id: string; name: string }>).map((customer) => (
-          <option key={customer.id} value={customer.id}>{customer.name}</option>
-        ))}
-      </select>
+      <ContactLookup
+        ariaLabel="Customer"
+        contacts={(customersQ.data ?? []) as Array<{ id: string; name: string }>}
+        value={contactId}
+        onChange={setContactId}
+        companyId={companyId}
+        placeholder="None"
+        allowClear
+      />
       <Label>Start</Label>
       <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
       <Label>End</Label>
@@ -87,7 +91,9 @@ export function ProjectPanel() {
       <Input inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} />
       <Label>Description</Label>
       <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-      <Button type="submit" disabled={saveM.isPending}>{saveM.isPending ? "Saving…" : "Save project"}</Button>
+      <Button type="submit" disabled={saveM.isPending}>
+        {saveM.isPending ? "Saving…" : "Save project"}
+      </Button>
     </form>
   );
 }

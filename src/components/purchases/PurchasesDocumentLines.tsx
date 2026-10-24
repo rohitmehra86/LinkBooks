@@ -9,6 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EntityCombobox, type EntityOption } from "@/components/common/EntityCombobox";
 import {
+  AccountCreateForm,
+  ContactCreateForm,
+  ProductCreateForm,
+  TaxCodeCreateForm,
+} from "@/components/lookup/create-forms";
+import { useCan } from "@/hooks/use-can";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -121,6 +128,8 @@ type Props = {
   showDiscount?: boolean;
   visibleColumns?: LineColumnKey[];
   baseCurrencyEquivalent?: string | null;
+  companyId?: string;
+  baseCurrency?: string;
 };
 
 function accountGroupLabel(type?: string): string {
@@ -169,7 +178,10 @@ export function PurchasesDocumentLines({
   showDiscount = true,
   visibleColumns,
   baseCurrencyEquivalent,
+  companyId,
+  baseCurrency,
 }: Props) {
+  const { can } = useCan();
   const col = (key: LineColumnKey) => {
     if (visibleColumns) return visibleColumns.includes(key);
     if (key === "class") return showClass;
@@ -443,6 +455,34 @@ export function PurchasesDocumentLines({
                         emptyText="No catalogue items"
                         onAddNew={addItem}
                         addNewLabel="+ Add new item or service…"
+                        {...(companyId ? { companyId } : {})}
+                        renderCreate={
+                          companyId && !addItem && can("products.manage")
+                            ? (ctx) => (
+                                <ProductCreateForm
+                                  companyId={companyId}
+                                  currency={currency}
+                                  priceRole="purchase"
+                                  ctx={ctx}
+                                />
+                              )
+                            : undefined
+                        }
+                        onCreated={
+                          addItem
+                            ? undefined
+                            : (option) =>
+                                update(idx, {
+                                  productId: option.id,
+                                  description: line.description.trim()
+                                    ? line.description
+                                    : option.description || option.name || option.label,
+                                  unitPrice:
+                                    line.unitPrice && line.unitPrice !== "0.00"
+                                      ? line.unitPrice
+                                      : option.meta || line.unitPrice,
+                                })
+                        }
                       />
                     </td>
                   ) : null}
@@ -501,6 +541,19 @@ export function PurchasesDocumentLines({
                         allowClear={false}
                         onAddNew={onAddNewAccount}
                         addNewLabel="+ Add new account…"
+                        {...(companyId ? { companyId } : {})}
+                        renderCreate={
+                          companyId && !onAddNewAccount && can("accounts.manage")
+                            ? (ctx) => (
+                                <AccountCreateForm
+                                  companyId={companyId}
+                                  currency={baseCurrency || currency}
+                                  initialKind="expense"
+                                  ctx={ctx}
+                                />
+                              )
+                            : undefined
+                        }
                       />
                     </td>
                   ) : null}
@@ -523,11 +576,7 @@ export function PurchasesDocumentLines({
                                 })),
                               ]
                         }
-                        value={
-                          taxCalculation === "none"
-                            ? "__none__"
-                            : line.taxCodeId || "__bps__"
-                        }
+                        value={taxCalculation === "none" ? "__none__" : line.taxCodeId || "__bps__"}
                         onChange={(v) => {
                           if (v === "__bps__" || v === "__none__") update(idx, { taxCodeId: "" });
                           else applyTaxCode(idx, v);
@@ -536,6 +585,30 @@ export function PurchasesDocumentLines({
                         allowClear={false}
                         onAddNew={taxCalculation === "none" ? undefined : onAddNewTax}
                         addNewLabel="+ Add new tax rate…"
+                        {...(companyId ? { companyId } : {})}
+                        renderCreate={
+                          companyId &&
+                          taxCalculation !== "none" &&
+                          !onAddNewTax &&
+                          can("tax.settings")
+                            ? (ctx) => (
+                                <TaxCodeCreateForm
+                                  companyId={companyId}
+                                  appliesTo="purchases"
+                                  ctx={ctx}
+                                />
+                              )
+                            : undefined
+                        }
+                        onCreated={
+                          onAddNewTax
+                            ? undefined
+                            : (option) =>
+                                update(idx, {
+                                  taxCodeId: option.id,
+                                  taxRateBps: option.meta ?? line.taxRateBps,
+                                })
+                        }
                       />
                     </td>
                   ) : null}
@@ -576,6 +649,18 @@ export function PurchasesDocumentLines({
                           placeholder="Customer"
                           onAddNew={onAddNewCustomer}
                           addNewLabel="+ Add new customer…"
+                          {...(companyId ? { companyId } : {})}
+                          renderCreate={
+                            companyId && !onAddNewCustomer && can("contacts.manage")
+                              ? (ctx) => (
+                                  <ContactCreateForm
+                                    companyId={companyId}
+                                    kind="customer"
+                                    ctx={ctx}
+                                  />
+                                )
+                              : undefined
+                          }
                         />
                       ) : null}
                       {col("project") ? (
@@ -651,7 +736,9 @@ export function PurchasesDocumentLines({
         <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 text-sm">
           <span>
             Subtotal{" "}
-            <strong className="tabular-nums">{fromMinorUnits(preview.subtotal_minor, currency)}</strong>
+            <strong className="tabular-nums">
+              {fromMinorUnits(preview.subtotal_minor, currency)}
+            </strong>
           </span>
           <span>
             Total tax{" "}
@@ -659,11 +746,14 @@ export function PurchasesDocumentLines({
           </span>
           <span>
             Total{" "}
-            <strong className="tabular-nums">{fromMinorUnits(preview.total_minor, currency)}</strong>
+            <strong className="tabular-nums">
+              {fromMinorUnits(preview.total_minor, currency)}
+            </strong>
           </span>
           {baseCurrencyEquivalent ? (
             <span className="text-muted-foreground">
-              Base-currency equivalent <strong className="tabular-nums">{baseCurrencyEquivalent}</strong>
+              Base-currency equivalent{" "}
+              <strong className="tabular-nums">{baseCurrencyEquivalent}</strong>
             </span>
           ) : null}
         </div>

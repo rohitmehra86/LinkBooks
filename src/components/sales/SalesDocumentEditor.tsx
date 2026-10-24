@@ -7,6 +7,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCan } from "@/hooks/use-can";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import {
   getInvoice,
@@ -25,6 +26,7 @@ import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactCreateForm } from "@/components/lookup/create-forms";
 import {
   SalesDocumentLines,
   emptySalesLine,
@@ -103,6 +105,7 @@ type Props = {
 export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialContactId }: Props) {
   const copy = COPY[kind];
   const { company } = useActiveCompany();
+  const { can } = useCan();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const companyId = company?.id;
@@ -428,6 +431,19 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
             placeholder="Search customers"
             allowClear={false}
             disabled={sourceLocked}
+            companyId={companyId}
+            canAddNew={can("contacts.manage") && !sourceLocked}
+            createTitle="New customer"
+            renderCreate={
+              can("contacts.manage") && !sourceLocked
+                ? (ctx) => <ContactCreateForm companyId={companyId} kind="customer" ctx={ctx} />
+                : undefined
+            }
+            onCreated={(option) => {
+              if (kind !== "invoice") return;
+              const terms = Number(option.meta);
+              if (Number.isFinite(terms)) setSecondDate(addDaysIso(docDate || today, terms));
+            }}
           />
         </div>
         {kind === "credit_note" ? (
@@ -530,6 +546,8 @@ export function SalesDocumentEditor({ kind, existing, fromInvoiceId, initialCont
           treatment={treatment}
           taxCodes={config?.taxCodes ?? []}
           toMinor={(d) => toMinorUnits(d, currency || base)}
+          companyId={companyId}
+          baseCurrency={base}
         />
         <div className="flex flex-wrap gap-2">
           <Button

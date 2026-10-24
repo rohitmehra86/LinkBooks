@@ -23,6 +23,7 @@ import {
   type CapitaliseLine,
   type FixedAssetRow,
 } from "@/lib/fixed-assets/fixed-assets.functions";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +55,7 @@ function AccountSelect({
   onChange,
   accounts,
   types,
+  companyId,
   disabled,
 }: {
   id: string;
@@ -62,27 +64,31 @@ function AccountSelect({
   onChange: (v: string) => void;
   accounts: AssetAccount[];
   types: string[];
+  companyId: string;
   disabled?: boolean;
 }) {
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{label}</Label>
-      <select
+      <AccountLookup
         id={id}
-        className={selectCls}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Choose an account</option>
-        {accounts
+        ariaLabel={label}
+        accounts={accounts
           .filter((a) => types.includes(a.accountType))
-          .map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.code} {a.name}
-            </option>
-          ))}
-      </select>
+          .map((a) => ({
+            id: a.id,
+            code: a.code,
+            name: a.name,
+            account_type: a.accountType,
+          }))}
+        value={value}
+        onChange={onChange}
+        companyId={companyId}
+        purpose="posting"
+        placeholder="Choose an account"
+        allowClear
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -255,6 +261,7 @@ export function AssetTypeDialog({
             value={asset}
             onChange={setAsset}
             accounts={accounts}
+            companyId={companyId}
             types={["asset"]}
           />
           <AccountSelect
@@ -263,6 +270,7 @@ export function AssetTypeDialog({
             value={acc}
             onChange={setAcc}
             accounts={accounts}
+            companyId={companyId}
             types={["asset"]}
           />
           <AccountSelect
@@ -271,6 +279,7 @@ export function AssetTypeDialog({
             value={exp}
             onChange={setExp}
             accounts={accounts}
+            companyId={companyId}
             types={["expense"]}
           />
         </div>
@@ -471,21 +480,23 @@ export function AssetDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="asset-type">Asset type (fills defaults)</Label>
-            <select
+            <LookupSelect
               id="asset-type"
-              className={selectCls}
+              ariaLabel="Asset type"
+              allowClear
               value={typeId}
-              onChange={(e) => applyType(e.target.value)}
-            >
-              <option value="">No type</option>
-              {types
+              onChange={applyType}
+              placeholder="No type"
+              searchPlaceholder="Search asset type"
+              options={types
                 .filter((x) => x.is_active)
-                .map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-            </select>
+                .map((x) => ({
+                  id: x.id,
+                  name: x.name,
+                  label: x.name,
+                  keywords: x.name,
+                }))}
+            />
           </div>
           <MethodFields
             method={method}
@@ -561,6 +572,7 @@ export function AssetDialog({
             value={asset}
             onChange={setAsset}
             accounts={accounts}
+            companyId={companyId}
             types={["asset"]}
             disabled={lock}
           />
@@ -570,6 +582,7 @@ export function AssetDialog({
             value={acc}
             onChange={setAcc}
             accounts={accounts}
+            companyId={companyId}
             types={["asset"]}
             disabled={lock}
           />
@@ -579,6 +592,7 @@ export function AssetDialog({
             value={exp}
             onChange={setExp}
             accounts={accounts}
+            companyId={companyId}
             types={["expense"]}
             disabled={lock}
           />
@@ -718,6 +732,7 @@ export function DisposeDialog({
               value={proceedsAcc}
               onChange={setProceedsAcc}
               accounts={accounts}
+              companyId={companyId}
               types={["asset", "liability", "equity"]}
             />
           ) : null}
@@ -730,6 +745,7 @@ export function DisposeDialog({
               value={gainLossAcc}
               onChange={setGainLossAcc}
               accounts={accounts}
+              companyId={companyId}
               types={["income", "expense"]}
             />
           ) : null}

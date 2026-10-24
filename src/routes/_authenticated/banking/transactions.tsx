@@ -24,6 +24,8 @@ import { friendlyAuthError } from "@/lib/auth-helpers";
 import { BankCodingPanel } from "@/components/banking/BankCodingPanel";
 import { BankMatchPanel } from "@/components/banking/BankMatchPanel";
 import { ConfirmButton } from "@/components/banking/ConfirmButton";
+import { AccountLookup, LookupSelect } from "@/components/lookup";
+import { toContactLookupOption } from "@/lib/lookup/eligibility";
 import { PageHeader, ListSkeleton, ErrorState, EmptyState } from "@/components/common/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -352,23 +354,26 @@ function BankTransactions() {
       />
 
       <div className="mb-4 flex flex-wrap items-end gap-2">
-        <Select
+        <LookupSelect
+          className="w-48"
+          ariaLabel="Bank account"
+          allowClear={false}
           value={search.bankAccountId ?? ALL}
-          onValueChange={(v) => setSearch({ bankAccountId: v === ALL ? undefined : v })}
-        >
-          <SelectTrigger className="w-48" aria-label="Bank account">
-            <SelectValue placeholder="Account" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All accounts</SelectItem>
-            {(accountsQ.data ?? []).map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-                {a.is_active ? "" : " (archived)"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(v) => setSearch({ bankAccountId: v === ALL ? undefined : v })}
+          searchPlaceholder="Search bank account"
+          options={[
+            { id: ALL, label: "All accounts" },
+            ...(accountsQ.data ?? []).map((a) => ({
+              id: a.id,
+              name: a.name,
+              label: a.name,
+              meta: a.currency_code,
+              group: a.currency_code,
+              status: a.is_active ? null : "Archived",
+              keywords: `${a.name} ${a.currency_code}`,
+            })),
+          ]}
+        />
         <Select
           value={statusGroup || status || ALL}
           onValueChange={(v) =>
@@ -445,31 +450,35 @@ function BankTransactions() {
             <span className="font-medium">
               {selected.size > 0 ? `${selected.size} selected` : "Bulk coding"}
             </span>
-            <Select value={bulkAccountId} onValueChange={setBulkAccountId}>
-              <SelectTrigger className="h-8 w-56" aria-label="Account for bulk coding">
-                <SelectValue placeholder="Account" />
-              </SelectTrigger>
-              <SelectContent>
-                {(optionsQ.data?.accounts ?? []).map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={bulkTaxCodeId} onValueChange={setBulkTaxCodeId}>
-              <SelectTrigger className="h-8 w-40" aria-label="Tax code for bulk coding">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>No tax</SelectItem>
-                {taxChoices.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountLookup
+              className="w-56"
+              ariaLabel="Account for bulk coding"
+              accounts={optionsQ.data?.accounts ?? []}
+              value={bulkAccountId}
+              onChange={setBulkAccountId}
+              companyId={companyId}
+              placeholder="Account"
+              allowClear={false}
+            />
+            <LookupSelect
+              className="w-40"
+              ariaLabel="Tax code for bulk coding"
+              allowClear={false}
+              value={bulkTaxCodeId}
+              onChange={setBulkTaxCodeId}
+              searchPlaceholder="Search tax code"
+              options={[
+                { id: NONE, label: "No tax" },
+                ...taxChoices.map((t) => ({
+                  id: t.id,
+                  code: t.code,
+                  name: t.name,
+                  label: t.name,
+                  meta: t.code,
+                  keywords: `${t.code} ${t.name}`,
+                })),
+              ]}
+            />
             <Button
               size="sm"
               disabled={selected.size === 0 || !bulkReady || bulkSelectedM.isPending}

@@ -17,18 +17,12 @@ import { fromMinorUnits } from "@/lib/accounting/money";
 import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
+import { AccountLookup } from "@/components/lookup";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -151,20 +145,18 @@ export function EmployeeExpensesPage() {
         </div>
         <div className="space-y-2">
           <Label>Expense account</Label>
-          <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts
-                .filter((a) => a.is_active && a.is_postable && a.account_type === "expense")
-                .map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Expense account"
+            purpose="expense"
+            accounts={accounts.filter(
+              (a) => a.is_active && a.is_postable && a.account_type === "expense",
+            )}
+            value={expenseAccountId}
+            onChange={setExpenseAccountId}
+            companyId={companyId}
+            placeholder="Select"
+            allowClear={false}
+          />
         </div>
         <div className="space-y-2">
           <Label>Net amount ({currency})</Label>
@@ -199,20 +191,18 @@ export function EmployeeExpensesPage() {
       {can("expenses.approve") ? (
         <div className="mb-4 max-w-sm space-y-2">
           <Label>Reimbursement payment account (for approvals)</Label>
-          <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Bank or cash account" />
-            </SelectTrigger>
-            <SelectContent>
-              {(
-                (paymentAccountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>
-              ).map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Reimbursement payment account"
+            purpose="bank"
+            accounts={
+              (paymentAccountsQ.data ?? []) as Array<{ id: string; code: string; name: string }>
+            }
+            value={paymentAccountId}
+            onChange={setPaymentAccountId}
+            companyId={companyId}
+            placeholder="Bank or cash account"
+            allowClear={false}
+          />
         </div>
       ) : null}
 

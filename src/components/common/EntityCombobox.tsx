@@ -1,20 +1,10 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Check, ChevronsUpDown, Loader2, Plus, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
+import type { ComponentProps } from "react";
+import { LookupSelect } from "@/components/lookup/LookupSelect";
+import type { LookupOption } from "@/lib/lookup/types";
 
+/** @deprecated Prefer `LookupOption` from `@/components/lookup`. Kept for existing forms. */
 export type EntityOption = {
   value: string;
   label: string;
@@ -34,188 +24,104 @@ type Props = {
   loading?: boolean;
   allowClear?: boolean;
   className?: string;
-  /** When true, filter options client-side by the search box. */
   clientFilter?: boolean;
-  /** External search string sync (for server-side search). */
   search?: string;
   onSearchChange?: (q: string) => void;
   "aria-label"?: string;
-  /**
-   * Sticky “+ Add new…” action inside the expanded dropdown.
-   * Do not place separate + icons beside the field when this is set.
-   */
   onAddNew?: (() => void) | undefined;
   addNewLabel?: string | undefined;
-  /** When false, hide Add New even if onAddNew is provided (permission gate). */
   canAddNew?: boolean | undefined;
+  id?: string;
+  required?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+  companyId?: string | null | undefined;
+  error?: string | null;
+  onRetry?: () => void;
+  renderCreate?: ComponentProps<typeof LookupSelect>["renderCreate"];
+  createTitle?: string;
+  onCreated?: ((option: LookupOption) => void) | undefined;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
 };
 
+/**
+ * Record lookup used by existing sales and purchase forms.
+ * Implemented on LookupSelect so search, grouping, keyboard and create behaviour stay consistent.
+ */
 export function EntityCombobox({
   options,
   value,
   onChange,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
-  emptyText = "No results",
+  placeholder,
+  searchPlaceholder,
+  emptyText,
   disabled,
   loading,
-  allowClear = true,
+  allowClear,
   className,
-  clientFilter = true,
-  search: controlledSearch,
+  clientFilter,
+  search,
   onSearchChange,
   "aria-label": ariaLabel,
   onAddNew,
-  addNewLabel = "Add new…",
-  canAddNew = true,
+  addNewLabel,
+  canAddNew,
+  id,
+  required,
+  invalid,
+  describedBy,
+  companyId,
+  error,
+  onRetry,
+  renderCreate,
+  createTitle,
+  onCreated,
+  hasMore,
+  onLoadMore,
+  loadingMore,
 }: Props) {
-  const [open, setOpen] = useState(false);
-  const [internalSearch, setInternalSearch] = useState("");
-  const listId = useId();
-  const search = controlledSearch ?? internalSearch;
-  const setSearch = onSearchChange ?? setInternalSearch;
-
-  const selected = useMemo(
-    () => options.find((o) => o.value === value) ?? null,
-    [options, value],
-  );
-
-  const filtered = useMemo(() => {
-    if (!clientFilter) return options;
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => {
-      const hay = `${o.label} ${o.description ?? ""} ${o.keywords ?? ""} ${o.group ?? ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [options, search, clientFilter]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, EntityOption[]>();
-    for (const o of filtered) {
-      const g = o.group?.trim() || "";
-      if (!map.has(g)) map.set(g, []);
-      map.get(g)!.push(o);
-    }
-    return map;
-  }, [filtered]);
-
-  useEffect(() => {
-    if (!open) setInternalSearch("");
-  }, [open]);
-
-  const showAddNew = Boolean(onAddNew) && canAddNew;
+  const lookupOptions: LookupOption[] = options.map((option) => ({
+    id: option.value,
+    label: option.label,
+    description: option.description,
+    keywords: option.keywords,
+    group: option.group,
+  }));
 
   return (
-    <div className={cn("flex gap-1", className)}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            aria-controls={listId}
-            aria-label={ariaLabel ?? placeholder}
-            disabled={disabled}
-            className="h-9 w-full justify-between px-2.5 font-normal text-sm"
-          >
-            <span className={cn("truncate text-left", !selected && "text-muted-foreground")}>
-              {selected ? (
-                <>
-                  {selected.label}
-                  {selected.description ? (
-                    <span className="ml-1 text-muted-foreground">· {selected.description}</span>
-                  ) : null}
-                </>
-              ) : (
-                placeholder
-              )}
-            </span>
-            {loading ? (
-              <Loader2 className="ml-2 size-3.5 shrink-0 animate-spin opacity-60" />
-            ) : (
-              <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] min-w-[240px] p-0"
-          align="start"
-          sideOffset={4}
-        >
-          <Command shouldFilter={false}>
-            <CommandInput
-              placeholder={searchPlaceholder}
-              value={search}
-              onValueChange={setSearch}
-            />
-            {showAddNew ? (
-              <>
-                <div className="sticky top-0 z-10 border-b bg-popover p-1">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onClick={() => {
-                      setOpen(false);
-                      onAddNew?.();
-                    }}
-                  >
-                    <Plus className="size-3.5" />
-                    {addNewLabel}
-                  </button>
-                </div>
-                <CommandSeparator />
-              </>
-            ) : null}
-            <CommandList id={listId} className="max-h-64">
-              <CommandEmpty>{loading ? "Loading…" : emptyText}</CommandEmpty>
-              {Array.from(grouped.entries()).map(([groupName, items]) => (
-                <CommandGroup key={groupName || "__all"} heading={groupName || undefined}>
-                  {items.map((o) => (
-                    <CommandItem
-                      key={o.value}
-                      value={o.value}
-                      onSelect={() => {
-                        onChange(o.value);
-                        setOpen(false);
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 size-4 shrink-0",
-                          value === o.value ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate">{o.label}</span>
-                        {o.description ? (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {o.description}
-                          </span>
-                        ) : null}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      {allowClear && value ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-9 shrink-0"
-          aria-label="Clear selection"
-          disabled={disabled}
-          onClick={() => onChange("")}
-        >
-          <X className="size-3.5" />
-        </Button>
-      ) : null}
-    </div>
+    <LookupSelect
+      options={lookupOptions}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      searchPlaceholder={searchPlaceholder}
+      emptyText={emptyText}
+      disabled={disabled}
+      loading={loading}
+      allowClear={allowClear}
+      className={className}
+      clientFilter={clientFilter}
+      search={search}
+      onSearchChange={onSearchChange}
+      ariaLabel={ariaLabel}
+      onCreate={onAddNew}
+      createLabel={addNewLabel}
+      canCreate={canAddNew}
+      id={id}
+      required={required}
+      invalid={invalid}
+      describedBy={describedBy}
+      companyId={companyId}
+      error={error}
+      onRetry={onRetry}
+      renderCreate={renderCreate}
+      createTitle={createTitle}
+      onCreated={onCreated}
+      hasMore={hasMore}
+      onLoadMore={onLoadMore}
+      loadingMore={loadingMore}
+    />
   );
 }

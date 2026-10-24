@@ -28,6 +28,7 @@ import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/components/c
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AccountLookup } from "@/components/lookup";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -430,20 +431,26 @@ function BudgetEditor({ companyId, data }: { companyId: string; data: BudgetData
         <div className="space-y-1">
           <Label htmlFor="budget-add">Add account</Label>
           <div className="flex gap-2">
-            <select
+            <AccountLookup
               id="budget-add"
-              className="flex h-10 w-64 rounded-md border border-input bg-background px-3 text-sm"
+              className="w-64"
+              ariaLabel="Add account"
+              accounts={available.map((a) => ({
+                id: a.id,
+                code: a.code,
+                name: a.name,
+                account_type: a.kind,
+                is_active: true,
+                is_postable: true,
+              }))}
               value={addId}
+              onChange={setAddId}
+              companyId={companyId}
+              purpose="posting"
+              placeholder="Choose an income or expense account"
+              allowClear
               disabled={!canManage}
-              onChange={(e) => setAddId(e.target.value)}
-            >
-              <option value="">Choose an income or expense account</option>
-              {available.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} {a.name} ({a.kind})
-                </option>
-              ))}
-            </select>
+            />
             <Button
               size="sm"
               variant="outline"

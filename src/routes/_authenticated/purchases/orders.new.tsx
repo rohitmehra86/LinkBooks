@@ -11,16 +11,11 @@ import { parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
 import { useCan } from "@/hooks/use-can";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
+import { AccountLookup, ContactLookup } from "@/components/lookup";
+import { AccountCreateForm, ContactCreateForm } from "@/components/lookup/create-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/purchases/orders/new")({
   component: NewOrder,
@@ -114,18 +109,24 @@ export function NewOrder() {
       <div className="grid max-w-lg gap-4">
         <div className="space-y-2">
           <Label>Supplier</Label>
-          <Select value={contactId} onValueChange={setContactId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ContactLookup
+            ariaLabel="Supplier"
+            contacts={((suppliersQ.data ?? []) as Array<{ id: string; name: string }>).map(
+              (supplier) => ({ ...supplier, kind: "supplier" }),
+            )}
+            value={contactId}
+            onChange={setContactId}
+            companyId={companyId}
+            placeholder="Select supplier"
+            allowClear={false}
+            canCreate={can("contacts.manage")}
+            createTitle="New supplier"
+            renderCreate={
+              can("contacts.manage")
+                ? (ctx) => <ContactCreateForm companyId={companyId} kind="supplier" ctx={ctx} />
+                : undefined
+            }
+          />
         </div>
         <div className="space-y-2">
           <Label>Date</Label>
@@ -137,18 +138,29 @@ export function NewOrder() {
         </div>
         <div className="space-y-2">
           <Label>Account</Label>
-          <Select value={accountId} onValueChange={setAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AccountLookup
+            ariaLabel="Account"
+            accounts={accounts}
+            value={accountId}
+            onChange={setAccountId}
+            companyId={companyId}
+            placeholder="Select account"
+            allowClear={false}
+            canCreate={can("accounts.manage")}
+            createTitle="New account"
+            renderCreate={
+              can("accounts.manage")
+                ? (ctx) => (
+                    <AccountCreateForm
+                      companyId={companyId}
+                      currency={baseCurrency}
+                      initialKind="expense"
+                      ctx={ctx}
+                    />
+                  )
+                : undefined
+            }
+          />
         </div>
         <div className="grid grid-cols-3 gap-2">
           <Input

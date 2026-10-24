@@ -1,0 +1,29 @@
+---
+description: Use LookupSelect for every dynamic record field in LinkBooks
+alwaysApply: true
+---
+
+# LookupSelect
+
+Record fields use `LookupSelect` from `@/components/lookup`, or a variant built on it: `AccountLookup`, `ContactLookup`, `ProductLookup`, `TaxLookup`, `TrackingLookup`, `BankLookup`.
+
+Use the native `Select` only for a short fixed enumeration (status, tax-inclusive/exclusive, month, locale).
+
+## Required behaviour
+
+- Search code, name, SKU, description and other identifiers. Select by record id.
+- Group with category headings. Show `code — name` when a code exists.
+- Include `+ Create new` only when the user may create and a real save path exists. Open that form in `LookupCreateFlyover` (or the existing sheet the screen already uses). Keep the parent form, prefill from the search text, refresh, select the new id, and return focus. Cancelling or a failed save leaves the previous value in place.
+- Show loading, empty and error (with retry) states. Support clear when the field may be empty, plus required, disabled and invalid.
+- Page or server-search large lists with `useLookupQuery` (debounced, aborted, cached, scoped by `companyId`).
+- Hide or disable records the active organisation, role, active flag, account type, tax date, currency or posting rule does not allow. The server functions remain the authority; do not weaken them to make a lookup succeed.
+
+```tsx
+<AccountLookup
+  accounts={accounts}
+  companyId={companyId}
+  value={accountId}
+  onChange={setAccountId}
+  ariaLabel="Account"
+/>
+```

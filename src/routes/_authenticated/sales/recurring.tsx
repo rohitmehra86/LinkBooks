@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCompany } from "@/hooks/use-active-company";
+import { useCan } from "@/hooks/use-can";
 import { listAccounts } from "@/lib/accounting/accounting.functions";
 import { listProducts } from "@/lib/products/products.functions";
 import { listCustomers } from "@/lib/sales/sales.functions";
@@ -21,6 +22,7 @@ import { toMinorUnits } from "@/lib/accounting/money";
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, ErrorState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactCreateForm } from "@/components/lookup/create-forms";
 import {
   SalesDocumentLines,
   emptySalesLine,
@@ -66,6 +68,7 @@ const FREQUENCIES = [
 
 export function RecurringInvoices() {
   const { company } = useActiveCompany();
+  const { can } = useCan();
   const companyId = company?.id;
   const qc = useQueryClient();
   const enabled = Boolean(companyId);
@@ -293,6 +296,14 @@ export function RecurringInvoices() {
                 onChange={setContactId}
                 placeholder="Search customers"
                 allowClear={false}
+                companyId={companyId}
+                canAddNew={can("contacts.manage")}
+                createTitle="New customer"
+                renderCreate={
+                  can("contacts.manage")
+                    ? (ctx) => <ContactCreateForm companyId={companyId} kind="customer" ctx={ctx} />
+                    : undefined
+                }
               />
             </div>
             <div className="space-y-1">
@@ -348,6 +359,8 @@ export function RecurringInvoices() {
             treatment={configQ.data?.treatment ?? "exclusive"}
             taxCodes={configQ.data?.taxCodes ?? []}
             toMinor={(d) => toMinorUnits(d, base)}
+            companyId={companyId}
+            baseCurrency={base}
           />
           <label className="flex items-center gap-2 text-sm">
             <input

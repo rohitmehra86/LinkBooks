@@ -13,7 +13,7 @@ import {
 } from "@/lib/purchases/purchases.functions";
 import { fromMinorUnits } from "@/lib/accounting/money";
 import { minorOrZero, parseMinorOrThrow, tryParseMinor } from "@/lib/purchases/money-input";
-import { useCanDo } from "@/hooks/use-can";
+import { useCan, useCanDo } from "@/hooks/use-can";
 import {
   Select,
   SelectContent,
@@ -24,6 +24,7 @@ import {
 import { friendlyAuthError } from "@/lib/auth-helpers";
 import { PageHeader, LoadingState, EmptyState } from "@/components/common/states";
 import { EntityCombobox } from "@/components/common/EntityCombobox";
+import { ContactCreateForm } from "@/components/lookup/create-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,7 @@ export function NewPayment() {
   const fetchBills = useServerFn(listBills);
   const fetchAccounts = useServerFn(listPaymentAccounts);
   const canPay = useCanDo("purchases.payment");
+  const { can } = useCan();
   const postPayment = useServerFn(createAndPostPayment);
 
   const companyId = company?.id;
@@ -210,6 +212,14 @@ export function NewPayment() {
             }}
             placeholder="Search suppliers"
             allowClear={false}
+            companyId={companyId}
+            canAddNew={can("contacts.manage")}
+            createTitle="New supplier"
+            renderCreate={
+              can("contacts.manage")
+                ? (ctx) => <ContactCreateForm companyId={companyId} kind="supplier" ctx={ctx} />
+                : undefined
+            }
           />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
